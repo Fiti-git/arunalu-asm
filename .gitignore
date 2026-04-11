@@ -1,0 +1,55 @@
+# Environment files — never commit real secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+
+# React build output
+frontend/build/
+
+# Django
+backend/staticfiles/
+backend/media/
+*.sqlite3
+*.db
+
+# ML model / embedding data files (can be large and are generated at runtime)
+*.npz
+*.pkl
+*.h5
+*.pt
+*.pth
+
+# Logs
+*.log
+logs/
+
+# React Native / mobile
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/ios/Pods/
+mobile/ios/build/
+mobile/.expo/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

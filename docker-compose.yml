@@ -1,0 +1,70 @@
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-aas_db}
+      POSTGRES_USER: ${DB_USER:-aas_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - aas_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aas_user} -d ${DB_NAME:-aas_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_NAME: ${DB_NAME:-aas_db}
+      DATABASE_USER: ${DB_USER:-aas_user}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+    volumes:
+      - aas_media:/app/media
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "
+      python manage.py migrate --noinput &&
+      exec gunicorn aas.wsgi:application
+      --bind 0.0.0.0:8000
+      --worker-class gthread
+      --workers 3
+      --threads 4
+      --timeout 60
+      --graceful-timeout 30
+      --keep-alive 5
+      --max-requests 600
+      --max-requests-jitter 100
+      --access-logfile -
+      --error-logfile -
+      --capture-output
+      --log-level info
+      --access-logformat '%(h)s \"%(r)s\" %(s)s %(b)s %(L)s'
+      "
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  aas_pgdata:
+  aas_media:

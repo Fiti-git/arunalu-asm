@@ -1,0 +1,15 @@
+django>=3.2,<5
+djangorestframework>=3.14.0
+djangorestframework-simplejwt
+psycopg2-binary>=2.9
+django-cors-headers
+gunicorn>=21.2.0
+numpy<2.0,>=1.24.0
+psutil
+Pillow
+opencv-python-headless>=4.5.5.62
+protobuf<=3.20.3
+python-dotenv==1.0.1
+boto3
+httpcore
+httpx
