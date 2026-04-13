@@ -1,150 +1,76 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  Alert,
-  ActivityIndicator,
-  ImageBackground,
-  ScrollView,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
+  View, Text, StyleSheet, TextInput, Alert, ActivityIndicator,
+  ImageBackground, ScrollView, TouchableOpacity,
+  KeyboardAvoidingView, Platform, SafeAreaView,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { Calendar } from 'react-native-calendars';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import { ENDPOINTS } from '../config';
+import { apiGet, apiPost } from '../api';
+
+const BG_IMAGE = 'https://images.unsplash.com/photo-1600614550174-f85c0cbe6ee8?q=80&w=1972&auto=format&fit=crop';
+const SPECIAL_LEAVE_ID = 4;
 
 const ApplyLeaveScreen = () => {
+  const navigation = useNavigation();
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [leaveType, setLeaveType] = useState(null);
-  const [remarks, setRemarks] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [fetchingLeaveTypes, setFetchingLeaveTypes] = useState(true);
-  const [selectedDates, setSelectedDates] = useState({});
   const [leaveLimits, setLeaveLimits] = useState({});
-  const navigation = useNavigation();
+  const [selectedDates, setSelectedDates] = useState({});
+  const [remarks, setRemarks] = useState('');
+  const [fetching, setFetching] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const fetchLeaveTypes = async () => {
-      let retryCount = 0;
-      const maxRetries = 3;
-
-      const tryFetch = async () => {
-        try {
-          const token = await AsyncStorage.getItem('accessToken');
-          if (!token) return Alert.alert('Error', 'You must be logged in.');
-
-          const response = await fetch('http://123.231.60.24:1605/api/attendance/pendingleave/', {
-            headers: { 'Authorization': 'Bearer ' + token },
-          });
-
-          if (!response.ok) throw new Error('Failed to fetch leave types');
-          const data = await response.json();
-
-          const mapped = data.map(item => ({
-            id: item.id,
-            label: item.leave_type,
-            remaining: item.remaining,
-            used: item.used,
-          }));
-
-          setLeaveTypes(mapped);
-          setLeaveLimits(mapped.reduce((acc, type) => {
-            acc[type.id] = type.remaining;
-            return acc;
-          }, {}));
-
-          setLeaveType(mapped[0]?.id);
-          setFetchingLeaveTypes(false);
-        } catch (error) {
-          if (retryCount < maxRetries) {
-            retryCount++;
-            setTimeout(tryFetch, 1000);
-          } else {
-            console.error(error);
-            Alert.alert('Error', 'Failed to load leave types. Please try again.');
-            setFetchingLeaveTypes(false);
-          }
-        }
-      };
-
-      tryFetch();
-    };
-
-    fetchLeaveTypes();
+    apiGet(ENDPOINTS.pendingLeave)
+      .then(data => {
+        const types = data.map(item => ({ id: item.id, label: item.leave_type, remaining: item.remaining }));
+        setLeaveTypes(types);
+        setLeaveLimits(types.reduce((acc, t) => ({ ...acc, [t.id]: t.remaining }), {}));
+        if (types.length) setLeaveType(types[0].id);
+      })
+      .catch(() => Alert.alert('Error', 'Failed to load leave types.'))
+      .finally(() => setFetching(false));
   }, []);
 
-  const handleDateSelect = (date) => {
-    const count = Object.keys(selectedDates).length;
-    if (leaveType !== 4) {
-      if (selectedDates[date]) {
-        const updated = { ...selectedDates };
-        delete updated[date];
-        setSelectedDates(updated);
-      } else {
-        const limit = leaveLimits[leaveType];
-        if (count < limit) {
-          setSelectedDates({ ...selectedDates, [date]: { selected: true, marked: true } });
-        } else {
-          alert(`You can only select up to ${limit} days.`);
-        }
+  const handleDateSelect = (dateString) => {
+    setSelectedDates(prev => {
+      if (prev[dateString]) {
+        const next = { ...prev };
+        delete next[dateString];
+        return next;
       }
-    } else {
-      const updated = { ...selectedDates };
-      if (updated[date]) {
-        delete updated[date];
-      } else {
-        updated[date] = { selected: true, marked: true };
+      const limit = leaveType === SPECIAL_LEAVE_ID ? Infinity : (leaveLimits[leaveType] ?? 0);
+      if (Object.keys(prev).length >= limit) {
+        Alert.alert('Limit Reached', `You can only select up to ${limit} day(s).`);
+        return prev;
       }
-      setSelectedDates(updated);
-    }
+      return { ...prev, [dateString]: { selected: true, marked: true } };
+    });
   };
 
-  const handleApplyLeave = async () => {
+  const handleApply = async () => {
     if (!Object.keys(selectedDates).length)
       return Alert.alert('Validation', 'Please select at least one date.');
-
-    if (leaveType === 4 && !remarks)
+    if (leaveType === SPECIAL_LEAVE_ID && !remarks)
       return Alert.alert('Validation', 'Please provide a reason for Special Leave.');
-
-    const token = await AsyncStorage.getItem('accessToken');
-    if (!token) return Alert.alert('Error', 'You must be logged in.');
-
-    const payload = {
-      leave_type: leaveType,
-      leave_dates: Object.keys(selectedDates),
-      remarks: leaveType === 4 ? remarks : '',
-    };
 
     try {
       setLoading(true);
-      const response = await fetch('http://123.231.60.24:1605/api/attendance/applyleave/', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+      await apiPost(ENDPOINTS.applyLeave, {
+        leave_type: leaveType,
+        leave_dates: Object.keys(selectedDates),
+        remarks: leaveType === SPECIAL_LEAVE_ID ? remarks : '',
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        return alert(`Error: ${error.message}`);
-      }
-
       Alert.alert('Success', 'Leave application submitted!', [
         { text: 'OK', onPress: () => navigation.navigate('Home') },
       ]);
-
       setSelectedDates({});
       setRemarks('');
     } catch (error) {
-      alert('Failed to connect. Try again later.');
-      console.error(error);
+      Alert.alert('Error', error.message || 'Failed to submit. Try again later.');
     } finally {
       setLoading(false);
     }
@@ -152,68 +78,49 @@ const ApplyLeaveScreen = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }}>
-      <ImageBackground
-        source={{
-          uri: 'https://images.unsplash.com/photo-1600614550174-f85c0cbe6ee8?q=80&w=1972&auto=format&fit=crop&ixlib=rb-4.1.0',
-        }}
-        style={styles.backgroundImage}
-        imageStyle={styles.backgroundImageStyle}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}
-        >
-          <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ImageBackground source={{ uri: BG_IMAGE }} style={styles.bg} imageStyle={{ opacity: 0.9 }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.scroll}>
             <View style={styles.card}>
               <Text style={styles.title}>Apply for Leave</Text>
 
-              <Text style={styles.label}>Select Leave Type</Text>
-              {fetchingLeaveTypes ? (
-                <ActivityIndicator size="large" color="#0000ff" />
+              <Text style={styles.label}>Leave Type</Text>
+              {fetching ? (
+                <ActivityIndicator size="large" color="#3498db" />
               ) : (
                 <Picker
                   selectedValue={leaveType}
-                  onValueChange={(itemValue) => {
-                    setLeaveType(itemValue);
-                    setSelectedDates({});
-                    setRemarks('');
-                  }}
+                  onValueChange={(val) => { setLeaveType(val); setSelectedDates({}); setRemarks(''); }}
                   style={styles.picker}
                 >
-                  {leaveTypes.map((type) => (
-                    <Picker.Item key={type.id} label={type.label} value={type.id} />
-                  ))}
+                  {leaveTypes.map(t => <Picker.Item key={t.id} label={`${t.label} (${t.remaining} left)`} value={t.id} />)}
                 </Picker>
               )}
 
               <Text style={styles.label}>Select Date(s)</Text>
               <Calendar
-                onDayPress={(day) => handleDateSelect(day.dateString)}
+                onDayPress={day => handleDateSelect(day.dateString)}
                 markedDates={selectedDates}
                 markingType="multi-dot"
-                style={styles.calendarContainer}
+                style={styles.calendar}
               />
 
-              {leaveType === 4 && (
+              {leaveType === SPECIAL_LEAVE_ID && (
                 <>
                   <Text style={styles.label}>Reason for Special Leave</Text>
                   <TextInput
                     style={styles.input}
                     value={remarks}
                     onChangeText={setRemarks}
-                    placeholder="Enter reason for leave"
+                    placeholder="Enter reason"
                     multiline
                   />
                 </>
               )}
 
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={handleApplyLeave}
-                disabled={loading}
-              >
-                <Text style={styles.submitButtonText}>
-                  {loading ? 'Submitting...' : 'Submit Leave Application'}
+              <TouchableOpacity style={styles.submitBtn} onPress={handleApply} disabled={loading}>
+                <Text style={styles.submitBtnText}>
+                  {loading ? 'Submitting…' : 'Submit Leave Application'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -225,74 +132,25 @@ const ApplyLeaveScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  backgroundImage: {
-    flex: 1,
-    resizeMode: 'cover',
-  },
-  backgroundImageStyle: {
-    opacity: 0.9,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    padding: 20,
-    alignItems: 'center',
-  },
+  bg: { flex: 1 },
+  scroll: { flexGrow: 1, padding: 20, alignItems: 'center' },
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: 20,
-    borderRadius: 15,
-    width: '100%',
-    elevation: 5,
-    marginBottom: 20,
-    marginTop: 40,
+    backgroundColor: 'rgba(255,255,255,0.92)', padding: 20,
+    borderRadius: 15, width: '100%', elevation: 5, marginTop: 40, marginBottom: 20,
   },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-    textTransform: 'uppercase',
-  },
-  label: {
-    fontSize: 18,
-    marginBottom: 10,
-    textTransform: 'uppercase',
-  },
-  picker: {
-    height: 50,
-    width: '100%',
-    marginBottom: 20,
-    color: 'black',
-  },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', textTransform: 'uppercase' },
+  label: { fontSize: 15, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', color: '#444' },
+  picker: { height: 50, width: '100%', marginBottom: 20 },
+  calendar: { borderRadius: 10, borderWidth: 1, borderColor: '#ccc', marginBottom: 20, overflow: 'hidden' },
   input: {
-    height: 80,
-    borderColor: '#ccc',
-    borderWidth: 1,
-    marginBottom: 20,
-    padding: 10,
-    textAlignVertical: 'top',
+    height: 80, borderColor: '#ccc', borderWidth: 1,
+    marginBottom: 20, padding: 10, textAlignVertical: 'top', borderRadius: 6,
   },
-  submitButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    borderRadius: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
+  submitBtn: {
+    backgroundColor: '#3498db', paddingVertical: 14,
+    borderRadius: 8, alignItems: 'center', marginTop: 8,
   },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textTransform: 'uppercase',
-  },
-  calendarContainer: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
+  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', textTransform: 'uppercase' },
 });
 
 export default ApplyLeaveScreen;

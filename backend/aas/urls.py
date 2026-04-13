@@ -157,6 +157,11 @@ urlpatterns = [
     # -----------------
     # OTHER APPS (if any)
     # -----------------
+
+    # -----------------
+    # MOBILE API
+    # -----------------
+    path('mobile/', include('mobile_api.urls')),
 ]
 
 if settings.DEBUG:
