@@ -26,8 +26,8 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key")
 DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'False'
 
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-
+#ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = ['*']  # ✅ allows all hosts (use with caution in production)
 # ------------------------------------------------------------------------------
 # APPS
 # ------------------------------------------------------------------------------
@@ -137,8 +137,9 @@ SIMPLE_JWT = {
 # ------------------------------------------------------------------------------
 # CORS
 # ------------------------------------------------------------------------------
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
-
+#CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://123.231.60.24:1604/').split(',')
+# Allows the frontend to communicate from any Origin
+CORS_ALLOW_ALL_ORIGINS = True
 # ------------------------------------------------------------------------------
 # URL / SLASH HANDLING
 # ------------------------------------------------------------------------------
