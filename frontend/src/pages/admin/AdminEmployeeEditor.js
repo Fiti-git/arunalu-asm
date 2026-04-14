@@ -20,12 +20,14 @@ export default function EmployeeGrid() {
   const [outlets, setOutlets] = useState([]);
   const [groups, setGroups] = useState([]);
   const [passwordError, setPasswordError] = useState('');
+  const [paginationModel, setPaginationModel] = useState({ pageSize: 50, page: 0 });
+  const [totalRows, setTotalRows] = useState(0);
   const navigate = useNavigate();
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = async (page = 0, pageSize = 50) => {
     try {
       const [employeesRes, outletsRes] = await Promise.all([
-        api.get('/api/getemployees'),
+        api.get('/api/getemployees', { params: { page: page + 1, page_size: pageSize } }),
         api.get('/api/outlets/')
       ]);
 
@@ -34,7 +36,18 @@ export default function EmployeeGrid() {
         return acc;
       }, {});
 
-      const empList = Array.isArray(employeesRes.data) ? employeesRes.data : (employeesRes.data.results || []);
+      // Handle both array and paginated response formats
+      let empList = [];
+      let total = 0;
+
+      if (Array.isArray(employeesRes.data)) {
+        empList = employeesRes.data;
+        total = employeesRes.data.length;
+      } else if (employeesRes.data.results) {
+        empList = employeesRes.data.results;
+        total = employeesRes.data.count || employeesRes.data.results.length;
+      }
+
       const updatedEmployees = empList.map((employee) => {
         const outletNames = employee.outlets?.map((id) => outletsMap[id]) || ['Unknown'];
         return {
@@ -45,6 +58,7 @@ export default function EmployeeGrid() {
       });
 
       setEmployees(updatedEmployees);
+      setTotalRows(total);
     } catch (err) {
       console.error('Error fetching employees:', err);
     }
@@ -53,7 +67,7 @@ export default function EmployeeGrid() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        await fetchEmployees();
+        await fetchEmployees(paginationModel.page, paginationModel.pageSize);
         const [outletRes, groupsRes] = await Promise.all([
           api.get('/api/outlets/'),
           api.get('/api/groups/'),
@@ -66,7 +80,7 @@ export default function EmployeeGrid() {
       }
     };
     fetchData();
-  }, []);
+  }, [paginationModel]);
 
   const handleOpenAdd = () => {
     reset({
@@ -134,7 +148,7 @@ export default function EmployeeGrid() {
       }
 
       // Re-fetch employees list after the operation
-      await fetchEmployees();
+      await fetchEmployees(paginationModel.page, paginationModel.pageSize);
 
       // Close the dialog after submission
       handleClose();
@@ -212,7 +226,7 @@ return (
   <Box sx={{ display: 'flex', gap: 2 }}>
     <Button
   variant="outlined"
-  onClick={() => navigate('/employees/modify-reference-image')}
+  onClick={() => navigate('/admin/employees/face-reference')}
   sx={{
     textTransform: 'none',
     fontWeight: 600,
@@ -255,8 +269,10 @@ return (
       <DataGrid
         rows={employees}
         columns={columns}
-        pageSize={5}
-        rowsPerPageOptions={[5, 10]}
+        rowCount={totalRows}
+        paginationModel={paginationModel}
+        onPaginationModelChange={setPaginationModel}
+        pageSizeOptions={[50, 100]}
         getRowId={(row) => row.employee_id}
         autoHeight
         sx={{

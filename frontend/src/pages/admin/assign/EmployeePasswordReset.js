@@ -22,6 +22,8 @@ export default function EmployeeGrid() {
   const [employees, setEmployees] = useState([]);
   const [openPasswordDialog, setOpenPasswordDialog] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [paginationModel, setPaginationModel] = useState({ pageSize: 50, page: 0 });
+  const [totalRows, setTotalRows] = useState(0);
 
   const {
     control: passwordControl,
@@ -32,18 +34,24 @@ export default function EmployeeGrid() {
     resolver: yupResolver(passwordSchema),
   });
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = async (page = 0, pageSize = 50) => {
     try {
-      const response = await api.get('/api/getemployees');
-      const d = response.data; setEmployees(Array.isArray(d) ? d : (d.results || []));
+      const response = await api.get('/api/getemployees', {
+        params: { page: page + 1, page_size: pageSize },
+      });
+      let d = response.data;
+      let empList = Array.isArray(d) ? d : (d.results || []);
+      let total = Array.isArray(d) ? d.length : (d.count || empList.length);
+      setEmployees(empList);
+      setTotalRows(total);
     } catch (err) {
       console.error('Error fetching employees:', err);
     }
   };
 
   useEffect(() => {
-    fetchEmployees();
-  }, []);
+    fetchEmployees(paginationModel.page, paginationModel.pageSize);
+  }, [paginationModel]);
 
   const handleClosePasswordDialog = () => {
     setOpenPasswordDialog(false);
@@ -130,8 +138,10 @@ return (
       <DataGrid
         rows={employees}
         columns={columns}
-        pageSize={5}
-        rowsPerPageOptions={[5]}
+        rowCount={totalRows}
+        paginationModel={paginationModel}
+        onPaginationModelChange={setPaginationModel}
+        pageSizeOptions={[50, 100]}
         getRowId={(row) => row.employee_id}
         autoHeight
         sx={{

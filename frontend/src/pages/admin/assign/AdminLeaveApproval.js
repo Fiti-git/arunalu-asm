@@ -27,6 +27,8 @@ export default function LeaveApproval() {
   const [searchEmployeeName, setSearchEmployeeName] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [paginationModel, setPaginationModel] = useState({ pageSize: 50, page: 0 });
+  const [totalRows, setTotalRows] = useState(0);
 
   const [openDialog, setOpenDialog] = useState(false);
   const [currentRequest, setCurrentRequest] = useState(null);
@@ -64,9 +66,15 @@ export default function LeaveApproval() {
             employee_id: selectedEmployee || '',
             employee_name: searchEmployeeName || '',
             status: statusFilter !== 'all' ? statusFilter : '',
+            page: paginationModel.page + 1,
+            page_size: paginationModel.pageSize,
           },
         });
-        const d = res.data; setRequests(Array.isArray(d) ? d : (d.results || []));
+        let d = res.data;
+        let items = Array.isArray(d) ? d : (d.results || []);
+        let total = Array.isArray(d) ? d.length : (d.count || items.length);
+        setRequests(items);
+        setTotalRows(total);
       } catch (err) {
         console.error('Error fetching leave requests:', err);
       } finally {
@@ -74,7 +82,7 @@ export default function LeaveApproval() {
       }
     };
     fetchRequests();
-  }, [selectedOutlet, selectedEmployee, searchEmployeeName, statusFilter]);
+  }, [selectedOutlet, selectedEmployee, searchEmployeeName, statusFilter, paginationModel]);
 
   // Map employee names
   const mappedRequests = useMemo(() => {
@@ -219,8 +227,10 @@ export default function LeaveApproval() {
         <DataGrid
           rows={mappedRequests}
           columns={columns}
-          pageSize={7}
-          rowsPerPageOptions={[5, 10]}
+          rowCount={totalRows}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          pageSizeOptions={[50, 100]}
           disableRowSelectionOnClick
           getRowId={(row) => row.leave_refno}
         />
