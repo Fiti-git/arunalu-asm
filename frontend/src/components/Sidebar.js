@@ -89,13 +89,6 @@ function Sidebar({ sidebarOpen, onClose }) {
       icon: <LockResetIcon />,
       group: "SETTINGS",
     },
-    {
-      text: "DEACTIVATE EMPLOYEE",
-      path: "/admin/DeactiveEmployee",
-      roles: ["Admin"],
-      icon: <PersonOffIcon />,
-      group: "SETTINGS",
-    },
 
     // ADMIN - ASSIGNMENTS
     {
@@ -103,13 +96,6 @@ function Sidebar({ sidebarOpen, onClose }) {
       path: "/Admin/assign/leave",
       roles: ["Admin"],
       icon: <WorkHistoryIcon />,
-      group: "ASSIGNMENTS",
-    },
-    {
-      text: "DAILY ATTENDANCE",
-      path: "/admin/assign/AdminATTM",
-      roles: ["Admin"],
-      icon: <TaskIcon />,
       group: "ASSIGNMENTS",
     },
 

@@ -36,7 +36,7 @@ const toDateOnly = (yyyyMmDd) => {
   return d;
 };
 
-export default function MANReports() {
+export default function AdminOutletSummary() {
   // Default date range: last month to today
   const today = new Date();
   const priorMonth = new Date();
