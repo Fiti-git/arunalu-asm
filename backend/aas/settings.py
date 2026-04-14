@@ -139,7 +139,7 @@ SIMPLE_JWT = {
 # ------------------------------------------------------------------------------
 #CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://123.231.60.24:1604/').split(',')
 # Allows the frontend to communicate from any Origin
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = True  # ✅ allows all origins (use with caution in production)
 # ------------------------------------------------------------------------------
 # URL / SLASH HANDLING
 # ------------------------------------------------------------------------------
