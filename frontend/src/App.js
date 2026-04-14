@@ -2,9 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
-import Employees from './pages/Employees';
 import LeaveApproval from './pages/LeaveApproval';
-import Reports from './pages/Reports';
 import Layout from './components/Layout';
 import { isAuthenticated, getUserRole } from './utils/auth';
 
@@ -17,9 +15,9 @@ import DailyOutletAttendance from './pages/DailyOutletAttendance';
 import OutletLeaveHistory from './pages/OutletLeaveHistory';
 import AttendanceEditor from './pages/AttendanceEditor';
 import BulkLeaveAssignment from './pages/BulkLeaveAssignment';
-import FaceReferenceImages from './pages/FaceReferenceImages';
 import ManagerDailyAttendance from './pages/manager/ManagerDailyAttendance';
 import DatabaseBackup from './pages/manager/DatabaseBackup';
+import FaceReferenceImages from './pages/FaceReferenceImages';
 
 // Admin create section
 import CreateEmployee from './pages/admin/create/CreateEmployee';
@@ -209,9 +207,7 @@ function App() {
             <Layout><EmployeePasswordReset /></Layout>
           </ProtectedRoute>
         } />
-
-        {/* Face Recognition */}
-        <Route path="/employees/modify-reference-image" element={
+        <Route path="/admin/employees/face-reference" element={
           <ProtectedRoute role={role} requiredRole="Admin">
             <Layout><FaceReferenceImages /></Layout>
           </ProtectedRoute>

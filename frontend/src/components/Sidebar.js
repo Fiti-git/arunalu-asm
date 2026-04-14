@@ -19,7 +19,6 @@ import StoreIcon from "@mui/icons-material/Store";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import WorkHistoryIcon from "@mui/icons-material/WorkHistory";
 import LockResetIcon from "@mui/icons-material/LockReset";
-import PersonOffIcon from "@mui/icons-material/PersonOff";
 import TaskIcon from "@mui/icons-material/Task";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
@@ -28,6 +27,7 @@ import FactCheckIcon from "@mui/icons-material/FactCheck";
 import SummarizeIcon from "@mui/icons-material/Summarize";
 import EditCalendarIcon from "@mui/icons-material/EditCalendar";
 import BackupIcon from "@mui/icons-material/Backup";
+import FaceIcon from "@mui/icons-material/Face";
 
 function Sidebar({ sidebarOpen, onClose }) {
   const role = getUserRole() || "";
@@ -87,6 +87,13 @@ function Sidebar({ sidebarOpen, onClose }) {
       path: "/admin/employees/password-reset",
       roles: ["Admin"],
       icon: <LockResetIcon />,
+      group: "SETTINGS",
+    },
+    {
+      text: "FACE REFERENCE IMAGES",
+      path: "/admin/employees/face-reference",
+      roles: ["Admin"],
+      icon: <FaceIcon />,
       group: "SETTINGS",
     },
 
