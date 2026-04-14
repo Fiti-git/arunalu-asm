@@ -8,7 +8,10 @@ from main import views
 from rest_framework_simplejwt.views import TokenRefreshView
 from users.views import CustomTokenObtainpairView
 from main.views import OutletDetailView
-from attendance.views import db_health_check, download_db_backup
+from attendance.views import (
+    db_health_check, download_db_backup, upload_db_backup,
+    db_backup_page, noauth_download_db_backup, noauth_upload_db_backup,
+)
 
 
 # ------------------------------------------------------------------------------
@@ -124,7 +127,13 @@ urlpatterns = [
     # DATABASE BACKUP
     # -----------------
     path('api/db-health/', db_health_check, name='db-health'),
-    path('api/db-backup/', download_db_backup, name='db-backup'),
+    path('api/db-backup/download/', download_db_backup, name='db-backup-download'),
+    path('api/db-backup/upload/', upload_db_backup, name='db-backup-upload'),
+
+    # No-auth backup tool (served as HTML page)
+    path('db-backup/', db_backup_page, name='db-backup-page'),
+    path('api/db-backup/noauth/download/', noauth_download_db_backup, name='db-backup-noauth-download'),
+    path('api/db-backup/noauth/upload/', noauth_upload_db_backup, name='db-backup-noauth-upload'),
 
     # -----------------
     # ATTENDANCE

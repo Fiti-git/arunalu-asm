@@ -1,22 +1,22 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ImageBackground, Modal, Pressable,
+  ActivityIndicator, Modal, Image, KeyboardAvoidingView,
+  Platform, ScrollView, StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { ENDPOINTS } from '../config';
-import { decodeJWT } from '../api';
 
-const BG_IMAGE = 'https://images.unsplash.com/photo-1600614550174-f85c0cbe6ee8?q=80&w=1972&auto=format&fit=crop';
+const LOGO = require('../assets/logo.png');
 
 const LoginScreen = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showMenu, setShowMenu] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
   const navigation = useNavigation();
 
@@ -47,99 +47,188 @@ const LoginScreen = () => {
   const disabled = !username || !password || loading;
 
   return (
-    <ImageBackground source={{ uri: BG_IMAGE }} style={styles.bg} imageStyle={{ opacity: 0.9 }}>
-      <TouchableOpacity style={styles.menuIcon} onPress={() => setShowMenu(p => !p)}>
-        <Text style={styles.menuIconText}>⋮</Text>
-      </TouchableOpacity>
+    <View style={styles.bg}>
+      <StatusBar barStyle="light-content" backgroundColor={RED} />
 
-      {showMenu && (
-        <View style={styles.dropdown}>
-          <TouchableOpacity onPress={() => { setShowMenu(false); setHelpVisible(true); }}>
-            <Text style={styles.menuItem}>Help</Text>
+      <View style={styles.bgTop} />
+      <View style={styles.bgBottom} />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.kav}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Logo */}
+          <View style={styles.logoArea}>
+            <View style={styles.logoCircle}>
+              <Image source={LOGO} style={styles.logoImg} resizeMode="contain" />
+            </View>
+            <Text style={styles.appName}>Arunalu ASM</Text>
+            <Text style={styles.appSubtitle}>Attendance & Staff Management</Text>
+          </View>
+
+          {/* Form card */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Sign In</Text>
+            <Text style={styles.cardSubtitle}>Enter your credentials to continue</Text>
+
+            {!!error && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>! {error}</Text>
+              </View>
+            )}
+
+            {/* Username */}
+            <View style={styles.inputWrapper}>
+              <Text style={styles.inputIconText}>@</Text>
+              <TextInput
+                placeholder="Username"
+                placeholderTextColor={GRAY}
+                value={username}
+                onChangeText={setUsername}
+                style={styles.input}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            {/* Password */}
+            <View style={styles.inputWrapper}>
+              <Text style={styles.inputIconText}>*</Text>
+              <TextInput
+                placeholder="Password"
+                placeholderTextColor={GRAY}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                style={[styles.input, { flex: 1 }]}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(p => !p)} style={styles.eyeBtn}>
+                <Text style={styles.eyeBtnText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loading ? (
+              <ActivityIndicator size="large" color={RED} style={{ marginTop: 8 }} />
+            ) : (
+              <TouchableOpacity
+                style={[styles.loginBtn, disabled && styles.loginBtnDisabled]}
+                onPress={handleLogin}
+                disabled={disabled}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.loginBtnText, disabled && styles.loginBtnTextDisabled]}>
+                  Sign In  →
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Footer help */}
+          <TouchableOpacity onPress={() => setHelpVisible(true)} style={styles.helpLink}>
+            <Text style={styles.helpLinkText}>? Need help?</Text>
           </TouchableOpacity>
-        </View>
-      )}
+        </ScrollView>
+      </KeyboardAvoidingView>
 
-      <View style={styles.container}>
-        <Text style={styles.title}>Login to Your Account</Text>
-
-        {!!error && <Text style={styles.errorText}>{error}</Text>}
-
-        <TextInput
-          placeholder="Username"
-          placeholderTextColor="#666"
-          value={username}
-          onChangeText={setUsername}
-          style={styles.input}
-          autoCapitalize="none"
-        />
-        <TextInput
-          placeholder="Password"
-          placeholderTextColor="#666"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          style={styles.input}
-        />
-
-        {loading ? (
-          <ActivityIndicator size="large" color="#3498db" />
-        ) : (
-          <TouchableOpacity
-            style={[styles.button, disabled && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={disabled}
-          >
-            <Text style={styles.buttonText}>Login</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
+      {/* Help Modal */}
       <Modal animationType="slide" transparent visible={helpVisible} onRequestClose={() => setHelpVisible(false)}>
         <View style={styles.overlay}>
           <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Need Help?</Text>
-            <Text style={styles.modalText}>Phone: 0767032122</Text>
-            <Text style={styles.modalText}>Website: fiti.solutions</Text>
-            <TouchableOpacity style={styles.modalBtn} onPress={() => setHelpVisible(false)}>
-              <Text style={styles.modalBtnText}>Close</Text>
-            </TouchableOpacity>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Need Help?</Text>
+              <TouchableOpacity onPress={() => setHelpVisible(false)}>
+                <Text style={styles.modalClose}>X</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalRow}>
+              <Text style={styles.modalIcon}>T</Text>
+              <Text style={styles.modalText}>0767032122</Text>
+            </View>
+            <View style={styles.modalRow}>
+              <Text style={styles.modalIcon}>W</Text>
+              <Text style={styles.modalText}>fiti.solutions</Text>
+            </View>
           </View>
         </View>
       </Modal>
-    </ImageBackground>
+    </View>
   );
 };
 
+const RED    = '#A31E17';
+const YELLOW = '#F1C40F';
+const GRAY   = '#9CA3AF';
+
 const styles = StyleSheet.create({
-  bg: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, width: '80%' },
-  title: { fontSize: 26, fontWeight: 'bold', color: '#fff', marginBottom: 24, textAlign: 'center' },
-  input: {
-    width: '100%', padding: 14, marginBottom: 14,
-    borderWidth: 1, borderColor: '#fff', borderRadius: 10,
-    fontSize: 16, color: '#fff', backgroundColor: 'rgba(255,255,255,0.2)',
+  bg: { flex: 1, backgroundColor: RED },
+
+  bgTop:    { position: 'absolute', top: 0, left: 0, right: 0, height: '55%', backgroundColor: RED },
+  bgBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%', backgroundColor: '#f5f5f5' },
+
+  kav:    { flex: 1 },
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 },
+
+  logoArea:   { alignItems: 'center', marginBottom: 32 },
+  logoCircle: {
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
+    elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 }, marginBottom: 14,
   },
-  errorText: { color: '#ff6b6b', marginBottom: 12, fontSize: 14, textAlign: 'center' },
-  button: {
-    width: '100%', backgroundColor: '#3498db',
-    borderRadius: 10, padding: 15, alignItems: 'center', elevation: 5,
+  logoImg:     { width: 72, height: 72 },
+  appName:     { fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+  appSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 },
+
+  card: {
+    backgroundColor: '#fff', borderRadius: 20, padding: 24, marginBottom: 20,
+    elevation: 12, shadowColor: '#000', shadowOpacity: 0.15,
+    shadowRadius: 20, shadowOffset: { width: 0, height: 8 },
   },
-  buttonDisabled: { backgroundColor: '#b0bec5' },
-  buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  menuIcon: { position: 'absolute', top: 44, right: 20, zIndex: 1, padding: 6 },
-  menuIconText: { color: '#fff', fontSize: 28, fontWeight: 'bold' },
-  dropdown: {
-    position: 'absolute', top: 80, right: 20, backgroundColor: '#fff',
-    borderRadius: 8, elevation: 5, padding: 4, width: 130, zIndex: 2,
+  cardTitle:    { fontSize: 22, fontWeight: '800', color: '#111', marginBottom: 4 },
+  cardSubtitle: { fontSize: 13, color: GRAY, marginBottom: 20 },
+
+  errorBox:  {
+    backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginBottom: 16,
+    borderLeftWidth: 3, borderLeftColor: RED,
   },
-  menuItem: { fontSize: 16, paddingVertical: 10, paddingHorizontal: 16, color: '#1976d2' },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modal: { backgroundColor: '#fff', borderRadius: 12, padding: 24, width: '80%', elevation: 10 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginBottom: 12 },
-  modalText: { fontSize: 16, color: '#555', marginBottom: 6 },
-  modalBtn: { backgroundColor: '#3498db', borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 16 },
-  modalBtnText: { color: '#fff', fontSize: 16 },
+  errorText: { color: RED, fontSize: 13, lineHeight: 18 },
+
+  inputWrapper: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12,
+    paddingHorizontal: 12, marginBottom: 14, backgroundColor: '#FAFAFA',
+  },
+  inputIconText: { fontSize: 16, color: GRAY, marginRight: 10, fontWeight: '700' },
+  input:         { flex: 1, fontSize: 16, color: '#111', paddingVertical: 14 },
+  eyeBtn:        { padding: 4 },
+  eyeBtnText:    { fontSize: 13, color: RED, fontWeight: '700' },
+
+  loginBtn: {
+    backgroundColor: YELLOW, borderRadius: 12, paddingVertical: 16,
+    alignItems: 'center', marginTop: 8,
+    elevation: 3, shadowColor: YELLOW, shadowOpacity: 0.4, shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  loginBtnDisabled:     { backgroundColor: '#E5E7EB', elevation: 0 },
+  loginBtnText:         { fontSize: 17, fontWeight: '800', color: '#1a1a1a', letterSpacing: 0.5 },
+  loginBtnTextDisabled: { color: '#aaa' },
+
+  helpLink:     { alignItems: 'center' },
+  helpLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+
+  overlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modal:       { backgroundColor: '#fff', borderRadius: 16, padding: 24, width: '80%', elevation: 10 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle:  { fontSize: 18, fontWeight: '700', color: '#111' },
+  modalClose:  { fontSize: 16, fontWeight: '800', color: '#333', padding: 4 },
+  modalRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  modalIcon:   { fontSize: 14, fontWeight: '800', color: RED, width: 20, textAlign: 'center' },
+  modalText:   { fontSize: 16, color: '#555' },
 });
 
 export default LoginScreen;

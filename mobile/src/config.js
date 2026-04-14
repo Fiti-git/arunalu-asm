@@ -1,5 +1,7 @@
 // ─── Server ───────────────────────────────────────────────────────────────────
-export const BASE_URL = 'http://123.231.60.24:1605';
+// Use your machine's local IP for physical devices (e.g. http://192.168.1.x:8000)
+// Use http://10.0.2.2:8000 for Android emulator
+export const BASE_URL = 'http://10.0.2.2:8000';
 
 // ─── Mobile API endpoints ─────────────────────────────────────────────────────
 export const ENDPOINTS = {

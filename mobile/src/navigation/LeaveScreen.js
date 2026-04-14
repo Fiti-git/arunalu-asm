@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, ActivityIndicator, Alert, ScrollView,
-  TextInput, StatusBar,
+  TextInput, StatusBar, Dimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
@@ -13,6 +13,14 @@ import { apiGet, apiPost } from '../api';
 import BottomSheet from '../components/BottomSheet';
 
 const SPECIAL_LEAVE_ID = 4;
+const HISTORY_PAGE_SIZE = 5;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = SCREEN_WIDTH - 48;
+
+const RED    = '#A31E17';
+const BROWN  = '#8C421F';
+const YELLOW = '#F1C40F';
+const GRAY   = '#6B7280';
 
 const STATUS_COLOR = {
   approved: '#059669',
@@ -21,23 +29,27 @@ const STATUS_COLOR = {
   cancelled:'#6B7280',
 };
 
-const STATUS_ICON = {
-  approved: '✓',
-  rejected: '✗',
-  pending:  '⏳',
-  cancelled:'–',
+const balanceColor = (remaining, allowed) => {
+  if (!allowed) return '#6B7280';
+  const ratio = remaining / allowed;
+  if (ratio > 0.5) return '#059669';
+  if (ratio > 0.2) return '#D97706';
+  return '#DC2626';
 };
 
-// ─── Leave Screen ─────────────────────────────────────────────────────────────
 const LeaveScreen = () => {
   const navigation = useNavigation();
 
-  // Data
   const [balances, setBalances] = useState([]);
   const [history, setHistory]   = useState([]);
   const [loading, setLoading]   = useState(true);
 
-  // Apply sheet
+  const carouselRef     = useRef(null);
+  const [cardIndex, setCardIndex] = useState(0);
+  const autoScrollTimer = useRef(null);
+
+  const [historyPage, setHistoryPage] = useState(1);
+
   const [sheetVisible, setSheetVisible] = useState(false);
   const [leaveTypes, setLeaveTypes]     = useState([]);
   const [leaveType, setLeaveType]       = useState(null);
@@ -46,7 +58,6 @@ const LeaveScreen = () => {
   const [remarks, setRemarks]           = useState('');
   const [submitting, setSubmitting]     = useState(false);
 
-  // ── Load data ──────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -56,8 +67,8 @@ const LeaveScreen = () => {
       ]);
       setBalances(bal);
       setHistory(hist);
+      setHistoryPage(1);
 
-      // Pre-load leave types for apply sheet
       const types = bal.map(t => ({ id: t.id, label: t.leave_type, remaining: t.remaining }));
       setLeaveTypes(types);
       setLeaveLimits(types.reduce((a, t) => ({ ...a, [t.id]: t.remaining }), {}));
@@ -71,7 +82,29 @@ const LeaveScreen = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Apply sheet ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (balances.length <= 1) return;
+    autoScrollTimer.current = setInterval(() => {
+      setCardIndex(prev => {
+        const next = (prev + 1) % balances.length;
+        carouselRef.current?.scrollTo({ x: next * (CARD_WIDTH + 16), animated: true });
+        return next;
+      });
+    }, 3000);
+    return () => clearInterval(autoScrollTimer.current);
+  }, [balances.length]);
+
+  const onCarouselScroll = (e) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / (CARD_WIDTH + 16));
+    setCardIndex(idx);
+  };
+
+  const totalHistoryPages = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
+  const pagedHistory = history.slice(
+    (historyPage - 1) * HISTORY_PAGE_SIZE,
+    historyPage * HISTORY_PAGE_SIZE
+  );
+
   const openApply = () => {
     setSelectedDates({});
     setRemarks('');
@@ -92,7 +125,7 @@ const LeaveScreen = () => {
           return prev;
         }
       }
-      return { ...prev, [dateString]: { selected: true, marked: true, selectedColor: '#2563EB' } };
+      return { ...prev, [dateString]: { selected: true, marked: true, selectedColor: RED } };
     });
   };
 
@@ -119,64 +152,176 @@ const LeaveScreen = () => {
     }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const totalPending  = history.filter(h => h.status === 'pending').length;
+  const totalApproved = history.filter(h => h.status === 'approved').length;
+
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <StatusBar barStyle="light-content" backgroundColor={RED} />
 
-      {/* Header */}
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.backBtn}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.topTitle}>Leave</Text>
-        <TouchableOpacity style={styles.applyHeaderBtn} onPress={openApply}>
-          <Text style={styles.applyHeaderBtnText}>+ Apply</Text>
-        </TouchableOpacity>
+      {/* ── Red Header Banner ── */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12} style={styles.backBtn}>
+            <Text style={styles.backBtnText}>{'\u2190'} Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.applyBtn} onPress={openApply}>
+            <Text style={styles.applyBtnText}>+ Apply</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.headerTitle}>Leave</Text>
+        <Text style={styles.headerSubtitle}>Manage your leave requests</Text>
+
+        {/* Quick stats row inside header */}
+        <View style={styles.headerStats}>
+          <View style={styles.headerStat}>
+            <Text style={styles.headerStatValue}>{balances.length}</Text>
+            <Text style={styles.headerStatLabel}>Types</Text>
+          </View>
+          <View style={styles.headerStatDivider} />
+          <View style={styles.headerStat}>
+            <Text style={styles.headerStatValue}>{totalPending}</Text>
+            <Text style={styles.headerStatLabel}>Pending</Text>
+          </View>
+          <View style={styles.headerStatDivider} />
+          <View style={styles.headerStat}>
+            <Text style={styles.headerStatValue}>{totalApproved}</Text>
+            <Text style={styles.headerStatLabel}>Approved</Text>
+          </View>
+        </View>
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#2563EB" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color={RED} style={{ marginTop: 40 }} />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-          {/* ── Balances ── */}
-          <Text style={styles.sectionTitle}>Leave Balances</Text>
-          <View style={styles.card}>
-            <View style={[styles.tableRow, styles.tableHeader]}>
-              <Text style={[styles.tableCell, styles.headerCell, { flex: 2 }]}>Type</Text>
-              <Text style={[styles.tableCell, styles.headerCell]}>Allowed</Text>
-              <Text style={[styles.tableCell, styles.headerCell]}>Used</Text>
-              <Text style={[styles.tableCell, styles.headerCell]}>Left</Text>
-            </View>
-            {balances.map(item => (
-              <View key={item.id} style={styles.tableRow}>
-                <Text style={[styles.tableCell, { flex: 2 }]}>{item.leave_type}</Text>
-                <Text style={styles.tableCell}>{item.allowed}</Text>
-                <Text style={styles.tableCell}>{item.used}</Text>
-                <Text style={[styles.tableCell, styles.remainingCell]}>{item.remaining}</Text>
+          {/* ── Balance Carousel ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Leave Balances</Text>
+
+            <ScrollView
+              ref={carouselRef}
+              horizontal
+              pagingEnabled={false}
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={onCarouselScroll}
+              onScrollEndDrag={onCarouselScroll}
+              snapToInterval={CARD_WIDTH + 16}
+              decelerationRate="fast"
+              contentContainerStyle={styles.carouselContent}
+            >
+              {balances.map((item) => {
+                const color = balanceColor(item.remaining, item.allowed);
+                const progress = item.allowed > 0 ? (item.used / item.allowed) : 0;
+                return (
+                  <View key={item.id} style={[styles.balanceCard, { width: CARD_WIDTH }]}>
+                    <View style={styles.balanceCardHeader}>
+                      <Text style={styles.balanceTypeName}>{item.leave_type}</Text>
+                      <View style={[styles.remainingBadge, { backgroundColor: color + '18', borderColor: color }]}>
+                        <View style={[styles.remainingDot, { backgroundColor: color }]} />
+                        <Text style={[styles.remainingBadgeText, { color }]}>
+                          {item.remaining} left
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${Math.min(progress * 100, 100)}%`, backgroundColor: color }]} />
+                    </View>
+                    <Text style={styles.progressLabel}>
+                      {item.used} of {item.allowed} days used
+                    </Text>
+
+                    <View style={styles.balanceRow}>
+                      <View style={styles.balanceStat}>
+                        <Text style={[styles.balanceStatValue, { color: '#D97706' }]}>{item.used}</Text>
+                        <Text style={styles.balanceStatLabel}>Used</Text>
+                      </View>
+                      <View style={styles.balanceDivider} />
+                      <View style={styles.balanceStat}>
+                        <Text style={styles.balanceStatValue}>{item.allowed}</Text>
+                        <Text style={styles.balanceStatLabel}>Total</Text>
+                      </View>
+                      <View style={styles.balanceDivider} />
+                      <View style={styles.balanceStat}>
+                        <Text style={[styles.balanceStatValue, { color }]}>{item.remaining}</Text>
+                        <Text style={styles.balanceStatLabel}>Left</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {balances.length > 1 && (
+              <View style={styles.dotsRow}>
+                {balances.map((_, i) => (
+                  <View key={i} style={[styles.dot, i === cardIndex && styles.dotActive]} />
+                ))}
               </View>
-            ))}
+            )}
           </View>
 
-          {/* ── History ── */}
-          <Text style={styles.sectionTitle}>History</Text>
-          {history.length === 0
-            ? <Text style={styles.empty}>No leave records yet.</Text>
-            : history.map(item => (
-                <View key={item.leave_refno} style={styles.historyRow}>
-                  <View style={styles.historyLeft}>
-                    <Text style={styles.historyType}>{item.leave_type_name || '—'}</Text>
-                    <Text style={styles.historyDate}>{item.leave_date}</Text>
-                  </View>
-                  <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLOR[item.status] ?? '#999') + '20' }]}>
-                    <Text style={[styles.statusText, { color: STATUS_COLOR[item.status] ?? '#999' }]}>
-                      {STATUS_ICON[item.status] ?? '?'} {item.status}
-                    </Text>
-                  </View>
+          {/* ── History Table ── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Leave History</Text>
+
+            {history.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyIcon}>{'\uD83D\uDCC2'}</Text>
+                <Text style={styles.emptyText}>No leave records yet.</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.thCell, { flex: 2 }]}>Type</Text>
+                  <Text style={styles.thCell}>Date</Text>
+                  <Text style={styles.thCell}>Status</Text>
                 </View>
-              ))
-          }
+
+                {pagedHistory.map((item, idx) => (
+                  <View key={item.leave_refno} style={[styles.tableRow, idx % 2 === 0 && styles.tableRowAlt]}>
+                    <Text style={[styles.tdCell, { flex: 2 }]} numberOfLines={1}>
+                      {item.leave_type_name || '—'}
+                    </Text>
+                    <Text style={styles.tdCell}>{item.leave_date || '—'}</Text>
+                    <View style={styles.tdCell}>
+                      <Text style={[
+                        styles.statusChip,
+                        { color: STATUS_COLOR[item.status] ?? '#6B7280',
+                          backgroundColor: (STATUS_COLOR[item.status] ?? '#6B7280') + '18' },
+                      ]}>
+                        {item.status}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+
+                {totalHistoryPages > 1 && (
+                  <View style={styles.pagination}>
+                    <TouchableOpacity
+                      style={[styles.pageBtn, historyPage === 1 && styles.pageBtnOff]}
+                      onPress={() => setHistoryPage(p => Math.max(1, p - 1))}
+                      disabled={historyPage === 1}
+                    >
+                      <Text style={[styles.pageBtnTxt, historyPage === 1 && { color: '#ccc' }]}>{'<'}</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.pageLabel}>{historyPage} / {totalHistoryPages}</Text>
+                    <TouchableOpacity
+                      style={[styles.pageBtn, historyPage === totalHistoryPages && styles.pageBtnOff]}
+                      onPress={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
+                      disabled={historyPage === totalHistoryPages}
+                    >
+                      <Text style={[styles.pageBtnTxt, historyPage === totalHistoryPages && { color: '#ccc' }]}>{'>'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+
         </ScrollView>
       )}
 
@@ -203,7 +348,7 @@ const LeaveScreen = () => {
             markedDates={selectedDates}
             markingType="multi-dot"
             style={styles.calendar}
-            theme={{ selectedDayBackgroundColor: '#2563EB', todayTextColor: '#2563EB' }}
+            theme={{ selectedDayBackgroundColor: RED, todayTextColor: RED }}
           />
 
           {leaveType === SPECIAL_LEAVE_ID && (
@@ -236,54 +381,102 @@ const LeaveScreen = () => {
   );
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const BLUE = '#2563EB';
-const GRAY = '#6B7280';
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: '#F3F4F6' },
 
-  topBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 12,
-    borderBottomWidth: 1, borderColor: '#f0f0f0',
+  // Header
+  header: {
+    backgroundColor: RED, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24,
+    borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
   },
-  backBtn:  { fontSize: 24, color: '#333', lineHeight: 28 },
-  topTitle: { fontSize: 18, fontWeight: '700', color: '#111' },
-  applyHeaderBtn: {
-    backgroundColor: BLUE, borderRadius: 8,
-    paddingHorizontal: 14, paddingVertical: 8,
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  backBtn:     { padding: 4 },
+  backBtnText: { fontSize: 15, color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
+  applyBtn: {
+    backgroundColor: YELLOW, borderRadius: 10,
+    paddingHorizontal: 16, paddingVertical: 8,
+    elevation: 2, shadowColor: YELLOW, shadowOpacity: 0.4, shadowRadius: 6,
   },
-  applyHeaderBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  applyBtnText: { color: '#1a1a1a', fontWeight: '800', fontSize: 14 },
 
-  scroll: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 16 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#111', marginBottom: 10, marginTop: 16 },
+  headerTitle:    { fontSize: 28, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+  headerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2, marginBottom: 16 },
 
-  // Balances table
-  card: {
-    backgroundColor: '#F9FAFB', borderRadius: 12,
-    borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden', marginBottom: 8,
+  headerStats: {
+    flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 14, paddingVertical: 12, paddingHorizontal: 8,
   },
-  tableRow:    { flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: 1, borderColor: '#E5E7EB' },
-  tableHeader: { backgroundColor: '#F3F4F6' },
-  tableCell:   { flex: 1, fontSize: 13, color: '#374151', textAlign: 'center' },
-  headerCell:  { fontWeight: '700', color: '#111' },
-  remainingCell: { color: BLUE, fontWeight: '700' },
+  headerStat:        { flex: 1, alignItems: 'center' },
+  headerStatValue:   { fontSize: 20, fontWeight: '800', color: '#fff' },
+  headerStatLabel:   { fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  headerStatDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 4 },
 
-  // History
-  historyRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 12, borderBottomWidth: 1, borderColor: '#F3F4F6',
+  scroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 },
+
+  section: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16,
+    elevation: 2, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
   },
-  historyLeft: { flex: 1 },
-  historyType: { fontSize: 14, fontWeight: '600', color: '#111' },
-  historyDate: { fontSize: 12, color: GRAY, marginTop: 2 },
-  statusBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
-  statusText:  { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
+  sectionTitle: { fontSize: 15, fontWeight: '800', color: '#111', marginBottom: 14 },
 
-  empty: { color: GRAY, textAlign: 'center', paddingVertical: 24 },
+  // Carousel
+  carouselContent: { gap: 16, paddingRight: 16 },
+  balanceCard: {
+    backgroundColor: '#FFFBF0', borderRadius: 16,
+    padding: 16, borderWidth: 1.5, borderColor: YELLOW,
+  },
+  balanceCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  balanceTypeName:   { fontSize: 16, fontWeight: '800', color: '#111', flex: 1 },
+  remainingBadge:    { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
+  remainingDot:      { width: 7, height: 7, borderRadius: 3.5 },
+  remainingBadgeText:{ fontSize: 12, fontWeight: '700' },
 
-  // Apply sheet
+  progressTrack:  { height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, marginBottom: 6, overflow: 'hidden' },
+  progressFill:   { height: '100%', borderRadius: 4 },
+  progressLabel:  { fontSize: 11, color: GRAY, marginBottom: 14 },
+
+  balanceRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  balanceStat:      { flex: 1, alignItems: 'center' },
+  balanceStatValue: { fontSize: 22, fontWeight: '800', color: '#111' },
+  balanceStatLabel: { fontSize: 11, color: GRAY, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  balanceDivider:   { width: 1, height: 32, backgroundColor: '#E5E7EB' },
+
+  dotsRow:   { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 14 },
+  dot:       { width: 6, height: 6, borderRadius: 3, backgroundColor: '#D1D5DB' },
+  dotActive: { width: 18, backgroundColor: RED },
+
+  // History table
+  emptyBox:  { alignItems: 'center', paddingVertical: 32 },
+  emptyIcon: { fontSize: 36, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: GRAY },
+
+  tableHeader: {
+    flexDirection: 'row', backgroundColor: '#F9FAFB',
+    borderRadius: 8, paddingVertical: 8, paddingHorizontal: 8, marginBottom: 4,
+  },
+  thCell: {
+    flex: 1, fontSize: 11, fontWeight: '700', color: '#6B7280',
+    textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center',
+  },
+  tableRow:    { flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center' },
+  tableRowAlt: { backgroundColor: '#FAFAFA', borderRadius: 6 },
+  tdCell:      { flex: 1, fontSize: 13, color: '#374151', textAlign: 'center' },
+  statusChip:  {
+    fontSize: 11, fontWeight: '700', textTransform: 'capitalize',
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+    overflow: 'hidden', textAlign: 'center',
+  },
+
+  pagination: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    marginTop: 12, gap: 16,
+  },
+  pageBtn:    { padding: 8 },
+  pageBtnOff: { opacity: 0.4 },
+  pageBtnTxt: { fontSize: 18, fontWeight: '700', color: RED },
+  pageLabel:  { fontSize: 13, fontWeight: '600', color: GRAY },
+
+  // Sheet form
   fieldLabel:    { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
   pickerWrapper: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, marginBottom: 16, overflow: 'hidden' },
   calendar:      { borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16, overflow: 'hidden' },
@@ -292,7 +485,7 @@ const styles = StyleSheet.create({
     padding: 12, fontSize: 14, color: '#111', textAlignVertical: 'top',
     marginBottom: 16, minHeight: 80,
   },
-  submitBtn:         { backgroundColor: BLUE, borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  submitBtn:         { backgroundColor: RED, borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   submitBtnDisabled: { backgroundColor: '#9CA3AF' },
   submitBtnText:     { color: '#fff', fontWeight: '800', fontSize: 16 },
 });

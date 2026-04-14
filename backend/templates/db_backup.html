@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AAS — Database Backup &amp; Restore</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+
+    .container {
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 4px 28px rgba(0,0,0,.10);
+      padding: 40px;
+      width: 100%;
+      max-width: 560px;
+    }
+
+    .header { margin-bottom: 28px; }
+    .header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+    .header p {
+      font-size: .85rem;
+      color: #6b7280;
+    }
+
+    /* DB Health badge */
+    .health-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 28px;
+      font-size: .85rem;
+    }
+    .health-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #d1d5db;
+    }
+    .health-dot.ok  { background: #22c55e; }
+    .health-dot.err { background: #ef4444; }
+    .health-label { font-weight: 600; color: #374151; }
+    .health-msg   { color: #6b7280; margin-left: auto; font-size: .8rem; }
+
+    /* Sections */
+    .section {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 6px;
+    }
+    .section-icon {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .95rem;
+    }
+    .icon-blue { background: #eff6ff; }
+    .icon-red  { background: #fef2f2; }
+
+    .section-desc {
+      font-size: .82rem;
+      color: #6b7280;
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+
+    /* Buttons */
+    button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 7px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, background .15s;
+    }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-blue { background: #2563eb; color: #fff; }
+    .btn-blue:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-red  { background: #dc2626; color: #fff; }
+    .btn-red:hover:not(:disabled)  { background: #b91c1c; }
+
+    /* File picker */
+    .file-zone {
+      border: 2px dashed #d1d5db;
+      border-radius: 8px;
+      padding: 18px;
+      text-align: center;
+      cursor: pointer;
+      background: #fafafa;
+      transition: border-color .15s, background .15s;
+      margin-bottom: 14px;
+      position: relative;
+    }
+    .file-zone:hover { border-color: #2563eb; background: #eff6ff; }
+    .file-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .file-zone-icon { font-size: 1.5rem; margin-bottom: 6px; }
+    .file-zone-text { font-size: .85rem; color: #6b7280; }
+    .file-zone-name {
+      font-size: .85rem;
+      font-weight: 600;
+      color: #111827;
+      margin-top: 4px;
+    }
+
+    /* Status messages */
+    .status {
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 7px;
+      font-size: .85rem;
+      display: none;
+      line-height: 1.5;
+    }
+    .status.info    { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; display: block; }
+    .status.success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; display: block; }
+    .status.warning { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; display: block; }
+    .status.error   { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; display: block; }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: .72rem;
+      margin-top: 8px;
+      max-height: 150px;
+      overflow-y: auto;
+      background: rgba(0,0,0,.04);
+      border-radius: 4px;
+      padding: 8px;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 15px; height: 15px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Last backup note */
+    .last-backup {
+      font-size: .78rem;
+      color: #6b7280;
+      margin-top: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>Database Backup &amp; Restore</h1>
+    <p>Arunalu Attendance &amp; Staff Management System</p>
+  </div>
+
+  <!-- DB Health -->
+  <div class="health-bar" id="healthBar">
+    <div class="health-dot" id="healthDot"></div>
+    <span class="health-label" id="healthLabel">Checking database…</span>
+    <span class="health-msg" id="healthMsg"></span>
+  </div>
+
+  <!-- DOWNLOAD BACKUP -->
+  <div class="section">
+    <div class="section-title">
+      <div class="section-icon icon-blue">💾</div>
+      Download Backup
+    </div>
+    <p class="section-desc">
+      Creates a full <code>pg_dump</code> of the current PostgreSQL database and downloads it
+      as a compressed binary file. Keep this file safe — it contains all your data.
+    </p>
+    <button class="btn-blue" id="btnDownload" onclick="downloadBackup()">
+      <span class="spinner" id="dlSpinner" style="display:none"></span>
+      Download Backup
+    </button>
+    <p class="last-backup" id="lastBackup"></p>
+    <div id="dlStatus"></div>
+  </div>
+
+  <!-- RESTORE BACKUP -->
+  <div class="section">
+    <div class="section-title">
+      <div class="section-icon icon-red">⚠️</div>
+      Restore Backup
+    </div>
+    <p class="section-desc">
+      Upload a previously downloaded backup file to restore the database.
+      <strong>This will overwrite all existing data and cannot be undone.</strong>
+    </p>
+
+    <div class="file-zone" id="fileZone" onclick="document.getElementById('backupFile').click()">
+      <input type="file" id="backupFile" accept=".sql,.dump,.backup" onchange="onFileChange(event)" />
+      <div class="file-zone-icon">📂</div>
+      <div class="file-zone-text">Click to select backup file</div>
+      <div class="file-zone-name" id="fileName"></div>
+    </div>
+
+    <button class="btn-red" id="btnRestore" onclick="restoreBackup()" disabled>
+      <span class="spinner" id="upSpinner" style="display:none"></span>
+      Restore Database
+    </button>
+    <div id="upStatus"></div>
+  </div>
+
+</div>
+
+<script>
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function showStatus(id, type, msg, detail) {
+    const el = document.getElementById(id);
+    el.className = 'status ' + type;
+    el.innerHTML = esc(msg) + (detail ? '<pre>' + esc(detail) + '</pre>' : '');
+  }
+
+  function clearStatus(id) {
+    const el = document.getElementById(id);
+    el.className = 'status';
+    el.innerHTML = '';
+  }
+
+  function setLoading(btnId, spinnerId, on) {
+    document.getElementById(btnId).disabled = on;
+    document.getElementById(spinnerId).style.display = on ? 'inline-block' : 'none';
+  }
+
+  function fmtSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  // ── DB Health ─────────────────────────────────────────────────────────────
+
+  async function checkHealth() {
+    try {
+      const r = await fetch('/api/db-health/');
+      const data = await r.json();
+      const dot = document.getElementById('healthDot');
+      const label = document.getElementById('healthLabel');
+      const msg = document.getElementById('healthMsg');
+      if (r.ok && data.status === 'ok') {
+        dot.className = 'health-dot ok';
+        label.textContent = 'Database connected';
+        msg.textContent = 'Ready for backup / restore';
+      } else {
+        dot.className = 'health-dot err';
+        label.textContent = 'Database error';
+        msg.textContent = data.message || 'Cannot reach database';
+      }
+    } catch (e) {
+      document.getElementById('healthDot').className = 'health-dot err';
+      document.getElementById('healthLabel').textContent = 'Health check failed';
+      document.getElementById('healthMsg').textContent = e.message;
+    }
+  }
+
+  // ── File picker ───────────────────────────────────────────────────────────
+
+  function onFileChange(e) {
+    const file = e.target.files[0];
+    const nameEl = document.getElementById('fileName');
+    const btn = document.getElementById('btnRestore');
+    if (file) {
+      nameEl.textContent = file.name + '  (' + fmtSize(file.size) + ')';
+      btn.disabled = false;
+      clearStatus('upStatus');
+    } else {
+      nameEl.textContent = '';
+      btn.disabled = true;
+    }
+  }
+
+  // ── Download backup ───────────────────────────────────────────────────────
+
+  async function downloadBackup() {
+    clearStatus('dlStatus');
+    setLoading('btnDownload', 'dlSpinner', true);
+    showStatus('dlStatus', 'info', 'Creating backup, please wait…');
+
+    try {
+      const resp = await fetch('/api/db-backup/noauth/download/', { method: 'GET' });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        showStatus('dlStatus', 'error', 'Backup failed: ' + text);
+        return;
+      }
+
+      const cd = resp.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename[^;=\n]*=["']?([^"';\n]+)/);
+      const filename = match ? match[1].trim() : 'aas_backup.dump';
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+
+      const ts = new Date().toLocaleString();
+      const note = document.getElementById('lastBackup');
+      note.textContent = 'Last downloaded: ' + ts + '  ·  ' + fmtSize(blob.size);
+      note.style.display = 'block';
+
+      showStatus('dlStatus', 'success', 'Backup downloaded: ' + filename);
+    } catch (err) {
+      showStatus('dlStatus', 'error', 'Network error: ' + err.message);
+    } finally {
+      setLoading('btnDownload', 'dlSpinner', false);
+    }
+  }
+
+  // ── Restore backup ────────────────────────────────────────────────────────
+
+  async function restoreBackup() {
+    const fileInput = document.getElementById('backupFile');
+    if (!fileInput.files.length) {
+      showStatus('upStatus', 'error', 'Please select a backup file first.');
+      return;
+    }
+
+    const file = fileInput.files[0];
+    const confirmed = confirm(
+      'WARNING: This will completely overwrite the current database with the contents of:\n\n' +
+      file.name + ' (' + fmtSize(file.size) + ')\n\n' +
+      'All existing data will be lost. This cannot be undone.\n\nAre you sure you want to continue?'
+    );
+    if (!confirmed) return;
+
+    clearStatus('upStatus');
+    setLoading('btnRestore', 'upSpinner', true);
+    showStatus('upStatus', 'info', 'Uploading and restoring, please wait…');
+
+    const form = new FormData();
+    form.append('backup', file);
+
+    try {
+      const resp = await fetch('/api/db-backup/noauth/upload/', {
+        method: 'POST',
+        body: form,
+      });
+
+      const data = await resp.json();
+
+      if (resp.status === 207) {
+        // Non-zero pg_restore exit with only harmless --clean warnings = success
+        showStatus('upStatus', 'success',
+          'Restore completed successfully. Minor pg_restore warnings are normal and can be ignored.',
+          data.details || '');
+        fileInput.value = '';
+        document.getElementById('fileName').textContent = '';
+        document.getElementById('btnRestore').disabled = true;
+        checkHealth();
+      } else if (!resp.ok) {
+        showStatus('upStatus', 'error',
+          'Restore failed: ' + (data.error || resp.statusText));
+      } else {
+        showStatus('upStatus', 'success', 'Database restored successfully.');
+        fileInput.value = '';
+        document.getElementById('fileName').textContent = '';
+        document.getElementById('btnRestore').disabled = true;
+        checkHealth();
+      }
+    } catch (err) {
+      showStatus('upStatus', 'error', 'Network error: ' + err.message);
+    } finally {
+      setLoading('btnRestore', 'upSpinner', false);
+    }
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  checkHealth();
+</script>
+</body>
+</html>
