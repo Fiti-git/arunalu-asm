@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-aas_db}
       POSTGRES_USER: ${DB_USER:-aas_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-aas_password}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_password123}
     volumes:
       - aas_pgdata:/var/lib/postgresql/data
     ports:
