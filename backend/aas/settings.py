@@ -23,8 +23,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # ------------------------------------------------------------------------------
 # SECURITY
 # ------------------------------------------------------------------------------
-SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
-
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key")
 DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'False'
 
 ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
