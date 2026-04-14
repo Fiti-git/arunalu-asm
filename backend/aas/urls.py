@@ -6,7 +6,7 @@ from django.http import JsonResponse
 
 from main import views
 from rest_framework_simplejwt.views import TokenRefreshView
-from users.views import CustomTokenObtainpairView
+from users.views import CustomTokenObtainPairView
 from main.views import OutletDetailView
 from attendance.views import (
     db_health_check, download_db_backup, upload_db_backup,
@@ -52,9 +52,7 @@ urlpatterns = [
     path('api/deactivate-employee/<int:employee_id>/', views.deactivate_employee, name='deactivate_employee'),
     path('api/activate-employee/<int:employee_id>/', views.activate_employee, name='activate_employee'),
 
-    # IMPORTANT: you have frontend calls without trailing slash sometimes
     path('api/getoutletemployees/', views.get_outlet_employees, name='get_outletemployees'),
-    path('api/getoutletemployees', views.get_outlet_employees),  # alias: no trailing slash
 
     path('api/employees/create', views.create_employee, name='create_employee'),
     path('api/editemployees/<int:employee_id>/', views.edit_employee, name='edit_delete_employee'),
@@ -114,7 +112,7 @@ urlpatterns = [
     # -----------------
     # JWT TOKEN
     # -----------------
-    path('api/token/', CustomTokenObtainpairView.as_view(), name='token_obtain_pair'),
+    path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
     # -----------------
@@ -141,11 +139,6 @@ urlpatterns = [
     path('api/attendance/all/', views.AllAttendanceRecordsView.as_view(), name='all_attendance_records'),
     path('api/attendance/', include('attendance.apiurls')),
     path('attendance/', include('attendance.urls')),
-
-    # -----------------
-    # FACE TOOL
-    # -----------------
-    path('admintool/', include('face_recognition.urls')),
 
     # -----------------
     # OUTLET DETAILS

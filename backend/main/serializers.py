@@ -130,12 +130,6 @@ class AgencySerializer(serializers.ModelSerializer):
         model = Agency
         fields = '__all__'
 
-class HolidaySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Holiday
-        fields = '__all__'
-        read_only_fields = ('id',)
-
 class LeaveTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaveType

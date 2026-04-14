@@ -47,7 +47,6 @@ INSTALLED_APPS = [
 
     'main',
     'attendance',
-    'face_recognition',
     'report',
     'users',
     'mobile_api',

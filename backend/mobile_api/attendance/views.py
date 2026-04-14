@@ -9,9 +9,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from main.models import Attendance, EmpLeave
+from main.serializers import AttendanceSerializer
 from main.utils import verify_location
 from attendance.face_recognition import compare_faces
-from .serializers import MobileAttendanceSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ def punch_in(request):
         )
 
         return Response(
-            {"message": response_message, "data": MobileAttendanceSerializer(attendance).data},
+            {"message": response_message, "data": AttendanceSerializer(attendance).data},
             status=status.HTTP_201_CREATED,
         )
 
@@ -245,7 +245,7 @@ def punch_out(request):
         attendance.save()
 
         return Response(
-            {"message": "Punch-out recorded successfully!", "data": MobileAttendanceSerializer(attendance).data},
+            {"message": "Punch-out recorded successfully!", "data": AttendanceSerializer(attendance).data},
             status=200,
         )
 
