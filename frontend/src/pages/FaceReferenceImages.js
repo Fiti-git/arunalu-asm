@@ -1,4 +1,3 @@
-// src/pages/FaceReferenceImages.jsx
 import React, { useEffect, useState } from 'react';
 import {
   Box,
@@ -10,6 +9,7 @@ import {
   Button,
   CircularProgress,
   TextField,
+  Container,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import api from 'utils/api';
@@ -22,186 +22,136 @@ export default function FaceReferenceImages() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
 
-  // Fetch employees
-  const fetchEmployees = async () => {
-    try {
-      setError('');
-      const res = await api.get('/report/employees/');
-      setEmployees(res.data);
-    } catch (error) {
-      console.error('Failed to fetch employees', error);
-      setError('Failed to load employees. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const res = await api.get('/report/employees/');
+
+        // Extract results from paginated response
+        const empData = res.data.results || res.data;
+        setEmployees(Array.isArray(empData) ? empData : []);
+      } catch (err) {
+        console.error('Fetch error:', err);
+        setError(err.message || 'Failed to load employees');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchEmployees();
   }, []);
 
   const handleDeleteImages = async (employeeId) => {
-    if (!window.confirm('Are you sure you want to delete all images?')) return;
-
+    if (!window.confirm('Delete all images for this employee?')) return;
     try {
       const formData = new FormData();
       formData.append('clear_images', 'true');
-
-      await api.put(`/report/employees/${employeeId}/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      alert('Images deleted successfully');
-      fetchEmployees();
-    } catch (error) {
-      console.error('Delete failed', error);
-      alert('Failed to delete images');
+      await api.put(`/report/employees/${employeeId}/`, formData);
+      alert('Images deleted');
+      // Refetch
+      window.location.reload();
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
     }
   };
 
-  // Filter employees by search
-  const filteredEmployees = employees.filter((emp) => {
-    const query = search.toLowerCase();
+  const filtered = employees.filter((emp) => {
+    const q = search.toLowerCase();
     return (
-      emp.first_name.toLowerCase().includes(query) ||
-      emp.fullname.toLowerCase().includes(query)
+      emp.first_name?.toLowerCase().includes(q) ||
+      emp.fullname?.toLowerCase().includes(q) ||
+      emp.username?.toLowerCase().includes(q)
     );
   });
 
-  if (loading) {
-    return (
-      <Box sx={{ p: 4, textAlign: 'center' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Box sx={{ p: 4, textAlign: 'center' }}>
-        <Typography color="error" variant="h6">{error}</Typography>
-        <Button
-          onClick={fetchEmployees}
-          variant="contained"
-          sx={{ mt: 2 }}
-        >
-          Retry
-        </Button>
-      </Box>
-    );
-  }
-
   return (
-    <Box sx={{ p: 4 }}>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
       <Typography variant="h4" fontWeight={700} mb={3}>
         Face Reference Images
       </Typography>
 
-      {/* Search Field */}
-      <TextField
-        label="Search by Name or Employee Code"
-        variant="outlined"
-        fullWidth
-        sx={{ mb: 4 }}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Enter employee name or code..."
-      />
+      {loading && <CircularProgress />}
 
-      {filteredEmployees.length === 0 ? (
-        <Typography variant="body1" color="text.secondary">
-          {search ? 'No employees found matching your search.' : 'No employees found.'}
-        </Typography>
-      ) : (
-        <Grid container spacing={3}>
-          {filteredEmployees.map((emp) => (
-            <Grid item xs={12} key={emp.employee_id}>
-              <Card sx={{ borderRadius: 3 }}>
-                <CardContent>
-                  {/* Header */}
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      mb: 2,
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="h6" fontWeight={600}>
-                        {emp.first_name}
-                      </Typography>
-                      <Typography color="text.secondary">
-                        EMP CODE: {emp.fullname}
-                      </Typography>
-                    </Box>
-
-                    {/* Delete Images */}
-                    <Button
-                      color="error"
-                      startIcon={<DeleteIcon />}
-                      onClick={() => handleDeleteImages(emp.employee_id)}
-                    >
-                      Delete Images
-                    </Button>
-                  </Box>
-
-                  {/* Images */}
-                  <Grid container spacing={2}>
-                    <ImagePreview title="Reference Photo" src={emp.reference_photo} />
-                    <ImagePreview title="Punch In Selfie" src={emp.punchin_selfie} />
-                    <ImagePreview title="Punch Out Selfie" src={emp.punchout_selfie} />
-                  </Grid>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+      {error && (
+        <Box sx={{ p: 2, bgcolor: '#ffebee', borderRadius: 1, mb: 3 }}>
+          <Typography color="error">{error}</Typography>
+        </Box>
       )}
-    </Box>
+
+      {!loading && !error && (
+        <>
+          <TextField
+            label="Search employees..."
+            variant="outlined"
+            fullWidth
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            sx={{ mb: 3 }}
+          />
+
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Showing {filtered.length} of {employees.length} employees
+          </Typography>
+
+          {filtered.length === 0 ? (
+            <Typography>No employees found</Typography>
+          ) : (
+            <Grid container spacing={2}>
+              {filtered.map((emp) => (
+                <Grid item xs={12} key={emp.employee_id}>
+                  <Card>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <Box>
+                          <Typography variant="h6">{emp.first_name}</Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            ID: {emp.employee_id} | Code: {emp.fullname}
+                          </Typography>
+                        </Box>
+                        <Button
+                          size="small"
+                          color="error"
+                          startIcon={<DeleteIcon />}
+                          onClick={() => handleDeleteImages(emp.employee_id)}
+                        >
+                          Delete
+                        </Button>
+                      </Box>
+
+                      <Grid container spacing={2} sx={{ mt: 1 }}>
+                        <PhotoBox title="Reference" src={emp.reference_photo} />
+                        <PhotoBox title="Punch In" src={emp.punchin_selfie} />
+                        <PhotoBox title="Punch Out" src={emp.punchout_selfie} />
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+        </>
+      )}
+    </Container>
   );
 }
 
-/* ---------------- Image Component ---------------- */
-
-function ImagePreview({ title, src }) {
+function PhotoBox({ title, src }) {
   return (
-    <Grid item xs={12} sm={4}>
-      <Card
-        variant="outlined"
-        sx={{
-          borderRadius: 4,
-          overflow: 'hidden',
-          width: '180px',
-          height: '180px',
-          margin: 'auto',
-        }}
-      >
+    <Grid item xs={4}>
+      <Card variant="outlined">
         {src ? (
-          <CardMedia
-            component="img"
-            image={`${BASE_URL}${src}`}
-            alt={title}
-            sx={{ width: '180px', height: '180px', objectFit: 'cover', borderRadius: 4 }}
-          />
+          <CardMedia component="img" image={`${BASE_URL}${src}`} alt={title} sx={{ height: 150 }} />
         ) : (
-          <Box
-            sx={{
-              width: '180px',
-              height: '180px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#f5f5f5',
-            }}
-          >
-            <Typography color="text.secondary" textAlign="center">
-              No Image
+          <Box sx={{ height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f5' }}>
+            <Typography variant="caption" color="textSecondary">
+              No Photo
             </Typography>
           </Box>
         )}
-        <CardContent sx={{ textAlign: 'center', p: 1 }}>
-          <Typography fontWeight={600} variant="body2">
+        <CardContent sx={{ p: 1 }}>
+          <Typography variant="caption" fontWeight={600}>
             {title}
           </Typography>
         </CardContent>
