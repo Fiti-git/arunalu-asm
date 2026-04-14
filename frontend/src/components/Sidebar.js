@@ -38,15 +38,15 @@ function Sidebar({ sidebarOpen, onClose }) {
     // MAIN
     {
       text: "DASHBOARD",
-      path: normalizedRole === "Admin" ? "/AdminDashboard" : "/Dashboard",
+      path: normalizedRole === "Admin" ? "/admin/dashboard" : "/manager/dashboard",
       roles: ["Admin", "Manager"],
       icon: <AnalyticsIcon />,
       group: "MAIN",
     },
     {
       text: "OUTLET SUMMARY",
-      path: "/OutletSummary",
-      roles: ["Admin"], // ✅ Admin only
+      path: "/admin/reports/outlet-summary",
+      roles: ["Admin"],
       icon: <DashboardIcon />,
       group: "MAIN",
     },
@@ -54,28 +54,28 @@ function Sidebar({ sidebarOpen, onClose }) {
     // ADMIN - MANAGEMENT
     {
       text: "EMPLOYEE",
-      path: "/Admin/employee-status",
+      path: "/admin/employees/editor",
       roles: ["Admin"],
       icon: <GroupIcon />,
       group: "MANAGEMENT",
     },
     {
       text: "OUTLETS",
-      path: "/Admin/outlets",
+      path: "/admin/outlets",
       roles: ["Admin"],
       icon: <StoreIcon />,
       group: "MANAGEMENT",
     },
     {
       text: "HOLIDAYS",
-      path: "/Admin/create/holidays",
+      path: "/admin/create/holidays",
       roles: ["Admin"],
       icon: <CalendarMonthIcon />,
       group: "MANAGEMENT",
     },
     {
       text: "LEAVE",
-      path: "/Admin/create/leave",
+      path: "/admin/create/leave",
       roles: ["Admin"],
       icon: <EditCalendarIcon />,
       group: "MANAGEMENT",
@@ -84,7 +84,7 @@ function Sidebar({ sidebarOpen, onClose }) {
     // ADMIN - SETTINGS
     {
       text: "CHANGE PASSWORD",
-      path: "/admin/Employee/PasswordChange",
+      path: "/admin/employees/password-reset",
       roles: ["Admin"],
       icon: <LockResetIcon />,
       group: "SETTINGS",
@@ -93,7 +93,7 @@ function Sidebar({ sidebarOpen, onClose }) {
     // ADMIN - ASSIGNMENTS
     {
       text: "LEAVE MANAGEMENT",
-      path: "/Admin/assign/leave",
+      path: "/admin/assign/leave",
       roles: ["Admin"],
       icon: <WorkHistoryIcon />,
       group: "ASSIGNMENTS",
@@ -102,7 +102,7 @@ function Sidebar({ sidebarOpen, onClose }) {
     // ADMIN - REPORTS
     {
       text: "DETAIL REPORTS",
-      path: "/Admin/reports",
+      path: "/admin/reports/attendance",
       roles: ["Admin"],
       icon: <QueryStatsIcon />,
       group: "REPORTS",
@@ -111,28 +111,28 @@ function Sidebar({ sidebarOpen, onClose }) {
     // MANAGER - MANAGEMENT
     {
       text: "EMPLOYEES",
-      path: "/empman",
+      path: "/manager/employees",
       roles: ["Manager"],
       icon: <ManageAccountsIcon />,
       group: "MANAGEMENT",
     },
     {
       text: "LEAVE APPROVAL",
-      path: "/leave-approval",
+      path: "/manager/leave-approval",
       roles: ["Manager"],
       icon: <FactCheckIcon />,
       group: "MANAGEMENT",
     },
     {
       text: "OUTLET LOG",
-      path: "/manager/DAO",
+      path: "/manager/daily-outlet-attendance",
       roles: ["Manager"],
       icon: <StoreIcon />,
       group: "MANAGEMENT",
     },
     {
       text: "OUTLET LEAVE SUMMARY",
-      path: "/manager/OLS",
+      path: "/manager/outlet-leave-summary",
       roles: ["Manager"],
       icon: <SummarizeIcon />,
       group: "MANAGEMENT",
@@ -141,21 +141,21 @@ function Sidebar({ sidebarOpen, onClose }) {
     // MANAGER - MODIFICATIONS
     {
       text: "ATTENDANCE",
-      path: "/Attandancemodify",
+      path: "/manager/attendance-editor",
       roles: ["Manager"],
       icon: <TaskIcon />,
       group: "MODIFICATIONS",
     },
     {
       text: "LEAVE",
-      path: "/Leavemodify",
+      path: "/manager/bulk-leave-assignment",
       roles: ["Manager"],
       icon: <EditCalendarIcon />,
       group: "MODIFICATIONS",
     },
     {
       text: "REPORTS",
-      path: "/manager/reports", // ✅ use lowercase to avoid route mismatch
+      path: "/manager/reports",
       roles: ["Manager"],
       icon: <QueryStatsIcon />,
       group: "MODIFICATIONS",

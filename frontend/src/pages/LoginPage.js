@@ -89,8 +89,8 @@ const LoginPage = () => {
 
   const handleRoleBasedNavigation = (role) => {
     const roleBasedRedirect = {
-      Admin: '/Admindashboard',
-      Manager: '/dashboard',
+      Admin: '/admin/dashboard',
+      Manager: '/manager/dashboard',
     };
 
     const navigateToRolePage = roleBasedRedirect[role] || '/';

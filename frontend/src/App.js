@@ -56,7 +56,7 @@ function App() {
 
         {/* Admin Dashboard */}
         <Route
-          path="/Admindashboard"
+          path="/admin/dashboard"
           element={
             <ProtectedRoute role={role} requiredRole="Admin">
               <Layout>
@@ -68,7 +68,7 @@ function App() {
 
         {/* Manager Dashboard */}
         <Route
-          path="/Dashboard"
+          path="/manager/dashboard"
           element={
             <ProtectedRoute role={role} requiredRole="Manager">
               <Layout>
@@ -79,34 +79,54 @@ function App() {
         />
 
         {/* Manager Routes */}
-        <Route path="/employees" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><Employees /></Layout>
-          </ProtectedRoute>
-        } />
-        <Route path="/empman" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><ManagerEmployeeList /></Layout>
-          </ProtectedRoute>
-        } />
-        <Route path="/ManEmp2" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><DailyAttendanceView /></Layout>
-          </ProtectedRoute>
-        } />
-        <Route path="/select-outlet" element={
+        <Route path="/manager/outlet-selector" element={
           <ProtectedRoute role={role} requiredRole="Manager">
             <Layout><OutletSelector /></Layout>
           </ProtectedRoute>
         } />
-        <Route path="/leave-approval" element={
+        <Route path="/manager/employees" element={
+          <ProtectedRoute role={role} requiredRole="Manager">
+            <Layout><ManagerEmployeeList /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/manager/daily-attendance-view" element={
+          <ProtectedRoute role={role} requiredRole="Manager">
+            <Layout><DailyAttendanceView /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/manager/leave-approval" element={
           <ProtectedRoute role={role} requiredRole="Manager">
             <Layout><LeaveApproval /></Layout>
           </ProtectedRoute>
         } />
-        <Route path="/reports" element={
+        <Route path="/manager/reports" element={
           <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><Reports /></Layout>
+            <Layout><ManagerAttendanceReport /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/manager/daily-outlet-attendance" element={
+          <ProtectedRoute role={role} requiredRole="Manager">
+            <Layout><DailyOutletAttendance /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/manager/outlet-leave-summary" element={
+          <ProtectedRoute role={role} requiredRole="Manager">
+            <Layout><OutletLeaveHistory /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/manager/attendance-editor" element={
+          <ProtectedRoute role={role} requiredRole="Manager">
+            <Layout><AttendanceEditor /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/manager/bulk-leave-assignment" element={
+          <ProtectedRoute role={role} requiredRole="Manager">
+            <Layout><BulkLeaveAssignment /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/manager/daily-attendance" element={
+          <ProtectedRoute role={role} requiredRole="Manager">
+            <Layout><ManagerDailyAttendance /></Layout>
           </ProtectedRoute>
         } />
         <Route path="/manager/database-backup" element={
@@ -114,39 +134,9 @@ function App() {
             <Layout><DatabaseBackup /></Layout>
           </ProtectedRoute>
         } />
-        <Route path="/manager/DAO" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><DailyOutletAttendance /></Layout>
-          </ProtectedRoute>
-        } />
-        <Route path="/manager/OLS" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><OutletLeaveHistory /></Layout>
-          </ProtectedRoute>
-        } />
-        <Route path="/Attandancemodify" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><AttendanceEditor /></Layout>
-          </ProtectedRoute>
-        } />
-        <Route path="/Leavemodify" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><BulkLeaveAssignment /></Layout>
-          </ProtectedRoute>
-        } />
-        <Route path="/Manager/Reports" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><ManagerAttendanceReport /></Layout>
-          </ProtectedRoute>
-        } />
-        <Route path="/manager/ManagerATTM" element={
-          <ProtectedRoute role={role} requiredRole="Manager">
-            <Layout><ManagerDailyAttendance /></Layout>
-          </ProtectedRoute>
-        } />
 
         {/* Admin Routes */}
-        <Route path="/Admin/outlets" element={
+        <Route path="/admin/outlets" element={
           <ProtectedRoute role={role} requiredRole="Admin">
             <Layout><OutletManager /></Layout>
           </ProtectedRoute>
@@ -197,24 +187,24 @@ function App() {
         } />
 
         {/* Admin Reports */}
-        <Route path="/admin/reports" element={
+        <Route path="/admin/reports/attendance" element={
           <ProtectedRoute role={role} requiredRole="Admin">
             <Layout><AdminAttendanceReport /></Layout>
           </ProtectedRoute>
         } />
-        <Route path="/OutletSummary" element={
+        <Route path="/admin/reports/outlet-summary" element={
           <ProtectedRoute role={role} requiredRole="Admin">
             <Layout><AdminOutletSummary /></Layout>
           </ProtectedRoute>
         } />
 
         {/* Admin: Employee Management */}
-        <Route path="/admin/employee-status" element={
+        <Route path="/admin/employees/editor" element={
           <ProtectedRoute role={role} requiredRole="Admin">
             <Layout><AdminEmployeeEditor /></Layout>
           </ProtectedRoute>
         } />
-        <Route path="/admin/Employee/PasswordChange" element={
+        <Route path="/admin/employees/password-reset" element={
           <ProtectedRoute role={role} requiredRole="Admin">
             <Layout><EmployeePasswordReset /></Layout>
           </ProtectedRoute>
