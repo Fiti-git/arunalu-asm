@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Box, Button, Drawer, TextField, MenuItem, Typography, Paper,
+  Box, Button, Drawer, TextField, MenuItem, Typography,
   Alert, Divider, Switch, FormControlLabel, InputAdornment,
   IconButton, Avatar, Chip, Tabs, Tab, Stepper, Step, StepLabel,
-  Dialog, DialogTitle, DialogContent, DialogActions, Tooltip,
-  CircularProgress, Stack,
+  DialogContent, DialogActions, Tooltip, Dialog,
+  CircularProgress, Stack, Pagination, InputBase,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -18,6 +17,8 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CheckIcon from '@mui/icons-material/Check';
+import SearchIcon from '@mui/icons-material/Search';
+import CakeOutlinedIcon from '@mui/icons-material/CakeOutlined';
 import { useForm, Controller } from 'react-hook-form';
 import * as yup from 'yup';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -31,10 +32,6 @@ const step1Schema = yup.object({
   first_name: yup.string().required('First name is required'),
   last_name: yup.string().required('Last name is required'),
   date_of_birth: yup.string().required('Date of birth is required'),
-});
-
-const step2Schema = yup.object({
-  group: yup.mixed().required('Role is required').test('not-empty', 'Role is required', v => !!v),
 });
 
 const editSchema = yup.object({
@@ -56,11 +53,11 @@ const defaultValues = {
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-const initials = (name) =>
+const getInitials = (name) =>
   (name || '?').split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
 
-const avatarColor = (name) => {
-  const colors = ['#3b5bdb','#0c8599','#2f9e44','#e67700','#c92a2a','#5f3dc4','#1864ab'];
+const getAvatarColor = (name) => {
+  const colors = ['#3b5bdb','#0c8599','#2f9e44','#e67700','#c92a2a','#5f3dc4','#1864ab','#862e9c'];
   let h = 0;
   for (let i = 0; i < (name || '').length; i++) h = (name.charCodeAt(i) + h * 31) % colors.length;
   return colors[h];
@@ -78,10 +75,113 @@ function SectionLabel({ icon, children }) {
   );
 }
 
-function FieldRow({ children }) {
+// ─── Employee Card ────────────────────────────────────────────────────────────
+function EmployeeCard({ emp, onEdit }) {
+  const color = getAvatarColor(emp.fullname);
+  const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.fullname;
+
   return (
-    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
-      {children}
+    <Box
+      sx={{
+        bgcolor: '#fff',
+        border: '1px solid #ebebeb',
+        borderRadius: 3,
+        p: 2.5,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1.5,
+        transition: 'box-shadow 0.18s, transform 0.18s',
+        '&:hover': {
+          boxShadow: '0 6px 24px rgba(0,0,0,0.09)',
+          transform: 'translateY(-2px)',
+        },
+      }}
+    >
+      {/* Top row: avatar + edit button */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Avatar
+          sx={{
+            width: 48, height: 48, bgcolor: color,
+            fontWeight: 700, fontSize: '1.1rem', letterSpacing: 0.5,
+          }}
+        >
+          {getInitials(emp.fullname)}
+        </Avatar>
+        <Tooltip title="Edit employee">
+          <IconButton
+            size="small"
+            onClick={() => onEdit(emp)}
+            sx={{
+              border: '1px solid #ebebeb',
+              borderRadius: 2,
+              color: '#888',
+              '&:hover': { bgcolor: '#e3f2fd', color: '#1976d2', borderColor: '#90caf9' },
+            }}
+          >
+            <EditOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      {/* Name */}
+      <Box>
+        <Typography
+          variant="subtitle2"
+          fontWeight={700}
+          color="#111"
+          sx={{ lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {name}
+        </Typography>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}
+        >
+          @{emp.fullname}
+        </Typography>
+      </Box>
+
+      <Divider sx={{ borderColor: '#f5f5f5' }} />
+
+      {/* DOB */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+        <CakeOutlinedIcon sx={{ fontSize: 14, color: '#bbb' }} />
+        <Typography variant="caption" color="text.secondary">
+          {emp.date_of_birth || '—'}
+        </Typography>
+      </Box>
+
+      {/* Role */}
+      {emp.group_name && emp.group_name !== '—' && (
+        <Chip
+          label={emp.group_name}
+          size="small"
+          sx={{ alignSelf: 'flex-start', bgcolor: '#e8f4fd', color: '#1565c0', fontWeight: 600, fontSize: '0.72rem', height: 22 }}
+        />
+      )}
+
+      {/* Outlets */}
+      {emp.outlet_names?.length > 0 && (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+          {emp.outlet_names.slice(0, 2).map(n => (
+            <Chip key={n} label={n} size="small" variant="outlined" sx={{ fontSize: '0.68rem', height: 20, borderColor: '#ddd', color: '#555' }} />
+          ))}
+          {emp.outlet_names.length > 2 && (
+            <Chip label={`+${emp.outlet_names.length - 2}`} size="small" sx={{ fontSize: '0.68rem', height: 20, bgcolor: '#f5f5f5', color: '#777' }} />
+          )}
+        </Box>
+      )}
+
+      {/* Primary outlet */}
+      {emp.primary_outlet_name && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#2e7d32', flexShrink: 0 }} />
+          <Typography variant="caption" color="#2e7d32" fontWeight={600}>
+            {emp.primary_outlet_name}
+          </Typography>
+        </Box>
+      )}
     </Box>
   );
 }
@@ -91,36 +191,38 @@ export default function AdminEmployeeEditor() {
   const [employees, setEmployees] = useState([]);
   const [outlets, setOutlets] = useState([]);
   const [groups, setGroups] = useState([]);
-  const [paginationModel, setPaginationModel] = useState({ pageSize: 50, page: 0 });
-  const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const searchTimeout = useRef(null);
 
-  // Create wizard state
+  // Create wizard
   const [createOpen, setCreateOpen] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [createError, setCreateError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
 
-  // Edit drawer state
+  // Edit drawer
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
   const [editEmployee, setEditEmployee] = useState(null);
   const [editTab, setEditTab] = useState(0);
   const [editError, setEditError] = useState('');
   const [editSaving, setEditSaving] = useState(false);
 
-  // Separate forms for create and edit
   const createForm = useForm({ defaultValues, resolver: yupResolver(step1Schema) });
   const editForm = useForm({ defaultValues, resolver: yupResolver(editSchema) });
-
   const watchedCreateOutlets = createForm.watch('outlets');
   const watchedEditOutlets = editForm.watch('outlets');
 
-  // ─── Fetch ────────────────────────────────────────────────────────────────
-  const fetchEmployees = async (page = 0, pageSize = 50) => {
+  // ─── Fetch ──────────────────────────────────────────────────────────────
+  const fetchEmployees = useCallback(async (page = 1, q = '') => {
     setLoading(true);
     try {
       const [empRes, outletRes] = await Promise.all([
-        api.get('/api/v2/employees/', { params: { page: page + 1, page_size: pageSize } }),
+        api.get('/api/v2/employees/', { params: { page, page_size: 24, ...(q ? { search: q } : {}) } }),
         api.get('/api/outlets/'),
       ]);
       const outletsMap = outletRes.data.reduce((a, o) => ({ ...a, [o.id]: o.name }), {});
@@ -131,13 +233,14 @@ export default function AdminEmployeeEditor() {
         primary_outlet_name: emp.primary_outlet ? (outletsMap[emp.primary_outlet] || 'Unknown') : null,
         group_name: emp.groups?.[0] || '—',
       })));
-      setTotalRows(empRes.data.count || empList.length);
+      setTotalCount(empRes.data.count || empList.length);
+      setTotalPages(empRes.data.total_pages || Math.ceil((empRes.data.count || empList.length) / 24));
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     Promise.all([api.get('/api/outlets/'), api.get('/api/groups/')])
@@ -145,10 +248,20 @@ export default function AdminEmployeeEditor() {
   }, []);
 
   useEffect(() => {
-    fetchEmployees(paginationModel.page, paginationModel.pageSize);
-  }, [paginationModel]);
+    fetchEmployees(currentPage, search);
+  }, [currentPage, fetchEmployees]);
 
-  // ─── Create wizard ────────────────────────────────────────────────────────
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      setCurrentPage(1);
+      fetchEmployees(1, val);
+    }, 300);
+  };
+
+  // ─── Create ──────────────────────────────────────────────────────────────
   const openCreate = () => {
     createForm.reset({ ...defaultValues });
     setActiveStep(0);
@@ -160,26 +273,23 @@ export default function AdminEmployeeEditor() {
   const handleNextStep = async () => {
     let valid = false;
     if (activeStep === 0) valid = await createForm.trigger(['fullname','email','password','first_name','last_name','date_of_birth']);
-    else if (activeStep === 1) valid = await createForm.trigger(['group']);
     else valid = true;
     if (valid) setActiveStep(s => s + 1);
   };
 
   const handleCreateSubmit = async () => {
     setCreateError('');
+    setCreateSubmitting(true);
     const data = createForm.getValues();
     try {
       const formData = new FormData();
       for (const key in data) {
-        if (key === 'outlets') {
-          (data.outlets || []).forEach(id => formData.append('outlets', id));
-        } else if (data[key] !== '' && data[key] !== null && data[key] !== undefined) {
-          formData.append(key, data[key]);
-        }
+        if (key === 'outlets') (data.outlets || []).forEach(id => formData.append('outlets', id));
+        else if (data[key] !== '' && data[key] !== null && data[key] !== undefined) formData.append(key, data[key]);
       }
       await api.post('/api/v2/employees/create/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setCreateOpen(false);
-      fetchEmployees(paginationModel.page, paginationModel.pageSize);
+      fetchEmployees(currentPage, search);
     } catch (err) {
       const serverErrors = err.response?.data?.errors;
       if (serverErrors) {
@@ -187,23 +297,23 @@ export default function AdminEmployeeEditor() {
           if (f === 'non_field') setCreateError(m);
           else createForm.setError(f, { message: m });
         });
-        // Go back to the step that has the error
         const step1Fields = ['fullname','email','password','first_name','last_name','date_of_birth','idnumber'];
-        const step2Fields = ['group','outlets','primary_outlet'];
-        const errFields = Object.keys(serverErrors);
-        if (errFields.some(f => step1Fields.includes(f))) setActiveStep(0);
-        else if (errFields.some(f => step2Fields.includes(f))) setActiveStep(1);
+        if (Object.keys(serverErrors).some(f => step1Fields.includes(f))) setActiveStep(0);
+        else setActiveStep(1);
       } else {
         setCreateError('An unexpected error occurred. Please try again.');
       }
+    } finally {
+      setCreateSubmitting(false);
     }
   };
 
-  // ─── Edit drawer ──────────────────────────────────────────────────────────
+  // ─── Edit ────────────────────────────────────────────────────────────────
   const openEdit = (row) => {
     setEditEmployee(row);
     setEditTab(0);
     setEditError('');
+    setShowPassword(false);
     editForm.reset({
       ...defaultValues,
       fullname: row.fullname || '',
@@ -238,107 +348,22 @@ export default function AdminEmployeeEditor() {
     try {
       const formData = new FormData();
       for (const key in data) {
-        if (key === 'outlets') {
-          (data.outlets || []).forEach(id => formData.append('outlets', id));
-        } else if (data[key] !== '' && data[key] !== null && data[key] !== undefined) {
-          formData.append(key, data[key]);
-        }
+        if (key === 'outlets') (data.outlets || []).forEach(id => formData.append('outlets', id));
+        else if (data[key] !== '' && data[key] !== null && data[key] !== undefined) formData.append(key, data[key]);
       }
       await api.put(`/api/v2/employees/${editEmployee.employee_id}/`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setEditDrawerOpen(false);
-      fetchEmployees(paginationModel.page, paginationModel.pageSize);
+      fetchEmployees(currentPage, search);
     } catch (err) {
       const serverErrors = err.response?.data?.errors;
-      if (serverErrors) {
-        Object.entries(serverErrors).forEach(([f, m]) => {
-          if (f === 'non_field') setEditError(m);
-          else editForm.setError(f, { message: m });
-        });
-      } else {
-        setEditError('An unexpected error occurred.');
-      }
+      if (serverErrors) Object.entries(serverErrors).forEach(([f, m]) => {
+        if (f === 'non_field') setEditError(m); else editForm.setError(f, { message: m });
+      });
+      else setEditError('An unexpected error occurred.');
     } finally {
       setEditSaving(false);
     }
   };
-
-  // ─── Table columns ────────────────────────────────────────────────────────
-  const columns = [
-    {
-      field: 'fullname',
-      headerName: 'Employee',
-      flex: 1.5,
-      renderCell: (p) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, height: '100%' }}>
-          <Avatar sx={{ width: 34, height: 34, bgcolor: avatarColor(p.row.fullname), fontSize: '0.8rem', fontWeight: 700 }}>
-            {initials(p.row.fullname)}
-          </Avatar>
-          <Box>
-            <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.2 }}>{p.row.fullname}</Typography>
-            <Typography variant="caption" color="text.secondary">{p.row.email || '—'}</Typography>
-          </Box>
-        </Box>
-      ),
-    },
-    {
-      field: 'group_name',
-      headerName: 'Role',
-      flex: 0.8,
-      renderCell: (p) => (
-        p.row.group_name !== '—'
-          ? <Chip label={p.row.group_name} size="small" sx={{ bgcolor: '#e8f4fd', color: '#1565c0', fontWeight: 600, fontSize: '0.72rem' }} />
-          : <Typography variant="caption" color="text.disabled">—</Typography>
-      ),
-    },
-    {
-      field: 'outlet_names',
-      headerName: 'Outlets',
-      flex: 1.5,
-      renderCell: (p) => {
-        const names = p.row.outlet_names || [];
-        return (
-          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center', height: '100%' }}>
-            {names.slice(0, 2).map(n => (
-              <Chip key={n} label={n} size="small" variant="outlined" sx={{ fontSize: '0.68rem', height: 20 }} />
-            ))}
-            {names.length > 2 && (
-              <Typography variant="caption" color="text.secondary">+{names.length - 2}</Typography>
-            )}
-            {names.length === 0 && <Typography variant="caption" color="text.disabled">—</Typography>}
-          </Box>
-        );
-      },
-    },
-    {
-      field: 'primary_outlet_name',
-      headerName: 'Primary Outlet',
-      flex: 1,
-      renderCell: (p) => (
-        p.row.primary_outlet_name
-          ? <Chip label={p.row.primary_outlet_name} size="small" sx={{ bgcolor: '#e8f5e9', color: '#2e7d32', fontWeight: 600, fontSize: '0.72rem' }} />
-          : <Typography variant="caption" color="text.disabled">—</Typography>
-      ),
-    },
-    {
-      field: 'date_of_birth',
-      headerName: 'DOB',
-      flex: 0.8,
-      renderCell: (p) => <Typography variant="body2" color="text.secondary">{p.row.date_of_birth || '—'}</Typography>,
-    },
-    {
-      field: 'actions',
-      headerName: '',
-      width: 60,
-      sortable: false,
-      renderCell: (p) => (
-        <Tooltip title="Edit employee">
-          <IconButton size="small" onClick={() => openEdit(p.row)} sx={{ color: '#666', '&:hover': { color: '#1976d2', bgcolor: '#e3f2fd' } }}>
-            <EditOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      ),
-    },
-  ];
 
   const primaryOutletOptionsCreate = outlets.filter(o =>
     Array.isArray(watchedCreateOutlets) && watchedCreateOutlets.map(Number).includes(o.id)
@@ -346,7 +371,6 @@ export default function AdminEmployeeEditor() {
   const primaryOutletOptionsEdit = outlets.filter(o =>
     Array.isArray(watchedEditOutlets) && watchedEditOutlets.map(Number).includes(o.id)
   );
-
   const createErrors = createForm.formState.errors;
   const editErrors = editForm.formState.errors;
 
@@ -355,55 +379,82 @@ export default function AdminEmployeeEditor() {
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
       {/* ── Page Header ── */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
         <Box>
           <Typography variant="h5" fontWeight={700} color="#111" sx={{ letterSpacing: '-0.3px' }}>
             Employees
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Manage employee accounts, roles, and outlet assignments
+            {loading ? 'Loading…' : `${totalCount} employees`}
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={openCreate}
-          sx={{
-            textTransform: 'none', fontWeight: 600, borderRadius: '10px',
-            px: 3, py: 1.1, bgcolor: '#1976d2',
-            boxShadow: '0 2px 8px rgba(25,118,210,0.3)',
-            '&:hover': { bgcolor: '#1565c0', boxShadow: '0 4px 12px rgba(25,118,210,0.4)' },
-          }}
-        >
-          Add Employee
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+          {/* Search */}
+          <Box sx={{
+            display: 'flex', alignItems: 'center', gap: 1,
+            bgcolor: '#fff', border: '1px solid #e0e0e0', borderRadius: 2,
+            px: 1.5, py: 0.6,
+            '&:focus-within': { borderColor: '#1976d2', boxShadow: '0 0 0 2px rgba(25,118,210,0.12)' },
+          }}>
+            <SearchIcon sx={{ fontSize: 18, color: '#bbb' }} />
+            <InputBase
+              placeholder="Search employees…"
+              value={search}
+              onChange={handleSearchChange}
+              sx={{ fontSize: '0.85rem', width: 200 }}
+            />
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={openCreate}
+            sx={{
+              textTransform: 'none', fontWeight: 600, borderRadius: '10px',
+              px: 2.5, py: 1, bgcolor: '#1976d2',
+              boxShadow: '0 2px 8px rgba(25,118,210,0.3)',
+              '&:hover': { bgcolor: '#1565c0' },
+            }}
+          >
+            Add Employee
+          </Button>
+        </Box>
       </Box>
 
-      {/* ── Table ── */}
-      <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #ebebeb', overflow: 'hidden' }}>
-        <DataGrid
-          rows={employees}
-          columns={columns}
-          rowCount={totalRows}
-          paginationMode="server"
-          paginationModel={paginationModel}
-          onPaginationModelChange={setPaginationModel}
-          pageSizeOptions={[50, 100]}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          rowHeight={56}
-          autoHeight
-          disableColumnMenu
-          sx={{
-            border: 'none',
-            '& .MuiDataGrid-columnHeaders': { bgcolor: '#f9fafb', borderBottom: '1px solid #ebebeb' },
-            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 700, fontSize: '0.75rem', color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 },
-            '& .MuiDataGrid-cell': { borderBottom: '1px solid #f5f5f5' },
-            '& .MuiDataGrid-row:hover': { bgcolor: '#fafafa' },
-            '& .MuiDataGrid-footerContainer': { borderTop: '1px solid #ebebeb' },
-          }}
-        />
-      </Paper>
+      {/* ── Card Grid ── */}
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+          <CircularProgress size={32} sx={{ color: '#1976d2' }} />
+        </Box>
+      ) : employees.length === 0 ? (
+        <Box sx={{ textAlign: 'center', py: 12 }}>
+          <PersonOutlineIcon sx={{ fontSize: 52, color: '#ddd', mb: 1 }} />
+          <Typography color="text.secondary">No employees found</Typography>
+        </Box>
+      ) : (
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' },
+          gap: 2,
+        }}>
+          {employees.map(emp => (
+            <EmployeeCard key={emp.employee_id} emp={emp} onEdit={openEdit} />
+          ))}
+        </Box>
+      )}
+
+      {/* ── Pagination ── */}
+      {totalPages > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', pt: 1, pb: 2 }}>
+          <Pagination
+            count={totalPages}
+            page={currentPage}
+            onChange={(_, p) => { setCurrentPage(p); window.scrollTo(0, 0); }}
+            shape="rounded"
+            color="primary"
+            size="medium"
+          />
+        </Box>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {/* CREATE — Stepper Dialog                                               */}
@@ -415,7 +466,6 @@ export default function AdminEmployeeEditor() {
         fullWidth
         PaperProps={{ sx: { borderRadius: 4, boxShadow: '0 16px 48px rgba(0,0,0,0.15)' } }}
       >
-        {/* Dialog Header */}
         <Box sx={{ px: 3, pt: 3, pb: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <Box>
@@ -429,7 +479,6 @@ export default function AdminEmployeeEditor() {
             </IconButton>
           </Box>
 
-          {/* Stepper */}
           <Stepper activeStep={activeStep} sx={{ mt: 2.5 }}>
             {[
               { label: 'Personal', icon: <PersonOutlineIcon sx={{ fontSize: 18 }} /> },
@@ -450,7 +499,8 @@ export default function AdminEmployeeEditor() {
                     </Box>
                   )}
                 >
-                  <Typography variant="caption" fontWeight={activeStep === i ? 700 : 400} color={activeStep === i ? '#1976d2' : 'text.secondary'}>
+                  <Typography variant="caption" fontWeight={activeStep === i ? 700 : 400}
+                    color={activeStep === i ? '#1976d2' : 'text.secondary'}>
                     {s.label}
                   </Typography>
                 </StepLabel>
@@ -464,133 +514,117 @@ export default function AdminEmployeeEditor() {
         <DialogContent sx={{ px: 3, py: 2.5, minHeight: 340 }}>
           {createError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{createError}</Alert>}
 
-          {/* Step 1 — Personal */}
+          {/* Step 1 */}
           {activeStep === 0 && (
             <Box>
               <SectionLabel icon={<PersonOutlineIcon sx={{ fontSize: 18 }} />}>Account</SectionLabel>
-              <FieldRow>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
                 <Controller name="fullname" control={createForm.control} render={({ field }) => (
                   <TextField {...field} label="Username *" size="small" fullWidth error={!!createErrors.fullname} helperText={createErrors.fullname?.message || 'Used to log in'} autoComplete="off" />
                 )} />
                 <Controller name="email" control={createForm.control} render={({ field }) => (
                   <TextField {...field} label="Email *" type="email" size="small" fullWidth error={!!createErrors.email} helperText={createErrors.email?.message} autoComplete="off" />
                 )} />
-              </FieldRow>
-              <Box sx={{ mb: 2 }}>
+              </Box>
+              <Box sx={{ mb: 3 }}>
                 <Controller name="password" control={createForm.control} render={({ field }) => (
-                  <TextField
-                    {...field} label="Password *" type={showPassword ? 'text' : 'password'} size="small" fullWidth
+                  <TextField {...field} label="Password *" type={showPassword ? 'text' : 'password'} size="small" fullWidth
                     error={!!createErrors.password} helperText={createErrors.password?.message || 'Minimum 8 characters'}
                     autoComplete="new-password"
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton onClick={() => setShowPassword(p => !p)} size="small" edge="end" tabIndex={-1}>
-                            {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
+                    InputProps={{ endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton onClick={() => setShowPassword(p => !p)} size="small" edge="end" tabIndex={-1}>
+                          {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    )}}
                   />
                 )} />
               </Box>
-
               <SectionLabel icon={<PersonOutlineIcon sx={{ fontSize: 18 }} />}>Personal Details</SectionLabel>
-              <FieldRow>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
                 <Controller name="first_name" control={createForm.control} render={({ field }) => (
                   <TextField {...field} label="First Name *" size="small" fullWidth error={!!createErrors.first_name} helperText={createErrors.first_name?.message} />
                 )} />
                 <Controller name="last_name" control={createForm.control} render={({ field }) => (
                   <TextField {...field} label="Last Name *" size="small" fullWidth error={!!createErrors.last_name} helperText={createErrors.last_name?.message} />
                 )} />
-              </FieldRow>
-              <FieldRow>
                 <Controller name="phone_number" control={createForm.control} render={({ field }) => (
                   <TextField {...field} label="Phone Number" size="small" fullWidth />
                 )} />
                 <Controller name="date_of_birth" control={createForm.control} render={({ field }) => (
                   <TextField {...field} label="Date of Birth *" type="date" size="small" fullWidth error={!!createErrors.date_of_birth} helperText={createErrors.date_of_birth?.message} InputLabelProps={{ shrink: true }} />
                 )} />
-              </FieldRow>
-              <Box sx={{ mb: 1 }}>
-                <Controller name="idnumber" control={createForm.control} render={({ field }) => (
-                  <TextField {...field} label="ID Number" size="small" sx={{ width: '50%', pr: 1 }} />
-                )} />
               </Box>
+              <Controller name="idnumber" control={createForm.control} render={({ field }) => (
+                <TextField {...field} label="ID Number" size="small" sx={{ width: '50%' }} />
+              )} />
             </Box>
           )}
 
-          {/* Step 2 — Work */}
+          {/* Step 2 */}
           {activeStep === 1 && (
             <Box>
               <SectionLabel icon={<WorkOutlineIcon sx={{ fontSize: 18 }} />}>Work Assignment</SectionLabel>
-              <Box sx={{ mb: 2 }}>
+              <Stack spacing={2}>
                 <Controller name="group" control={createForm.control} render={({ field }) => (
-                  <TextField {...field} select label="Role *" size="small" fullWidth error={!!createErrors.group} helperText={createErrors.group?.message || 'Assign an access role'}>
+                  <TextField {...field} select label="Role *" size="small" fullWidth error={!!createErrors.group} helperText={createErrors.group?.message}>
                     {groups.map(g => <MenuItem key={g.id} value={g.id}>{g.name}</MenuItem>)}
                   </TextField>
                 )} />
-              </Box>
-              <Box sx={{ mb: 2 }}>
                 <Controller name="outlets" control={createForm.control} render={({ field }) => (
                   <TextField {...field} select label="Outlets" size="small" fullWidth SelectProps={{ multiple: true }} helperText="Employee can attend multiple outlets">
                     {outlets.map(o => <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>)}
                   </TextField>
                 )} />
-              </Box>
-              <Box sx={{ mb: 1 }}>
                 <Controller name="primary_outlet" control={createForm.control} render={({ field }) => (
                   <TextField {...field} select label="Primary Outlet" size="small" fullWidth helperText="Main outlet for attendance monitoring">
                     <MenuItem value="">— None —</MenuItem>
                     {primaryOutletOptionsCreate.map(o => <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>)}
                   </TextField>
                 )} />
-              </Box>
+              </Stack>
             </Box>
           )}
 
-          {/* Step 3 — EPF */}
+          {/* Step 3 */}
           {activeStep === 2 && (
             <Box>
               <SectionLabel icon={<AccountBalanceIcon sx={{ fontSize: 18 }} />}>EPF & Salary</SectionLabel>
-              <Box sx={{ mb: 2 }}>
+              <Stack spacing={2}>
                 <Controller name="cal_epf" control={createForm.control} render={({ field }) => (
                   <FormControlLabel
                     control={<Switch checked={!!field.value} onChange={e => field.onChange(e.target.checked)} size="small" color="primary" />}
                     label={<Typography variant="body2" fontWeight={500}>Calculate EPF for this employee</Typography>}
                   />
                 )} />
-              </Box>
-              <FieldRow>
-                <Controller name="epf_cal_date" control={createForm.control} render={({ field }) => (
-                  <TextField {...field} label="EPF Calculation Date" type="date" size="small" fullWidth InputLabelProps={{ shrink: true }} />
-                )} />
-                <Controller name="epf_grade" control={createForm.control} render={({ field }) => (
-                  <TextField {...field} label="EPF Grade" size="small" fullWidth />
-                )} />
-              </FieldRow>
-              <FieldRow>
-                <Controller name="epf_number" control={createForm.control} render={({ field }) => (
-                  <TextField {...field} label="EPF Number" size="small" fullWidth />
-                )} />
-                <Controller name="employ_number" control={createForm.control} render={({ field }) => (
-                  <TextField {...field} label="Employment Number" type="number" size="small" fullWidth />
-                )} />
-              </FieldRow>
-              <Box sx={{ mb: 2 }}>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Controller name="epf_cal_date" control={createForm.control} render={({ field }) => (
+                    <TextField {...field} label="EPF Calculation Date" type="date" size="small" fullWidth InputLabelProps={{ shrink: true }} />
+                  )} />
+                  <Controller name="epf_grade" control={createForm.control} render={({ field }) => (
+                    <TextField {...field} label="EPF Grade" size="small" fullWidth />
+                  )} />
+                  <Controller name="epf_number" control={createForm.control} render={({ field }) => (
+                    <TextField {...field} label="EPF Number" size="small" fullWidth />
+                  )} />
+                  <Controller name="employ_number" control={createForm.control} render={({ field }) => (
+                    <TextField {...field} label="Employment Number" type="number" size="small" fullWidth />
+                  )} />
+                </Box>
                 <Controller name="basic_salary" control={createForm.control} render={({ field }) => (
-                  <TextField {...field} label="Basic Salary" type="number" size="small" sx={{ width: '50%', pr: 1 }}
+                  <TextField {...field} label="Basic Salary" type="number" size="small" sx={{ width: '50%' }}
                     InputProps={{ startAdornment: <InputAdornment position="start">Rs.</InputAdornment> }} />
                 )} />
-              </Box>
-              <FieldRow>
-                {[['epf_com_per','EPF Company'],['epf_emp_per','EPF Employee'],['etf_com_per','ETF Company']].map(([n, l]) => (
-                  <Controller key={n} name={n} control={createForm.control} render={({ field }) => (
-                    <TextField {...field} label={l} type="number" size="small" fullWidth
-                      InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} />
-                  )} />
-                ))}
-              </FieldRow>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1.5 }}>
+                  {[['epf_com_per','EPF Company'],['epf_emp_per','EPF Employee'],['etf_com_per','ETF Company']].map(([n, l]) => (
+                    <Controller key={n} name={n} control={createForm.control} render={({ field }) => (
+                      <TextField {...field} label={l} type="number" size="small" fullWidth
+                        InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }} />
+                    )} />
+                  ))}
+                </Box>
+              </Stack>
             </Box>
           )}
         </DialogContent>
@@ -598,36 +632,23 @@ export default function AdminEmployeeEditor() {
         <Divider />
         <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
           {activeStep > 0 && (
-            <Button
-              startIcon={<ArrowBackIcon />}
-              onClick={() => setActiveStep(s => s - 1)}
-              variant="outlined"
-              sx={{ borderRadius: '8px', textTransform: 'none' }}
-            >
+            <Button startIcon={<ArrowBackIcon />} onClick={() => setActiveStep(s => s - 1)} variant="outlined" sx={{ borderRadius: '8px', textTransform: 'none' }}>
               Back
             </Button>
           )}
           <Box sx={{ flex: 1 }} />
-          <Button onClick={() => setCreateOpen(false)} sx={{ textTransform: 'none', color: '#666' }}>
-            Cancel
-          </Button>
+          <Button onClick={() => setCreateOpen(false)} sx={{ textTransform: 'none', color: '#666' }}>Cancel</Button>
           {activeStep < 2 ? (
-            <Button
-              endIcon={<ArrowForwardIcon />}
-              onClick={handleNextStep}
-              variant="contained"
-              sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, px: 3 }}
-            >
+            <Button endIcon={<ArrowForwardIcon />} onClick={handleNextStep} variant="contained" sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, px: 3 }}>
               Next
             </Button>
           ) : (
             <Button
-              onClick={handleCreateSubmit}
-              variant="contained"
+              onClick={handleCreateSubmit} variant="contained" disabled={createSubmitting}
               sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, px: 3, bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
-              startIcon={<CheckIcon />}
+              startIcon={createSubmitting ? <CircularProgress size={14} color="inherit" /> : <CheckIcon />}
             >
-              Create Employee
+              {createSubmitting ? 'Creating…' : 'Create Employee'}
             </Button>
           )}
         </DialogActions>
@@ -640,20 +661,12 @@ export default function AdminEmployeeEditor() {
         anchor="right"
         open={editDrawerOpen}
         onClose={() => setEditDrawerOpen(false)}
-        PaperProps={{
-          sx: { width: { xs: '100vw', sm: 480 }, display: 'flex', flexDirection: 'column' },
-        }}
+        PaperProps={{ sx: { width: { xs: '100vw', sm: 480 }, display: 'flex', flexDirection: 'column' } }}
       >
-        {/* Drawer Header */}
         <Box sx={{ px: 3, py: 2.5, bgcolor: '#f9fafb', borderBottom: '1px solid #ebebeb', flexShrink: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Avatar
-              sx={{
-                width: 44, height: 44, fontWeight: 700, fontSize: '1rem',
-                bgcolor: avatarColor(editEmployee?.fullname || ''),
-              }}
-            >
-              {initials(editEmployee?.fullname || '')}
+            <Avatar sx={{ width: 44, height: 44, fontWeight: 700, fontSize: '1rem', bgcolor: getAvatarColor(editEmployee?.fullname || '') }}>
+              {getInitials(editEmployee?.fullname || '')}
             </Avatar>
             <Box sx={{ flex: 1 }}>
               <Typography variant="subtitle1" fontWeight={700} color="#111">{editEmployee?.fullname}</Typography>
@@ -665,14 +678,11 @@ export default function AdminEmployeeEditor() {
           </Box>
         </Box>
 
-        {/* Tabs */}
         <Tabs
           value={editTab}
           onChange={(_, v) => setEditTab(v)}
           sx={{
-            px: 2,
-            borderBottom: '1px solid #ebebeb',
-            flexShrink: 0,
+            px: 2, borderBottom: '1px solid #ebebeb', flexShrink: 0,
             '& .MuiTab-root': { textTransform: 'none', fontWeight: 600, fontSize: '0.82rem', minWidth: 0, px: 2 },
           }}
         >
@@ -681,11 +691,9 @@ export default function AdminEmployeeEditor() {
           <Tab label="EPF & Pay" icon={<AccountBalanceIcon sx={{ fontSize: 16 }} />} iconPosition="start" />
         </Tabs>
 
-        {/* Drawer Body */}
         <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2.5 }}>
           {editError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{editError}</Alert>}
 
-          {/* Tab 0 — Personal */}
           {editTab === 0 && (
             <Box>
               <SectionLabel icon={<PersonOutlineIcon sx={{ fontSize: 18 }} />}>Account</SectionLabel>
@@ -697,23 +705,19 @@ export default function AdminEmployeeEditor() {
                   <TextField {...field} label="Email" type="email" size="small" fullWidth error={!!editErrors.email} helperText={editErrors.email?.message} />
                 )} />
                 <Controller name="password" control={editForm.control} render={({ field }) => (
-                  <TextField
-                    {...field} label="New Password" type={showPassword ? 'text' : 'password'} size="small" fullWidth
+                  <TextField {...field} label="New Password" type={showPassword ? 'text' : 'password'} size="small" fullWidth
                     error={!!editErrors.password} helperText={editErrors.password?.message || 'Leave blank to keep current password'}
                     autoComplete="new-password"
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton onClick={() => setShowPassword(p => !p)} size="small" edge="end" tabIndex={-1}>
-                            {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
+                    InputProps={{ endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton onClick={() => setShowPassword(p => !p)} size="small" edge="end" tabIndex={-1}>
+                          {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    )}}
                   />
                 )} />
               </Stack>
-
               <SectionLabel icon={<PersonOutlineIcon sx={{ fontSize: 18 }} />}>Personal Details</SectionLabel>
               <Stack spacing={2}>
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
@@ -734,7 +738,6 @@ export default function AdminEmployeeEditor() {
             </Box>
           )}
 
-          {/* Tab 1 — Work */}
           {editTab === 1 && (
             <Box>
               <SectionLabel icon={<WorkOutlineIcon sx={{ fontSize: 18 }} />}>Work Assignment</SectionLabel>
@@ -759,7 +762,6 @@ export default function AdminEmployeeEditor() {
             </Box>
           )}
 
-          {/* Tab 2 — EPF */}
           {editTab === 2 && (
             <Box>
               <SectionLabel icon={<AccountBalanceIcon sx={{ fontSize: 18 }} />}>EPF & Salary</SectionLabel>
@@ -801,19 +803,12 @@ export default function AdminEmployeeEditor() {
           )}
         </Box>
 
-        {/* Drawer Footer */}
         <Box sx={{ px: 3, py: 2, borderTop: '1px solid #ebebeb', bgcolor: '#f9fafb', flexShrink: 0, display: 'flex', gap: 1.5 }}>
-          <Button
-            onClick={() => setEditDrawerOpen(false)}
-            variant="outlined"
-            sx={{ borderRadius: '8px', textTransform: 'none', flex: 1 }}
-          >
+          <Button onClick={() => setEditDrawerOpen(false)} variant="outlined" sx={{ borderRadius: '8px', textTransform: 'none', flex: 1 }}>
             Cancel
           </Button>
           <Button
-            onClick={handleEditSave}
-            variant="contained"
-            disabled={editSaving}
+            onClick={handleEditSave} variant="contained" disabled={editSaving}
             sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, flex: 2 }}
             startIcon={editSaving ? <CircularProgress size={14} color="inherit" /> : <CheckIcon />}
           >
