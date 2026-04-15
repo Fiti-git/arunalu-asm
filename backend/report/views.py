@@ -3,6 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import connection
+from django.db.models import Q
 from datetime import datetime, date, timedelta
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
@@ -958,6 +959,17 @@ class EmployeeListCreateView(APIView):
 
     def get(self, request):
         employees = Employee.objects.select_related('user').all()
+
+        # Apply search filter
+        search = request.query_params.get('search', '').strip()
+        if search:
+            q = Q(fullname__icontains=search) | Q(user__first_name__icontains=search) | Q(user__username__icontains=search)
+            try:
+                q |= Q(employee_id=int(search))
+            except ValueError:
+                pass
+            employees = employees.filter(q)
+
         paginator = StandardPagination()
         page = paginator.paginate_queryset(employees, request)
         data = [employee_to_dict(emp) for emp in (page if page is not None else employees)]
