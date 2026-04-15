@@ -62,6 +62,12 @@ urlpatterns = [
     path('api/v2/employees/', views.v2_employee_list, name='v2-employee-list'),
     path('api/v2/employees/create/', views.v2_employee_create, name='v2-employee-create'),
     path('api/v2/employees/<int:employee_id>/', views.v2_employee_update, name='v2-employee-update'),
+
+    # V2 outlet endpoints
+    path('api/v2/outlets/', views.v2_outlet_list, name='v2-outlet-list'),
+    path('api/v2/outlets/create/', views.v2_outlet_create, name='v2-outlet-create'),
+    path('api/v2/outlets/<int:outlet_id>/', views.v2_outlet_update, name='v2-outlet-update'),
+    path('api/v2/outlets/<int:outlet_id>/delete/', views.v2_outlet_delete, name='v2-outlet-delete'),
     path('api/changepassword/<int:employee_id>/', views.ChangepswrdView.as_view(), name='edit-password'),
 
     # -----------------

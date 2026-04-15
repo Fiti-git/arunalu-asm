@@ -1,527 +1,606 @@
-import * as React from 'react';
-import { useState } from 'react';
-import Tooltip from '@mui/material/Tooltip';
-import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/DeleteOutlined';
-import SaveIcon from '@mui/icons-material/Save';
-import CancelIcon from '@mui/icons-material/Close';
-import MapIcon from '@mui/icons-material/Map';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  GridRowModes,
-  DataGrid,
-  GridActionsCellItem,
-  GridRowEditStopReasons,
-  Toolbar,
-  ToolbarButton,
-  
-} from '@mui/x-data-grid';
-import { Autocomplete, TextField ,Typography,Button,Paper,DialogTitle} from '@mui/material';
+  Box, Button, Drawer, TextField, MenuItem, Typography,
+  Alert, Divider, InputAdornment, IconButton, Chip,
+  Tabs, Tab, Dialog, DialogContent, DialogActions,
+  CircularProgress, Stack, InputBase, Tooltip,
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import CheckIcon from '@mui/icons-material/Check';
+import SearchIcon from '@mui/icons-material/Search';
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
+import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+import RadioButtonCheckedIcon from '@mui/icons-material/RadioButtonChecked';
+import MapIcon from '@mui/icons-material/Map';
+import { useForm, Controller } from 'react-hook-form';
+import * as yup from 'yup';
+import { yupResolver } from '@hookform/resolvers/yup';
 import api from 'utils/api';
 import MapDialog from 'components/MapDialog';
-import CreateOutlet from './create/CreateOutlet'
-import { Dialog,DialogContent, IconButton, Box } from '@mui/material';
 
-// Helper random ID generator (replace with your method)
-const randomId = () => Math.random().toString(36).substr(2, 9);
+// ─── Validation ──────────────────────────────────────────────────────────────
+const outletSchema = yup.object({
+  name: yup.string().required('Outlet name is required'),
+  address: yup.string().required('Address is required'),
+  latitude: yup.number().required('Latitude is required').typeError('Must be a number'),
+  longitude: yup.number().required('Longitude is required').typeError('Must be a number'),
+  radius_meters: yup.number().required('Radius is required').min(1, 'Min 1 meter').typeError('Must be a number'),
+});
 
-function EditToolbar(props) {
-  const { setRows, setRowModesModel } = props;
+const defaultValues = {
+  name: '', address: '',
+  latitude: '', longitude: '', radius_meters: 100,
+  manager: '', agency: '',
+};
 
-  const handleClick = () => {
-    const id = randomId();
-    setRows((oldRows) => [
-      ...oldRows,
-      { id, name: '', age: '', role: '', isNew: true },
-    ]);
-    setRowModesModel((oldModel) => ({
-      ...oldModel,
-      [id]: { mode: GridRowModes.Edit, fieldToFocus: 'name' },
-    }));
-  };
+// ─── Color palette for outlet avatars ────────────────────────────────────────
+const COLORS = ['#3b5bdb','#0c8599','#2f9e44','#e67700','#c92a2a','#5f3dc4','#1864ab','#862e9c'];
+const getColor = (name) => {
+  let h = 0;
+  for (let i = 0; i < (name || '').length; i++) h = (name.charCodeAt(i) + h * 31) % COLORS.length;
+  return COLORS[h];
+};
+const getInitials = (name) => (name || '?').slice(0, 2).toUpperCase();
 
+function SectionLabel({ icon, children }) {
   return (
-    
-    <Toolbar>
-      <Tooltip title="Add record">
-        <ToolbarButton onClick={handleClick}>
-          <AddIcon fontSize="small" />
-        </ToolbarButton>
-      </Tooltip>
-    </Toolbar>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, mt: 1 }}>
+      <Box sx={{ color: '#1976d2', display: 'flex' }}>{icon}</Box>
+      <Typography variant="overline" sx={{ fontWeight: 700, color: '#1976d2', fontSize: '0.72rem', letterSpacing: 1.5 }}>
+        {children}
+      </Typography>
+      <Box sx={{ flex: 1, height: '1px', bgcolor: '#e8e8e8', ml: 1 }} />
+    </Box>
   );
 }
 
-function ManagerEditCell({ id, field, value, api, options }) {
-  const selectedOption = options.find((opt) => opt.employee_id === value) ?? null;
-
-  const handleChange = (event, newValue) => {
-    api.setEditCellValue(
-      { id, field, value: newValue ? newValue.employee_id : null },
-      { debounceMs: 200 }
-    );
-  };
-
+// ─── Outlet Card ──────────────────────────────────────────────────────────────
+function OutletCard({ outlet, onEdit, onDelete }) {
+  const color = getColor(outlet.name);
   return (
-    <Autocomplete
-      options={options}
-      getOptionLabel={(opt) => opt.fullname || ''}
-      value={selectedOption}
-      onChange={handleChange}
-      isOptionEqualToValue={(opt, val) => opt.employee_id === val.employee_id}
-      renderInput={(params) => <TextField {...params} variant="standard" />}
-      size="small"
-      disableClearable
-      sx={{ width: '100%' }}
-    />
+    <Box sx={{
+      bgcolor: '#fff', border: '1px solid #ebebeb', borderRadius: 3, p: 2.5,
+      display: 'flex', flexDirection: 'column', gap: 1.5,
+      transition: 'box-shadow 0.18s, transform 0.18s',
+      '&:hover': { boxShadow: '0 6px 24px rgba(0,0,0,0.09)', transform: 'translateY(-2px)' },
+    }}>
+      {/* Top row */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Box sx={{
+          width: 48, height: 48, borderRadius: 2,
+          bgcolor: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontWeight: 800, fontSize: '1rem', letterSpacing: 1,
+          flexShrink: 0,
+        }}>
+          {getInitials(outlet.name)}
+        </Box>
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Tooltip title="Edit outlet">
+            <IconButton size="small" onClick={() => onEdit(outlet)}
+              sx={{ border: '1px solid #ebebeb', borderRadius: 2, color: '#888',
+                '&:hover': { bgcolor: '#e3f2fd', color: '#1976d2', borderColor: '#90caf9' } }}>
+              <EditOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Deactivate outlet">
+            <IconButton size="small" onClick={() => onDelete(outlet)}
+              sx={{ border: '1px solid #ebebeb', borderRadius: 2, color: '#888',
+                '&:hover': { bgcolor: '#ffebee', color: '#c62828', borderColor: '#ef9a9a' } }}>
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </Box>
+
+      {/* Name */}
+      <Box>
+        <Typography variant="subtitle2" fontWeight={700} color="#111"
+          sx={{ lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {outlet.name}
+        </Typography>
+        {outlet.address && (
+          <Typography variant="caption" color="text.secondary"
+            sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {outlet.address}
+          </Typography>
+        )}
+      </Box>
+
+      <Divider sx={{ borderColor: '#f5f5f5' }} />
+
+      {/* Coordinates */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+        <LocationOnOutlinedIcon sx={{ fontSize: 14, color: '#bbb' }} />
+        <Typography variant="caption" color="text.secondary">
+          {outlet.latitude?.toFixed(4)}, {outlet.longitude?.toFixed(4)}
+        </Typography>
+      </Box>
+
+      {/* Radius */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+        <RadioButtonCheckedIcon sx={{ fontSize: 14, color: '#bbb' }} />
+        <Typography variant="caption" color="text.secondary">
+          {outlet.radius_meters} m radius
+        </Typography>
+      </Box>
+
+      {/* Manager chip */}
+      {outlet.manager_name && (
+        <Chip label={outlet.manager_name} size="small" icon={<PersonOutlineIcon sx={{ fontSize: '14px !important' }} />}
+          sx={{ alignSelf: 'flex-start', bgcolor: '#e8f4fd', color: '#1565c0', fontWeight: 600, fontSize: '0.72rem', height: 22 }} />
+      )}
+
+      {/* Agency */}
+      {outlet.agency_name && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#2e7d32', flexShrink: 0 }} />
+          <Typography variant="caption" color="#2e7d32" fontWeight={600}>{outlet.agency_name}</Typography>
+        </Box>
+      )}
+    </Box>
   );
 }
 
-function AgencyEditCell({ id, field, value, api, options }) {
-  const selectedOption = options.find((opt) => opt.id === value) ?? null;
-
-  const handleChange = (event, newValue) => {
-    api.setEditCellValue(
-      { id, field, value: newValue ? newValue.id : null },
-      { debounceMs: 200 }
-    );
-  };
-
-  return (
-    <Autocomplete
-      options={options}
-      getOptionLabel={(opt) => opt.name || ''}
-      value={selectedOption}
-      onChange={handleChange}
-      isOptionEqualToValue={(opt, val) => opt.id === val.id}
-      renderInput={(params) => <TextField {...params} variant="standard" />}
-      size="small"
-      disableClearable
-      sx={{ width: '100%' }}
-    />
-  );
-}
-
-
-export default function FullFeaturedCrudGrid() {
-  const [rows, setRows] = useState([]); // Use outlets here later
-  const [rowModesModel, setRowModesModel] = useState({});
-  const [setOutlets] = useState([]);
-
-  const [agencies, setAgencies] = useState([]);
+// ─── Main Component ───────────────────────────────────────────────────────────
+export default function OutletManager() {
+  const [outlets, setOutlets] = useState([]);
   const [employees, setEmployees] = useState([]);
-  const [mapDialogOpen, setMapDialogOpen] = useState(false);
-  const [selectedOutlet, setSelectedOutlet] = useState(null);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [agencies, setAgencies] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const searchTimeout = useRef(null);
 
+  // Create dialog
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createSaving, setCreateSaving] = useState(false);
+  const [createMapOpen, setCreateMapOpen] = useState(false);
 
-const fetchOutlets = React.useCallback(async () => {
-  try {
-    const res = await api.get('/api/outlets/');
-    // Filter out outlets where the status is 0
-    const filteredData = res.data.filter((outlet) => outlet.status !== 0);
-    
-    const transformedData = filteredData.map((outlet) => ({
-      ...outlet,
-      coordinates: {
-        lat: outlet.latitude,
-        lng: outlet.longitude,
-      },
-    }));
-    setRows(transformedData); // Update state with filtered data
-    setOutlets(res.data); // You can use filtered data here if needed
-    setRowModesModel({});
-  } catch (err) {
-    console.error('Failed to fetch outlets:', err);
-  }
-}, [setOutlets]);
+  // Edit drawer
+  const [editDrawerOpen, setEditDrawerOpen] = useState(false);
+  const [editOutlet, setEditOutlet] = useState(null);
+  const [editTab, setEditTab] = useState(0);
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMapOpen, setEditMapOpen] = useState(false);
 
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
-const fetchAgencies = React.useCallback(async () => {
-  try {
-    const res = await api.get('/api/getagencies/');
-    setAgencies(res.data);
-  } catch (err) {
-    console.error('Failed to fetch agencies:', err);
-  }
-}, []);
+  const createForm = useForm({ defaultValues, resolver: yupResolver(outletSchema) });
+  const editForm = useForm({ defaultValues, resolver: yupResolver(outletSchema) });
+  const createErrors = createForm.formState.errors;
+  const editErrors = editForm.formState.errors;
 
-const fetchEmployees = React.useCallback(async () => {
-  try {
-    const res = await api.get('/api/getemployees/');
-    const d = res.data; setEmployees(Array.isArray(d) ? d : (d.results || []));
-  } catch (err) {
-    console.error('Failed to fetch employees:', err);
-  }
-}, []);
-
-// ✅ Call them inside useEffect after defining
-React.useEffect(() => {
-  fetchOutlets();
-  fetchAgencies();
-  fetchEmployees();
-}, [fetchOutlets, fetchAgencies, fetchEmployees]);
-
-
-  const handleRowEditStop = (params, event) => {
-    if (params.reason === GridRowEditStopReasons.rowFocusOut) {
-      event.defaultMuiPrevented = true;
-    }
-  };
-
-  const handleEditClick = (id) => () => {
-    setRowModesModel({ ...rowModesModel, [id]: { mode: GridRowModes.Edit } });
-  };
-
-  const handleSaveClick = (id) => () => {
-    setRowModesModel({ ...rowModesModel, [id]: { mode: GridRowModes.View } });
-  };
-
-  const handleDeleteClick = (id) => async () => {
+  // ─── Fetch ──────────────────────────────────────────────────────────────
+  const fetchOutlets = useCallback(async () => {
+    setLoading(true);
     try {
-      await api.delete(`/api/outlets/manage/${id}/`);
-    } catch (error) {
-      console.error('Failed to delete outlet:', error);
-    }
-  };
-
-  const handleCancelClick = (id) => () => {
-    setRowModesModel({
-      ...rowModesModel,
-      [id]: { mode: GridRowModes.View, ignoreModifications: true },
-    });
-
-    const editedRow = rows.find((row) => row.id === id);
-    if (editedRow?.isNew) {
-      setRows(rows.filter((row) => row.id !== id));
-    }
-  };
-
-  const processRowUpdate = async (newRow) => {
-    try {
-      // Coordinates is now { lat, lng }, so we need to flatten it before sending
-      const payload = {
-        ...newRow,
-        latitude: newRow.coordinates?.lat,
-        longitude: newRow.coordinates?.lng,
-      };
-
-      delete payload.coordinates;
-      delete payload.isNew;
-
-      await api.patch(`/api/outlets/manage/${newRow.id}/`, payload);
-
-      const updatedRow = {
-        ...newRow,
-        isNew: false,
-      };
-      setRows((prevRows) =>
-        prevRows.map((row) => (row.id === updatedRow.id ? updatedRow : row))
-      );
-      return updatedRow;
-    } catch (error) {
-      console.error('Failed to save row:', error);
-      throw error;
-    }
-  };
-
-  // Handle map dialog (just stub here)
-  const handleOpenMapDialog = (id, coordinates, api) => {
-    setSelectedOutlet({ id, coordinates, api });
-    setMapDialogOpen(true);
-  };
-
-  const handleSaveCoordinates = async ({ lat, lng }) => {
-    if (!selectedOutlet) return;
-    const { id, api } = selectedOutlet;
-
-    try {
-      await api.setEditCellValue({
-        id,
-        field: 'coordinates',
-        value: { lat, lng },
-      });
-      // api.startRowEditMode({ id });
+      const res = await api.get('/api/v2/outlets/');
+      setOutlets(res.data);
     } catch (err) {
-      console.error('Failed to update coordinates:', err);
+      console.error(err);
     } finally {
-      setMapDialogOpen(false);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchOutlets();
+    Promise.all([
+      api.get('/api/getemployees').catch(() => ({ data: [] })),
+      api.get('/api/getagencies/').catch(() => ({ data: [] })),
+    ]).then(([emp, ag]) => {
+      const d = emp.data;
+      setEmployees(Array.isArray(d) ? d : (d.results || []));
+      setAgencies(ag.data);
+    });
+  }, [fetchOutlets]);
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {}, 300);
+  };
+
+  const filtered = outlets.filter(o =>
+    !search || o.name?.toLowerCase().includes(search.toLowerCase()) ||
+    o.address?.toLowerCase().includes(search.toLowerCase()) ||
+    o.manager_name?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // ─── Create ──────────────────────────────────────────────────────────────
+  const openCreate = () => {
+    createForm.reset({ ...defaultValues });
+    setCreateError('');
+    setCreateOpen(true);
+  };
+
+  const handleCreateSubmit = async () => {
+    const valid = await createForm.trigger();
+    if (!valid) return;
+    setCreateSaving(true);
+    setCreateError('');
+    const data = createForm.getValues();
+    try {
+      await api.post('/api/v2/outlets/create/', data);
+      setCreateOpen(false);
+      fetchOutlets();
+    } catch (err) {
+      const serverErrors = err.response?.data?.errors;
+      if (serverErrors) {
+        Object.entries(serverErrors).forEach(([f, m]) => {
+          if (f === 'non_field') setCreateError(m);
+          else createForm.setError(f, { message: m });
+        });
+      } else {
+        setCreateError('An unexpected error occurred.');
+      }
+    } finally {
+      setCreateSaving(false);
     }
   };
 
-  const columns = [
-    {
-      field: 'name',
-      headerName: 'Name',
-      flex: 1,
-      editable: true,
-    },
-    {
-      field: 'address',
-      headerName: 'Address',
-      flex: 2,
-      editable: true,
-    },
-    {
-      field: 'coordinates',
-      headerName: 'Coordinates',
-      flex: 2,
-      editable: true,
-      sortable: false,
-      filterable: false,
-      renderCell: (params) => {
-        const { lat, lng } = params.value || {};
-        return (
-          <Box display="flex" alignItems="center" gap={1}>
-            <span>{lat}, {lng}</span>
-          </Box>
-        );
-      },
-      renderEditCell: (params) => {
-        const { id, value = {} } = params;
-        const { lat, lng } = value;
+  // ─── Edit ────────────────────────────────────────────────────────────────
+  const openEdit = (outlet) => {
+    setEditOutlet(outlet);
+    setEditTab(0);
+    setEditError('');
+    editForm.reset({
+      name: outlet.name || '',
+      address: outlet.address || '',
+      latitude: outlet.latitude ?? '',
+      longitude: outlet.longitude ?? '',
+      radius_meters: outlet.radius_meters ?? 100,
+      manager: outlet.manager || '',
+      agency: outlet.agency || '',
+    });
+    setEditDrawerOpen(true);
+  };
 
-        return (
-          <Box display="flex" alignItems="center" gap={1}>
-            <span>{lat}, {lng}</span>
-            <IconButton
-              size="small"
-              onClick={() => handleOpenMapDialog(id, { lat, lng }, params.api)}
-            >
-              <MapIcon fontSize="small" />
+  const handleEditSave = async () => {
+    const valid = await editForm.trigger();
+    if (!valid) { setEditTab(0); return; }
+    setEditSaving(true);
+    setEditError('');
+    const data = editForm.getValues();
+    try {
+      await api.put(`/api/v2/outlets/${editOutlet.id}/`, data);
+      setEditDrawerOpen(false);
+      fetchOutlets();
+    } catch (err) {
+      const serverErrors = err.response?.data?.errors;
+      if (serverErrors) Object.entries(serverErrors).forEach(([f, m]) => {
+        if (f === 'non_field') setEditError(m); else editForm.setError(f, { message: m });
+      });
+      else setEditError('An unexpected error occurred.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // ─── Delete ──────────────────────────────────────────────────────────────
+  const promptDelete = (outlet) => {
+    setDeleteTarget(outlet);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await api.delete(`/api/v2/outlets/${deleteTarget.id}/delete/`);
+      setDeleteConfirmOpen(false);
+      fetchOutlets();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // ─── Map helpers ─────────────────────────────────────────────────────────
+  const handleCreateMapSave = ({ lat, lng }) => {
+    createForm.setValue('latitude', lat);
+    createForm.setValue('longitude', lng);
+    setCreateMapOpen(false);
+  };
+
+  const handleEditMapSave = ({ lat, lng }) => {
+    editForm.setValue('latitude', lat);
+    editForm.setValue('longitude', lng);
+    setEditMapOpen(false);
+  };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+  return (
+    <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+
+      {/* ── Page Header ── */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700} color="#111" sx={{ letterSpacing: '-0.3px' }}>Outlets</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {loading ? 'Loading…' : `${filtered.length} outlets`}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+          <Box sx={{
+            display: 'flex', alignItems: 'center', gap: 1,
+            bgcolor: '#fff', border: '1px solid #e0e0e0', borderRadius: 2, px: 1.5, py: 0.6,
+            '&:focus-within': { borderColor: '#1976d2', boxShadow: '0 0 0 2px rgba(25,118,210,0.12)' },
+          }}>
+            <SearchIcon sx={{ fontSize: 18, color: '#bbb' }} />
+            <InputBase placeholder="Search outlets…" value={search} onChange={handleSearchChange}
+              sx={{ fontSize: '0.85rem', width: 200 }} />
+          </Box>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}
+            sx={{ textTransform: 'none', fontWeight: 600, borderRadius: '10px', px: 2.5, py: 1,
+              bgcolor: '#1976d2', boxShadow: '0 2px 8px rgba(25,118,210,0.3)',
+              '&:hover': { bgcolor: '#1565c0' } }}>
+            Add Outlet
+          </Button>
+        </Box>
+      </Box>
+
+      {/* ── Card Grid ── */}
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+          <CircularProgress size={32} sx={{ color: '#1976d2' }} />
+        </Box>
+      ) : filtered.length === 0 ? (
+        <Box sx={{ textAlign: 'center', py: 12 }}>
+          <StorefrontOutlinedIcon sx={{ fontSize: 52, color: '#ddd', mb: 1 }} />
+          <Typography color="text.secondary">No outlets found</Typography>
+        </Box>
+      ) : (
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' },
+          gap: 2,
+        }}>
+          {filtered.map(o => (
+            <OutletCard key={o.id} outlet={o} onEdit={openEdit} onDelete={promptDelete} />
+          ))}
+        </Box>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* CREATE — Dialog                                                        */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth
+        PaperProps={{ sx: { borderRadius: 4, boxShadow: '0 16px 48px rgba(0,0,0,0.15)' } }}>
+        <Box sx={{ px: 3, pt: 3, pb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box>
+            <Typography variant="h6" fontWeight={700}>New Outlet</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3 }}>
+              Fill in the outlet details below
+            </Typography>
+          </Box>
+          <IconButton onClick={() => setCreateOpen(false)} size="small" sx={{ color: '#999' }}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+        <Divider />
+
+        <DialogContent sx={{ px: 3, py: 2.5 }}>
+          {createError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{createError}</Alert>}
+
+          <SectionLabel icon={<StorefrontOutlinedIcon sx={{ fontSize: 18 }} />}>Basic Info</SectionLabel>
+          <Stack spacing={2} sx={{ mb: 2 }}>
+            <Controller name="name" control={createForm.control} render={({ field }) => (
+              <TextField {...field} label="Outlet Name *" size="small" fullWidth error={!!createErrors.name} helperText={createErrors.name?.message} />
+            )} />
+            <Controller name="address" control={createForm.control} render={({ field }) => (
+              <TextField {...field} label="Address *" size="small" fullWidth error={!!createErrors.address} helperText={createErrors.address?.message} />
+            )} />
+          </Stack>
+
+          <SectionLabel icon={<LocationOnOutlinedIcon sx={{ fontSize: 18 }} />}>Location</SectionLabel>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
+            <Controller name="latitude" control={createForm.control} render={({ field }) => (
+              <TextField {...field} label="Latitude *" size="small" fullWidth type="number"
+                error={!!createErrors.latitude} helperText={createErrors.latitude?.message} />
+            )} />
+            <Controller name="longitude" control={createForm.control} render={({ field }) => (
+              <TextField {...field} label="Longitude *" size="small" fullWidth type="number"
+                error={!!createErrors.longitude} helperText={createErrors.longitude?.message} />
+            )} />
+          </Box>
+          <Button size="small" startIcon={<MapIcon />} onClick={() => setCreateMapOpen(true)}
+            sx={{ textTransform: 'none', mb: 2, color: '#1976d2' }}>
+            Pick on Map
+          </Button>
+          <Box sx={{ mb: 2 }}>
+            <Controller name="radius_meters" control={createForm.control} render={({ field }) => (
+              <TextField {...field} label="Radius *" size="small" type="number"
+                sx={{ width: '50%' }} error={!!createErrors.radius_meters} helperText={createErrors.radius_meters?.message}
+                InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment> }} />
+            )} />
+          </Box>
+
+          <SectionLabel icon={<PersonOutlineIcon sx={{ fontSize: 18 }} />}>Assignment</SectionLabel>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+            <Controller name="manager" control={createForm.control} render={({ field }) => (
+              <TextField {...field} select label="Manager" size="small" fullWidth>
+                <MenuItem value="">— None —</MenuItem>
+                {employees.map(e => <MenuItem key={e.employee_id} value={e.employee_id}>{e.fullname}</MenuItem>)}
+              </TextField>
+            )} />
+            <Controller name="agency" control={createForm.control} render={({ field }) => (
+              <TextField {...field} select label="Agency" size="small" fullWidth>
+                <MenuItem value="">— None —</MenuItem>
+                {agencies.map(a => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}
+              </TextField>
+            )} />
+          </Box>
+        </DialogContent>
+
+        <Divider />
+        <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+          <Button onClick={() => setCreateOpen(false)} sx={{ textTransform: 'none', color: '#666' }}>Cancel</Button>
+          <Button onClick={handleCreateSubmit} variant="contained" disabled={createSaving}
+            sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, px: 3 }}
+            startIcon={createSaving ? <CircularProgress size={14} color="inherit" /> : <CheckIcon />}>
+            {createSaving ? 'Creating…' : 'Create Outlet'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* EDIT — Side Drawer                                                    */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      <Drawer anchor="right" open={editDrawerOpen} onClose={() => setEditDrawerOpen(false)}
+        PaperProps={{ sx: { width: { xs: '100vw', sm: 480 }, display: 'flex', flexDirection: 'column' } }}>
+        <Box sx={{ px: 3, py: 2.5, bgcolor: '#f9fafb', borderBottom: '1px solid #ebebeb', flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box sx={{
+              width: 44, height: 44, borderRadius: 2, bgcolor: getColor(editOutlet?.name || ''),
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontWeight: 800, fontSize: '1rem',
+            }}>
+              {getInitials(editOutlet?.name || '')}
+            </Box>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" fontWeight={700} color="#111">{editOutlet?.name}</Typography>
+              <Typography variant="caption" color="text.secondary">{editOutlet?.address || 'No address'}</Typography>
+            </Box>
+            <IconButton onClick={() => setEditDrawerOpen(false)} size="small" sx={{ color: '#999' }}>
+              <CloseIcon />
             </IconButton>
           </Box>
-        );
-      },
-    },
-    {
-      field: 'radius_meters',
-      headerName: 'Radius (m)',
-      type: 'number',
-      flex: 0.5,
-      editable: true,
-    },
-    {
-      field: 'manager',
-      headerName: 'Manager',
-      flex: 1,
-      editable: true,
-      renderCell: (params) => {
-        if (!params.row) return '';
-        const emp = employees.find((e) => e.employee_id === params?.value);
-        return emp ? emp.fullname : '';
-      },
-      type: 'singleSelect',
-      valueOptions: employees.map((e) => ({
-        value: e.employee_id,
-        label: e.fullname,
-      })),
-      renderEditCell: (params) => (
-        <ManagerEditCell {...params} options={employees} />
-      ),
-      valueFormatter: (params) => {
-        const emp = employees.find((e) => e.employee_id === params?.value);
-        return emp ? emp.fullname : '';
-      }
-    },
-    {
-      field: 'actions',
-      type: 'actions',
-      headerName: 'Actions',
-      width: 100,
-      cellClassName: 'actions',
-      getActions: ({ id }) => {
-        const isInEditMode = rowModesModel[id]?.mode === GridRowModes.Edit;
+        </Box>
 
-        if (isInEditMode) {
-          return [
-            <GridActionsCellItem
-              key="save"
-              icon={<SaveIcon />}
-              label="Save"
-              onClick={handleSaveClick(id)}
-              color="primary"
-            />,
-            <GridActionsCellItem
-              key="cancel"
-              icon={<CancelIcon />}
-              label="Cancel"
-              onClick={handleCancelClick(id)}
-              color="inherit"
-            />,
-          ];
-        }
+        <Tabs value={editTab} onChange={(_, v) => setEditTab(v)}
+          sx={{ px: 2, borderBottom: '1px solid #ebebeb', flexShrink: 0,
+            '& .MuiTab-root': { textTransform: 'none', fontWeight: 600, fontSize: '0.82rem', minWidth: 0, px: 2 } }}>
+          <Tab label="Details" icon={<StorefrontOutlinedIcon sx={{ fontSize: 16 }} />} iconPosition="start" />
+          <Tab label="Location" icon={<LocationOnOutlinedIcon sx={{ fontSize: 16 }} />} iconPosition="start" />
+          <Tab label="Assignment" icon={<PersonOutlineIcon sx={{ fontSize: 16 }} />} iconPosition="start" />
+        </Tabs>
 
-        return [
-          <GridActionsCellItem
-            key="edit"
-            icon={<EditIcon />}
-            label="Edit"
-            onClick={handleEditClick(id)}
-            color="inherit"
-          />,
-          <GridActionsCellItem
-            key="delete"
-            icon={<DeleteIcon />}
-            label="Delete"
-            onClick={handleDeleteClick(id)}
-            color="inherit"
-          />,
-        ];
-      },
-    },
-  ];
+        <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2.5 }}>
+          {editError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{editError}</Alert>}
 
-return (
-  <Box
-    sx={{
-      width: '95%',
-      mx: 'auto',
-      mt: 4,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 3,
-      textTransform: 'uppercase',
-    }}
-  >
-    {/* Header Row */}
-    <Box
-      sx={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-      }}
-    >
-      <Typography
-        variant="h4"
-        sx={{
-          fontWeight: 700,
-          letterSpacing: 0.5,
-          color: '#333',
-        }}
-      >
-        Outlets
-      </Typography>
+          {editTab === 0 && (
+            <Stack spacing={2}>
+              <SectionLabel icon={<StorefrontOutlinedIcon sx={{ fontSize: 18 }} />}>Basic Info</SectionLabel>
+              <Controller name="name" control={editForm.control} render={({ field }) => (
+                <TextField {...field} label="Outlet Name *" size="small" fullWidth error={!!editErrors.name} helperText={editErrors.name?.message} />
+              )} />
+              <Controller name="address" control={editForm.control} render={({ field }) => (
+                <TextField {...field} label="Address *" size="small" fullWidth error={!!editErrors.address} helperText={editErrors.address?.message} />
+              )} />
+            </Stack>
+          )}
 
-      <Button
-        variant="contained"
-        startIcon={<AddIcon />}
-        onClick={() => setCreateDialogOpen(true)}
-        sx={{
-          backgroundColor: '#1976d2',
-          textTransform: 'none',
-          fontWeight: 600,
-          borderRadius: '8px',
-          '&:hover': {
-            backgroundColor: '#1565c0',
-          },
-        }}
-      >
-        Add Outlet
-      </Button>
+          {editTab === 1 && (
+            <Box>
+              <SectionLabel icon={<LocationOnOutlinedIcon sx={{ fontSize: 18 }} />}>Location</SectionLabel>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
+                <Controller name="latitude" control={editForm.control} render={({ field }) => (
+                  <TextField {...field} label="Latitude *" size="small" fullWidth type="number"
+                    error={!!editErrors.latitude} helperText={editErrors.latitude?.message} />
+                )} />
+                <Controller name="longitude" control={editForm.control} render={({ field }) => (
+                  <TextField {...field} label="Longitude *" size="small" fullWidth type="number"
+                    error={!!editErrors.longitude} helperText={editErrors.longitude?.message} />
+                )} />
+              </Box>
+              <Button size="small" startIcon={<MapIcon />} onClick={() => setEditMapOpen(true)}
+                sx={{ textTransform: 'none', mb: 2, color: '#1976d2' }}>
+                Pick on Map
+              </Button>
+              <Controller name="radius_meters" control={editForm.control} render={({ field }) => (
+                <TextField {...field} label="Radius *" size="small" type="number" fullWidth
+                  error={!!editErrors.radius_meters} helperText={editErrors.radius_meters?.message}
+                  InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment> }} />
+              )} />
+            </Box>
+          )}
+
+          {editTab === 2 && (
+            <Stack spacing={2}>
+              <SectionLabel icon={<PersonOutlineIcon sx={{ fontSize: 18 }} />}>Assignment</SectionLabel>
+              <Controller name="manager" control={editForm.control} render={({ field }) => (
+                <TextField {...field} select label="Manager" size="small" fullWidth>
+                  <MenuItem value="">— None —</MenuItem>
+                  {employees.map(e => <MenuItem key={e.employee_id} value={e.employee_id}>{e.fullname}</MenuItem>)}
+                </TextField>
+              )} />
+              <Controller name="agency" control={editForm.control} render={({ field }) => (
+                <TextField {...field} select label="Agency" size="small" fullWidth>
+                  <MenuItem value="">— None —</MenuItem>
+                  {agencies.map(a => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}
+                </TextField>
+              )} />
+            </Stack>
+          )}
+        </Box>
+
+        <Box sx={{ px: 3, py: 2, borderTop: '1px solid #ebebeb', bgcolor: '#f9fafb', flexShrink: 0, display: 'flex', gap: 1.5 }}>
+          <Button onClick={() => setEditDrawerOpen(false)} variant="outlined"
+            sx={{ borderRadius: '8px', textTransform: 'none', flex: 1 }}>Cancel</Button>
+          <Button onClick={handleEditSave} variant="contained" disabled={editSaving}
+            sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, flex: 2 }}
+            startIcon={editSaving ? <CircularProgress size={14} color="inherit" /> : <CheckIcon />}>
+            {editSaving ? 'Saving…' : 'Save Changes'}
+          </Button>
+        </Box>
+      </Drawer>
+
+      {/* ── Delete Confirm ── */}
+      <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} maxWidth="xs" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <Box sx={{ p: 3 }}>
+          <Typography variant="h6" fontWeight={700} mb={1}>Deactivate Outlet?</Typography>
+          <Typography variant="body2" color="text.secondary" mb={3}>
+            <strong>{deleteTarget?.name}</strong> will be marked inactive and hidden from all lists.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Button onClick={() => setDeleteConfirmOpen(false)} variant="outlined" sx={{ flex: 1, borderRadius: '8px', textTransform: 'none' }}>
+              Cancel
+            </Button>
+            <Button onClick={handleDelete} variant="contained" disabled={deleteLoading}
+              color="error" sx={{ flex: 1, borderRadius: '8px', textTransform: 'none', fontWeight: 600 }}
+              startIcon={deleteLoading ? <CircularProgress size={14} color="inherit" /> : <DeleteOutlineIcon />}>
+              {deleteLoading ? 'Deactivating…' : 'Deactivate'}
+            </Button>
+          </Box>
+        </Box>
+      </Dialog>
+
+      {/* ── Map Dialogs ── */}
+      <Dialog open={createMapOpen} onClose={() => setCreateMapOpen(false)} maxWidth="md" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <Box sx={{ p: 2, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography fontWeight={700}>Select Location</Typography>
+          <IconButton onClick={() => setCreateMapOpen(false)} size="small"><CloseIcon fontSize="small" /></IconButton>
+        </Box>
+        <DialogContent sx={{ p: 0 }}>
+          <MapDialog open={createMapOpen} onClose={() => setCreateMapOpen(false)} onSave={handleCreateMapSave}
+            initialCoordinates={{ lat: createForm.getValues('latitude') || 7.2906, lng: createForm.getValues('longitude') || 80.6337 }} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editMapOpen} onClose={() => setEditMapOpen(false)} maxWidth="md" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <Box sx={{ p: 2, borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography fontWeight={700}>Select Location</Typography>
+          <IconButton onClick={() => setEditMapOpen(false)} size="small"><CloseIcon fontSize="small" /></IconButton>
+        </Box>
+        <DialogContent sx={{ p: 0 }}>
+          <MapDialog open={editMapOpen} onClose={() => setEditMapOpen(false)} onSave={handleEditMapSave}
+            initialCoordinates={{ lat: editForm.getValues('latitude') || editOutlet?.latitude || 7.2906, lng: editForm.getValues('longitude') || editOutlet?.longitude || 80.6337 }} />
+        </DialogContent>
+      </Dialog>
     </Box>
-
-    {/* Outlet Table */}
-    <Paper
-      elevation={2}
-      sx={{
-        borderRadius: 3,
-        overflow: 'hidden',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-      }}
-    >
-      <DataGrid
-        rows={rows}
-        columns={columns}
-        editMode="row"
-        rowModesModel={rowModesModel}
-        onRowModesModelChange={setRowModesModel}
-        onRowEditStop={handleRowEditStop}
-        processRowUpdate={processRowUpdate}
-        slots={{ toolbar: EditToolbar }}
-        slotProps={{ toolbar: { setRows, setRowModesModel } }}
-        experimentalFeatures={{ newEditingApi: true }}
-        autoHeight
-        sx={{
-          border: 'none',
-          '& .MuiDataGrid-columnHeaders': {
-            backgroundColor: '#f9fafb',
-            fontWeight: 600,
-          },
-          '& .MuiDataGrid-row:hover': {
-            backgroundColor: '#f5f5f5',
-          },
-          scrollbarWidth: 'none',
-          '&::-webkit-scrollbar': {
-            display: 'none',
-          },
-        }}
-      />
-    </Paper>
-
-    {/* Map Dialog */}
-    <Dialog
-      open={mapDialogOpen}
-      onClose={() => setMapDialogOpen(false)}
-      maxWidth="md"
-      fullWidth
-      PaperProps={{
-        sx: { borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' },
-      }}
-    >
-      <DialogTitle
-        sx={{
-          fontWeight: 700,
-          backgroundColor: '#f9fafb',
-          borderBottom: '1px solid #eee',
-        }}
-      >
-        Select Outlet Location
-      </DialogTitle>
-
-      <DialogContent>
-        <MapDialog
-          open={mapDialogOpen}
-          onClose={() => setMapDialogOpen(false)}
-          onSave={handleSaveCoordinates}
-          initialCoordinates={{
-            lat: selectedOutlet?.coordinates?.lat ?? 7.2906,
-            lng: selectedOutlet?.coordinates?.lng ?? 80.6337,
-          }}
-        />
-      </DialogContent>
-    </Dialog>
-
-    {/* Create Outlet Dialog */}
-    <Dialog
-      open={createDialogOpen}
-      onClose={() => setCreateDialogOpen(false)}
-      maxWidth="sm"
-      fullWidth
-      PaperProps={{
-        sx: { borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' },
-      }}
-    >
-      <DialogTitle
-        sx={{
-          fontWeight: 700,
-          backgroundColor: '#f9fafb',
-          borderBottom: '1px solid #eee',
-        }}
-      >
-        Create New Outlet
-      </DialogTitle>
-
-      <DialogContent sx={{ p: 3 }}>
-        <CreateOutlet
-          onSuccess={() => {
-            setCreateDialogOpen(false);
-            fetchOutlets();
-          }}
-        />
-      </DialogContent>
-    </Dialog>
-  </Box>
-);
-
+  );
 }

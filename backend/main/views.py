@@ -1183,3 +1183,195 @@ def v2_employee_update(request, employee_id):
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+# ---------------------------------------------------------------------------
+# V2 Outlet API — structured validation, consistent error responses
+# ---------------------------------------------------------------------------
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def v2_outlet_list(request):
+    """Return all active outlets with manager and agency names."""
+    outlets = Outlet.objects.filter(status=1).select_related('manager', 'agency')
+    data = []
+    for o in outlets:
+        data.append({
+            'id': o.id,
+            'name': o.name,
+            'address': o.address,
+            'latitude': o.latitude,
+            'longitude': o.longitude,
+            'radius_meters': o.radius_meters,
+            'manager': o.manager_id,
+            'manager_name': o.manager.fullname if o.manager else None,
+            'agency': o.agency_id,
+            'agency_name': o.agency.name if o.agency else None,
+            'status': o.status,
+        })
+    return Response(data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def v2_outlet_create(request):
+    """Create an outlet with field-level validation errors."""
+    data = request.data
+    errors = {}
+
+    name = (data.get('name') or '').strip()
+    address = (data.get('address') or '').strip()
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    radius_meters = data.get('radius_meters')
+    manager_id = data.get('manager') or None
+    agency_id = data.get('agency') or None
+
+    if not name:
+        errors['name'] = 'Outlet name is required.'
+    elif Outlet.objects.filter(name__iexact=name, status=1).exists():
+        errors['name'] = 'An outlet with this name already exists.'
+    if not address:
+        errors['address'] = 'Address is required.'
+    if latitude is None or latitude == '':
+        errors['latitude'] = 'Latitude is required.'
+    if longitude is None or longitude == '':
+        errors['longitude'] = 'Longitude is required.'
+    if not radius_meters:
+        errors['radius_meters'] = 'Radius is required.'
+
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+        radius_meters = int(radius_meters)
+    except (ValueError, TypeError):
+        return Response({'errors': {'non_field': 'Invalid coordinates or radius.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    manager = None
+    if manager_id:
+        try:
+            manager = Employee.objects.get(employee_id=manager_id)
+        except Employee.DoesNotExist:
+            return Response({'errors': {'manager': 'Selected manager not found.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    agency = None
+    if agency_id:
+        try:
+            from .models import Agency
+            agency = Agency.objects.get(id=agency_id)
+        except Agency.DoesNotExist:
+            return Response({'errors': {'agency': 'Selected agency not found.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    outlet = Outlet.objects.create(
+        name=name,
+        address=address,
+        latitude=latitude,
+        longitude=longitude,
+        radius_meters=radius_meters,
+        manager=manager,
+        agency=agency,
+    )
+
+    return Response({
+        'id': outlet.id,
+        'name': outlet.name,
+        'address': outlet.address,
+        'latitude': outlet.latitude,
+        'longitude': outlet.longitude,
+        'radius_meters': outlet.radius_meters,
+        'manager': outlet.manager_id,
+        'manager_name': outlet.manager.fullname if outlet.manager else None,
+        'agency': outlet.agency_id,
+        'agency_name': outlet.agency.name if outlet.agency else None,
+        'status': outlet.status,
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def v2_outlet_update(request, outlet_id):
+    """Update an outlet with field-level validation errors."""
+    try:
+        outlet = Outlet.objects.select_related('manager', 'agency').get(id=outlet_id)
+    except Outlet.DoesNotExist:
+        return Response({'errors': {'non_field': 'Outlet not found.'}}, status=status.HTTP_404_NOT_FOUND)
+
+    data = request.data
+    errors = {}
+
+    name = (data.get('name') or '').strip()
+    if not name:
+        errors['name'] = 'Outlet name is required.'
+    elif Outlet.objects.filter(name__iexact=name, status=1).exclude(id=outlet_id).exists():
+        errors['name'] = 'An outlet with this name already exists.'
+    if not (data.get('address') or '').strip():
+        errors['address'] = 'Address is required.'
+    if data.get('latitude') in [None, '']:
+        errors['latitude'] = 'Latitude is required.'
+    if data.get('longitude') in [None, '']:
+        errors['longitude'] = 'Longitude is required.'
+    if not data.get('radius_meters'):
+        errors['radius_meters'] = 'Radius is required.'
+
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        outlet.name = name
+        outlet.address = data.get('address', outlet.address).strip()
+        outlet.latitude = float(data.get('latitude', outlet.latitude))
+        outlet.longitude = float(data.get('longitude', outlet.longitude))
+        outlet.radius_meters = int(data.get('radius_meters', outlet.radius_meters))
+    except (ValueError, TypeError):
+        return Response({'errors': {'non_field': 'Invalid coordinates or radius.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    manager_id = data.get('manager')
+    if manager_id in [None, '', 'null']:
+        outlet.manager = None
+    elif manager_id is not None:
+        try:
+            outlet.manager = Employee.objects.get(employee_id=manager_id)
+        except Employee.DoesNotExist:
+            return Response({'errors': {'manager': 'Selected manager not found.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    agency_id = data.get('agency')
+    if agency_id in [None, '', 'null']:
+        outlet.agency = None
+    elif agency_id is not None:
+        try:
+            from .models import Agency
+            outlet.agency = Agency.objects.get(id=agency_id)
+        except Agency.DoesNotExist:
+            return Response({'errors': {'agency': 'Selected agency not found.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    outlet.save()
+
+    return Response({
+        'id': outlet.id,
+        'name': outlet.name,
+        'address': outlet.address,
+        'latitude': outlet.latitude,
+        'longitude': outlet.longitude,
+        'radius_meters': outlet.radius_meters,
+        'manager': outlet.manager_id,
+        'manager_name': outlet.manager.fullname if outlet.manager else None,
+        'agency': outlet.agency_id,
+        'agency_name': outlet.agency.name if outlet.agency else None,
+        'status': outlet.status,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def v2_outlet_delete(request, outlet_id):
+    """Soft-delete an outlet (set status=0)."""
+    try:
+        outlet = Outlet.objects.get(id=outlet_id)
+    except Outlet.DoesNotExist:
+        return Response({'errors': {'non_field': 'Outlet not found.'}}, status=status.HTTP_404_NOT_FOUND)
+    outlet.status = 0
+    outlet.save(update_fields=['status'])
+    return Response({'message': 'Outlet deactivated.'}, status=status.HTTP_200_OK)
+
+
