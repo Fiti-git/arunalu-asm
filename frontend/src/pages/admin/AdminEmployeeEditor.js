@@ -24,6 +24,8 @@ import * as yup from 'yup';
 import { yupResolver } from '@hookform/resolvers/yup';
 import api from 'utils/api';
 
+const BASE_URL = process.env.REACT_APP_API_URL || 'http://123.231.60.24:1605';
+
 // ─── Validation ──────────────────────────────────────────────────────────────
 const step1Schema = yup.object({
   fullname: yup.string().required('Username is required'),
@@ -100,6 +102,7 @@ function EmployeeCard({ emp, onEdit }) {
       {/* Top row: avatar + edit button */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <Avatar
+          src={emp.reference_photo ? `${BASE_URL}${emp.reference_photo}` : undefined}
           sx={{
             width: 48, height: 48, bgcolor: color,
             fontWeight: 700, fontSize: '1.1rem', letterSpacing: 0.5,
