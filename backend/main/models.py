@@ -123,7 +123,29 @@ class Attendance(models.Model):
             elif self.worked_hours > 8:
                 self.ot_hours = self.worked_hours - 8
         super().save(*args, **kwargs)
-    
+
+
+class AttendanceEditRequest(models.Model):
+    STATUS_CHOICES = [('Pending', 'Pending'), ('Approved', 'Approved'), ('Rejected', 'Rejected')]
+
+    request_id = models.AutoField(primary_key=True)
+    attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name='edit_requests')
+    requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='edit_requests')
+    proposed_check_in = models.DateTimeField()
+    proposed_check_out = models.DateTimeField()
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_edit_requests')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"EditRequest #{self.request_id} - {self.attendance} - {self.status}"
+
+
 class LeaveType(models.Model):
     id = models.AutoField(primary_key=True)  # Explicitly adding an auto-incrementing primary key field
     att_type = models.CharField(max_length=50, unique=True)  # Unique identifier for attendance type

@@ -37,6 +37,8 @@ import AdminOutletSummary from './pages/admin/AdminOutletSummary';
 import EmployeePasswordReset from './pages/admin/assign/EmployeePasswordReset';
 import AdminLeaveApproval from './pages/admin/assign/AdminLeaveApproval';
 import DeviceOutletAssignment from './pages/admin/assign/DeviceOutletAssignment';
+import AttendanceEditRequests from './pages/admin/AttendanceEditRequests';
+import UserStatusManager from './pages/admin/UserStatusManager';
 
 
 const ProtectedRoute = ({ role, children, requiredRole }) => {
@@ -210,6 +212,16 @@ function App() {
         <Route path="/admin/employees/face-reference" element={
           <ProtectedRoute role={role} requiredRole="Admin">
             <Layout><FaceReferenceImages /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/attendance-edit-requests" element={
+          <ProtectedRoute role={role} requiredRole="Admin">
+            <Layout><AttendanceEditRequests /></Layout>
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/employees/status" element={
+          <ProtectedRoute role={role} requiredRole="Admin">
+            <Layout><UserStatusManager /></Layout>
           </ProtectedRoute>
         } />
 

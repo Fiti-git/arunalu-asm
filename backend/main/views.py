@@ -75,6 +75,14 @@ def deactivate_employee(request, employee_id):
         employee.user.is_active = False
         employee.user.save(update_fields=["is_active"])
 
+    # Log the status change
+    EmployeeStatusLog.objects.create(
+        employee=employee,
+        action="DEACTIVATED",
+        action_by=request.user,
+        note=request.data.get("note", "")
+    )
+
     return Response({
         "message": f"Employee {employee.fullname} has been deactivated.",
         "employee_id": employee.employee_id,
@@ -111,12 +119,41 @@ def activate_employee(request, employee_id):
         employee.user.is_active = True
         employee.user.save(update_fields=["is_active"])
 
+    # Log the status change
+    EmployeeStatusLog.objects.create(
+        employee=employee,
+        action="ACTIVATED",
+        action_by=request.user,
+        note=request.data.get("note", "")
+    )
+
     return Response({
         "message": f"Employee {employee.fullname} has been activated.",
         "employee_id": employee.employee_id,
         "is_active": True,
         "inactive_date": employee.inactive_date
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_employee_status_history(request, employee_id):
+    try:
+        employee = Employee.objects.get(employee_id=employee_id)
+    except Employee.DoesNotExist:
+        return Response({"error": "Employee not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    logs = EmployeeStatusLog.objects.filter(employee=employee).select_related("action_by")
+    data = [
+        {
+            "action": log.action,
+            "action_at": log.action_at,
+            "action_by": log.action_by.get_full_name() if log.action_by else "System",
+            "note": log.note or "",
+        }
+        for log in logs
+    ]
+    return Response(data, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])

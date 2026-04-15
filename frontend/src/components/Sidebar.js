@@ -28,6 +28,7 @@ import SummarizeIcon from "@mui/icons-material/Summarize";
 import EditCalendarIcon from "@mui/icons-material/EditCalendar";
 import BackupIcon from "@mui/icons-material/Backup";
 import FaceIcon from "@mui/icons-material/Face";
+import ToggleOnIcon from "@mui/icons-material/ToggleOn";
 
 function Sidebar({ sidebarOpen, onClose }) {
   const role = getUserRole() || "";
@@ -57,6 +58,13 @@ function Sidebar({ sidebarOpen, onClose }) {
       path: "/admin/employees/editor",
       roles: ["Admin"],
       icon: <GroupIcon />,
+      group: "MANAGEMENT",
+    },
+    {
+      text: "USER STATUS",
+      path: "/admin/employees/status",
+      roles: ["Admin"],
+      icon: <ToggleOnIcon />,
       group: "MANAGEMENT",
     },
     {

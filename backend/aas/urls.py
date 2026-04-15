@@ -51,6 +51,7 @@ urlpatterns = [
     path('api/getallemployees/', views.get_all_employees, name='get_all_employees'),
     path('api/deactivate-employee/<int:employee_id>/', views.deactivate_employee, name='deactivate_employee'),
     path('api/activate-employee/<int:employee_id>/', views.activate_employee, name='activate_employee'),
+    path('api/employee-status-history/<int:employee_id>/', views.get_employee_status_history, name='employee_status_history'),
 
     path('api/getoutletemployees/', views.get_outlet_employees, name='get_outletemployees'),
 

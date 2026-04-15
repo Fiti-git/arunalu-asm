@@ -1,7 +1,7 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from main.models import Attendance, Employee, LeaveType, EmpLeave, Holiday, Outlet
+from main.models import Attendance, Employee, LeaveType, EmpLeave, Holiday, Outlet, AttendanceEditRequest
 from django.utils import timezone
 from main.serializers import EmpLeaveSerializer, HolidaySerializer, AttendanceSerializer,EmpLeaveCreateSerializer
 from django.db.models import Q
@@ -994,3 +994,406 @@ def bulk_add_leave(request):
         "successful_adds": successful_adds,
         "failed_adds": failed_adds
     }, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# V2 ATTENDANCE APIs — new endpoints for the rebuilt system
+# Old /api/attendance/... endpoints remain untouched above
+# =============================================================================
+
+LOCK_DAYS = 45  # Records older than this many days are locked for direct editing
+
+
+def _is_locked(record_date):
+    """Return True if the attendance date is >= LOCK_DAYS days ago."""
+    cutoff = date.today() - timedelta(days=LOCK_DAYS)
+    return record_date <= cutoff
+
+
+def _recalculate_attendance(attendance):
+    """Recalculate worked_hours, ot_hours, and status from check_in/out times."""
+    if attendance.check_in_time and attendance.check_out_time:
+        delta = attendance.check_out_time - attendance.check_in_time
+        attendance.worked_hours = round(delta.total_seconds() / 3600, 2)
+        if attendance.worked_hours < 4:
+            attendance.status = 'Half Day'
+        elif attendance.worked_hours > 8:
+            attendance.ot_hours = attendance.worked_hours - 8
+            attendance.status = 'Present'
+        else:
+            attendance.ot_hours = 0
+            attendance.status = 'Present'
+
+
+# 2a. GET /api/v2/attendance/
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def v2_attendance_list(request):
+    """
+    Paginated attendance list for the rebuilt attendance editor.
+    Returns employee_name, is_locked, is_active per record.
+    Supports: outlet_id, employee_id, start_date, end_date, page, page_size.
+    """
+    user = request.user
+    outlet_id_str = request.query_params.get('outlet_id')
+    employee_id = request.query_params.get('employee_id')
+    start_date_str = request.query_params.get('start_date')
+    end_date_str = request.query_params.get('end_date')
+    page = int(request.query_params.get('page', 1))
+    page_size = int(request.query_params.get('page_size', 25))
+
+    base_qs = Attendance.objects.select_related('employee')
+
+    if user.is_staff:
+        queryset = base_qs.all()
+        if outlet_id_str and outlet_id_str != '0':
+            queryset = queryset.filter(employee__outlets__id=outlet_id_str)
+    elif user.groups.filter(name='Manager').exists():
+        try:
+            manager_outlets = user.employee.outlets.all()
+            if not manager_outlets.exists():
+                return Response({'count': 0, 'results': []})
+            queryset = base_qs.filter(employee__outlets__in=manager_outlets)
+            if outlet_id_str and outlet_id_str != '0':
+                queryset = queryset.filter(
+                    employee__outlets__id=outlet_id_str,
+                    employee__outlets__in=manager_outlets
+                )
+        except Exception:
+            return Response({'count': 0, 'results': []})
+    else:
+        return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if start_date_str:
+        queryset = queryset.filter(date__gte=start_date_str)
+    if end_date_str:
+        queryset = queryset.filter(date__lte=end_date_str)
+    if employee_id:
+        queryset = queryset.filter(employee_id=employee_id)
+
+    queryset = queryset.distinct().order_by('-date', 'employee')
+    total = queryset.count()
+
+    offset = (page - 1) * page_size
+    records = queryset[offset: offset + page_size]
+
+    results = []
+    for att in records:
+        results.append({
+            'attendance_id': att.attendance_id,
+            'employee': att.employee.employee_id,
+            'employee_name': att.employee.fullname or att.employee.first_name or '',
+            'is_active': att.employee.is_active,
+            'date': str(att.date),
+            'check_in_time': att.check_in_time.isoformat() if att.check_in_time else None,
+            'check_out_time': att.check_out_time.isoformat() if att.check_out_time else None,
+            'worked_hours': att.worked_hours,
+            'ot_hours': att.ot_hours,
+            'status': att.status,
+            'punchin_verification': att.punchin_verification,
+            'punchout_verification': att.punchout_verification,
+            'verification_notes': att.verification_notes,
+            'is_locked': _is_locked(att.date),
+        })
+
+    return Response({'count': total, 'results': results})
+
+
+# 2b. POST /api/v2/attendance/update/
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def v2_attendance_update(request):
+    """
+    Update check-in/check-out for an unlocked attendance record (<45 days old).
+    Locked records require an edit request instead.
+    """
+    data = request.data
+    attendance_id = data.get('attendance_id')
+    new_check_in = data.get('check_in_time')
+    new_check_out = data.get('check_out_time')
+
+    if not attendance_id:
+        return Response({'error': 'attendance_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        attendance = Attendance.objects.get(attendance_id=attendance_id)
+    except Attendance.DoesNotExist:
+        return Response({'error': 'Attendance record not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if _is_locked(attendance.date):
+        return Response(
+            {'error': 'This record is locked (older than 45 days). Submit an edit request instead.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    notes = attendance.verification_notes or {}
+
+    if new_check_in:
+        try:
+            check_in_dt = parser.parse(new_check_in)
+            original = notes.get('checkin_update', {}).get('Original_check_in_time') or (
+                str(attendance.check_in_time) if attendance.check_in_time else None
+            )
+            attendance.check_in_time = check_in_dt
+            notes['checkin_update'] = {
+                'updated_by': request.user.username,
+                'Original_check_in_time': original,
+                'check_in_time': str(check_in_dt),
+                'updated_at': timezone.now().isoformat(),
+            }
+            attendance.punchin_verification = 'Verified'
+        except Exception as e:
+            return Response({'error': f'Invalid check_in_time: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if new_check_out:
+        try:
+            check_out_dt = parser.parse(new_check_out)
+            original = notes.get('checkout_update', {}).get('Original_check_out_time') or (
+                str(attendance.check_out_time) if attendance.check_out_time else None
+            )
+            attendance.check_out_time = check_out_dt
+            notes['checkout_update'] = {
+                'updated_by': request.user.username,
+                'Original_check_out_time': original,
+                'check_out_time': str(check_out_dt),
+                'updated_at': timezone.now().isoformat(),
+            }
+            attendance.punchout_verification = 'Verified'
+        except Exception as e:
+            return Response({'error': f'Invalid check_out_time: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+
+    _recalculate_attendance(attendance)
+    attendance.verification_notes = notes
+    attendance.save()
+
+    return Response({
+        'message': 'Attendance updated successfully.',
+        'attendance_id': attendance.attendance_id,
+        'worked_hours': attendance.worked_hours,
+        'ot_hours': attendance.ot_hours,
+        'status': attendance.status,
+    })
+
+
+# 2c. DELETE /api/v2/attendance/delete/
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def v2_attendance_delete(request):
+    """
+    Hard delete an attendance record.
+    Manager must own the outlet of the attendance record.
+    """
+    attendance_id = request.data.get('attendance_id')
+    if not attendance_id:
+        return Response({'error': 'attendance_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        attendance = Attendance.objects.select_related('employee').get(attendance_id=attendance_id)
+    except Attendance.DoesNotExist:
+        return Response({'error': 'Attendance record not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    user = request.user
+    if not user.is_staff:
+        try:
+            manager_outlets = user.employee.outlets.all()
+            emp_outlets = attendance.employee.outlets.all()
+            if not manager_outlets.filter(id__in=emp_outlets).exists():
+                return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        except Exception:
+            return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    attendance.delete()
+    return Response({'message': 'Attendance record deleted successfully.'})
+
+
+# 2d. POST /api/v2/attendance/bulk-add/
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def v2_attendance_bulk_add(request):
+    """
+    Bulk add attendance records for multiple employees on a single date.
+    Delegates to the existing bulk_add_attendance logic.
+    """
+    return bulk_add_attendance(request)
+
+
+# 2e. POST /api/v2/attendance/edit-request/
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def v2_attendance_edit_request(request):
+    """
+    Submit an edit request for a locked attendance record (>=45 days old).
+    Manager provides proposed new check-in/out times and a reason.
+    Admin must approve before changes are applied.
+    """
+    data = request.data
+    attendance_id = data.get('attendance_id')
+    proposed_check_in_str = data.get('proposed_check_in')
+    proposed_check_out_str = data.get('proposed_check_out')
+    reason = data.get('reason', '').strip()
+
+    if not attendance_id:
+        return Response({'error': 'attendance_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not proposed_check_in_str or not proposed_check_out_str:
+        return Response({'error': 'proposed_check_in and proposed_check_out are required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not reason:
+        return Response({'error': 'reason is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        attendance = Attendance.objects.get(attendance_id=attendance_id)
+    except Attendance.DoesNotExist:
+        return Response({'error': 'Attendance record not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not _is_locked(attendance.date):
+        return Response(
+            {'error': 'This record is not locked. Use the regular update endpoint instead.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        proposed_check_in = parser.parse(proposed_check_in_str)
+        proposed_check_out = parser.parse(proposed_check_out_str)
+    except Exception as e:
+        return Response({'error': f'Invalid datetime format: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if proposed_check_out <= proposed_check_in:
+        return Response({'error': 'proposed_check_out must be after proposed_check_in.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    edit_request = AttendanceEditRequest.objects.create(
+        attendance=attendance,
+        requested_by=request.user,
+        proposed_check_in=proposed_check_in,
+        proposed_check_out=proposed_check_out,
+        reason=reason,
+    )
+
+    return Response({
+        'message': 'Edit request submitted successfully. Awaiting admin approval.',
+        'request_id': edit_request.request_id,
+    }, status=status.HTTP_201_CREATED)
+
+
+# 2f. GET /api/v2/attendance/edit-requests/
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def v2_attendance_edit_requests_list(request):
+    """
+    Admin only. List all attendance edit requests with optional status filter.
+    """
+    if not request.user.is_staff:
+        return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    filter_status = request.query_params.get('status')  # Pending / Approved / Rejected
+    page = int(request.query_params.get('page', 1))
+    page_size = int(request.query_params.get('page_size', 25))
+
+    qs = AttendanceEditRequest.objects.select_related(
+        'attendance__employee', 'requested_by', 'reviewed_by'
+    )
+    if filter_status:
+        qs = qs.filter(status=filter_status)
+
+    total = qs.count()
+    offset = (page - 1) * page_size
+    records = qs[offset: offset + page_size]
+
+    results = []
+    for req in records:
+        att = req.attendance
+        results.append({
+            'request_id': req.request_id,
+            'attendance_id': att.attendance_id,
+            'employee_name': att.employee.fullname or att.employee.first_name or '',
+            'date': str(att.date),
+            'current_check_in': att.check_in_time.isoformat() if att.check_in_time else None,
+            'current_check_out': att.check_out_time.isoformat() if att.check_out_time else None,
+            'proposed_check_in': req.proposed_check_in.isoformat(),
+            'proposed_check_out': req.proposed_check_out.isoformat(),
+            'reason': req.reason,
+            'status': req.status,
+            'requested_by': req.requested_by.username if req.requested_by else None,
+            'reviewed_by': req.reviewed_by.username if req.reviewed_by else None,
+            'reviewed_at': req.reviewed_at.isoformat() if req.reviewed_at else None,
+            'created_at': req.created_at.isoformat(),
+        })
+
+    return Response({'count': total, 'results': results})
+
+
+# 2g. POST /api/v2/attendance/edit-requests/review/
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def v2_attendance_edit_requests_review(request):
+    """
+    Admin only. Approve or reject an attendance edit request.
+    On approval: proposed check-in/out are applied immediately and worked_hours recalculated.
+    """
+    if not request.user.is_staff:
+        return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+    data = request.data
+    request_id = data.get('request_id')
+    action = data.get('action')  # 'approve' or 'reject'
+
+    if not request_id or action not in ('approve', 'reject'):
+        return Response(
+            {'error': 'request_id and action ("approve" or "reject") are required.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        edit_request = AttendanceEditRequest.objects.select_related('attendance').get(request_id=request_id)
+    except AttendanceEditRequest.DoesNotExist:
+        return Response({'error': 'Edit request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if edit_request.status != 'Pending':
+        return Response(
+            {'error': f'This request is already {edit_request.status}.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    edit_request.reviewed_by = request.user
+    edit_request.reviewed_at = timezone.now()
+
+    if action == 'approve':
+        att = edit_request.attendance
+        notes = att.verification_notes or {}
+
+        notes['checkin_update'] = {
+            'updated_by': request.user.username,
+            'Original_check_in_time': att.check_in_time.isoformat() if att.check_in_time else None,
+            'check_in_time': edit_request.proposed_check_in.isoformat(),
+            'updated_at': timezone.now().isoformat(),
+            'via_edit_request': edit_request.request_id,
+        }
+        notes['checkout_update'] = {
+            'updated_by': request.user.username,
+            'Original_check_out_time': att.check_out_time.isoformat() if att.check_out_time else None,
+            'check_out_time': edit_request.proposed_check_out.isoformat(),
+            'updated_at': timezone.now().isoformat(),
+            'via_edit_request': edit_request.request_id,
+        }
+
+        att.check_in_time = edit_request.proposed_check_in
+        att.check_out_time = edit_request.proposed_check_out
+        att.punchin_verification = 'Verified'
+        att.punchout_verification = 'Verified'
+        att.verification_notes = notes
+        _recalculate_attendance(att)
+        att.save()
+
+        edit_request.status = 'Approved'
+        edit_request.save()
+
+        return Response({
+            'message': 'Edit request approved. Attendance record has been updated.',
+            'request_id': edit_request.request_id,
+            'attendance_id': att.attendance_id,
+        })
+    else:
+        edit_request.status = 'Rejected'
+        edit_request.save()
+        return Response({
+            'message': 'Edit request rejected.',
+            'request_id': edit_request.request_id,
+        })

@@ -22,4 +22,13 @@ urlpatterns = [
     path("addleave/", api.add_leave, name="add_leave_by_maanger"),
     path('bulk-add/', api.bulk_add_attendance, name='bulk-add-attendance'),
     path('bulk-addleave/', api.bulk_add_leave, name='bulk-add-leave'),
+
+    # --- V2 endpoints (rebuilt system) ---
+    path('v2/', api.v2_attendance_list, name='v2-attendance-list'),
+    path('v2/update/', api.v2_attendance_update, name='v2-attendance-update'),
+    path('v2/delete/', api.v2_attendance_delete, name='v2-attendance-delete'),
+    path('v2/bulk-add/', api.v2_attendance_bulk_add, name='v2-attendance-bulk-add'),
+    path('v2/edit-request/', api.v2_attendance_edit_request, name='v2-attendance-edit-request'),
+    path('v2/edit-requests/', api.v2_attendance_edit_requests_list, name='v2-attendance-edit-requests-list'),
+    path('v2/edit-requests/review/', api.v2_attendance_edit_requests_review, name='v2-attendance-edit-requests-review'),
 ]
