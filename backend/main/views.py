@@ -906,3 +906,280 @@ class OutletDetailView(generics.RetrieveAPIView):
     )
 
 
+# ---------------------------------------------------------------------------
+# V2 Employee API — structured validation, primary_outlet support
+# ---------------------------------------------------------------------------
+
+def _get_outlet_ids(data):
+    """Extract outlet IDs from multipart or JSON request data."""
+    if hasattr(data, 'getlist'):
+        return data.getlist('outlets')
+    val = data.get('outlets', [])
+    if isinstance(val, list):
+        return val
+    return [val] if val else []
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def v2_employee_list(request):
+    """Return paginated active employees including primary_outlet."""
+    employees = Employee.objects.filter(is_active=True).select_related('primary_outlet')
+    return paginate_queryset(request, employees, EmployeeSerializer)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def v2_employee_create(request):
+    """Create an employee with field-level validation errors."""
+    data = request.data
+    errors = {}
+
+    fullname = data.get('fullname', '').strip()
+    email = data.get('email', '').strip()
+    password = data.get('password', '').strip()
+    date_of_birth = data.get('date_of_birth', '').strip()
+    first_name = data.get('first_name', '').strip()
+    last_name = data.get('last_name', '').strip()
+    group_id = data.get('group', '')
+    outlet_ids = _get_outlet_ids(data)
+    primary_outlet_id = data.get('primary_outlet') or None
+
+    # Required field validation
+    if not fullname:
+        errors['fullname'] = 'Username is required.'
+    if not email:
+        errors['email'] = 'Email is required.'
+    elif User.objects.filter(email=email).exists():
+        errors['email'] = 'An account with this email already exists.'
+    if not password:
+        errors['password'] = 'Password is required.'
+    elif len(password) < 8:
+        errors['password'] = 'Password must be at least 8 characters.'
+    if not date_of_birth:
+        errors['date_of_birth'] = 'Date of birth is required.'
+    if not group_id:
+        errors['group'] = 'Role is required.'
+
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate group
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response({'errors': {'group': 'Selected role does not exist.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate outlets
+    valid_outlets = []
+    if outlet_ids:
+        outlet_ids = [str(i) for i in outlet_ids]
+        valid_outlets = list(Outlet.objects.filter(id__in=outlet_ids))
+        if len(valid_outlets) != len(outlet_ids):
+            return Response({'errors': {'outlets': 'One or more selected outlets are invalid.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate primary_outlet is among the selected outlets
+    primary_outlet = None
+    if primary_outlet_id:
+        try:
+            primary_outlet = Outlet.objects.get(id=primary_outlet_id)
+            if str(primary_outlet_id) not in [str(o.id) for o in valid_outlets]:
+                return Response({'errors': {'primary_outlet': 'Primary outlet must be one of the selected outlets.'}}, status=status.HTTP_400_BAD_REQUEST)
+        except Outlet.DoesNotExist:
+            return Response({'errors': {'primary_outlet': 'Primary outlet not found.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Parse optional numeric fields
+    def parse_float(val, default=None):
+        if val in [None, '', 'null']:
+            return default
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return default
+
+    def parse_int(val):
+        if val in [None, '']:
+            return None
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return None
+
+    cal_epf = str(data.get('cal_epf', True)).lower() == 'true'
+
+    # Create user
+    try:
+        user = User.objects.create_user(
+            username=fullname,
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+        )
+    except Exception as e:
+        return Response({'errors': {'email': f'Could not create account: {str(e)}'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.groups.add(group)
+
+    # Create employee
+    try:
+        employee = Employee.objects.create(
+            user=user,
+            empcode=data.get('empcode') or None,
+            fullname=fullname,
+            idnumber=data.get('idnumber') or None,
+            phone_number=data.get('phone_number') or None,
+            date_of_birth=date_of_birth,
+            primary_outlet=primary_outlet,
+            cal_epf=cal_epf,
+            epf_cal_date=data.get('epf_cal_date') or None,
+            epf_grade=data.get('epf_grade') or None,
+            epf_number=data.get('epf_number') or None,
+            employ_number=parse_int(data.get('employ_number')),
+            basic_salary=parse_float(data.get('basic_salary')),
+            epf_com_per=parse_float(data.get('epf_com_per'), 12.0),
+            epf_emp_per=parse_float(data.get('epf_emp_per'), 8.0),
+            etf_com_per=parse_float(data.get('etf_com_per'), 3.0),
+        )
+    except Exception as e:
+        user.delete()
+        return Response({'errors': {'non_field': f'Error creating employee: {str(e)}'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    if valid_outlets:
+        employee.outlets.set(valid_outlets)
+
+    serializer = EmployeeSerializer(employee)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def v2_employee_update(request, employee_id):
+    """Update an employee with field-level validation errors."""
+    try:
+        employee = Employee.objects.select_related('user', 'primary_outlet').get(employee_id=employee_id)
+    except Employee.DoesNotExist:
+        return Response({'errors': {'non_field': 'Employee not found.'}}, status=status.HTTP_404_NOT_FOUND)
+
+    data = request.data
+    errors = {}
+    user = employee.user
+
+    fullname = data.get('fullname', '').strip()
+    if not fullname:
+        errors['fullname'] = 'Username is required.'
+    if not data.get('first_name', '').strip():
+        errors['first_name'] = 'First name is required.'
+    if not data.get('last_name', '').strip():
+        errors['last_name'] = 'Last name is required.'
+    if not data.get('date_of_birth', '').strip():
+        errors['date_of_birth'] = 'Date of birth is required.'
+
+    # Email uniqueness check (allow same email if it's the same user)
+    email = data.get('email', '').strip()
+    if email and email != user.email:
+        if User.objects.filter(email=email).exclude(id=user.id).exists():
+            errors['email'] = 'An account with this email already exists.'
+
+    # Password length check if provided
+    password = data.get('password', '').strip()
+    if password and len(password) < 8:
+        errors['password'] = 'Password must be at least 8 characters.'
+
+    if errors:
+        return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Update user fields
+    user.first_name = data.get('first_name', user.first_name).strip()
+    user.last_name = data.get('last_name', user.last_name).strip()
+    if email:
+        user.email = email
+    if password:
+        user.set_password(password)
+
+    group_id = data.get('group')
+    if group_id:
+        try:
+            group = Group.objects.get(id=group_id)
+            user.groups.clear()
+            user.groups.add(group)
+        except Group.DoesNotExist:
+            return Response({'errors': {'group': 'Selected role does not exist.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.save()
+
+    # Update employee fields
+    employee.fullname = fullname or employee.fullname
+    employee.empcode = data.get('empcode', employee.empcode)
+    employee.phone_number = data.get('phone_number', employee.phone_number)
+    employee.date_of_birth = data.get('date_of_birth', employee.date_of_birth)
+    employee.idnumber = data.get('idnumber', employee.idnumber)
+
+    cal_raw = data.get('cal_epf')
+    if cal_raw is not None:
+        employee.cal_epf = str(cal_raw).lower() == 'true'
+
+    employee.epf_cal_date = data.get('epf_cal_date') or employee.epf_cal_date
+    employee.epf_grade = data.get('epf_grade', employee.epf_grade)
+    employee.epf_number = data.get('epf_number', employee.epf_number)
+
+    employ_number = data.get('employ_number')
+    if employ_number not in [None, '']:
+        try:
+            employee.employ_number = int(employ_number)
+        except (ValueError, TypeError):
+            return Response({'errors': {'employ_number': 'Must be a whole number.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    basic_salary = data.get('basic_salary')
+    if basic_salary in [None, '', 'null']:
+        employee.basic_salary = None
+    elif basic_salary is not None:
+        try:
+            employee.basic_salary = float(basic_salary)
+        except (ValueError, TypeError):
+            return Response({'errors': {'basic_salary': 'Must be a valid number.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    for field in ['epf_com_per', 'epf_emp_per', 'etf_com_per']:
+        val = data.get(field)
+        if val not in [None, '']:
+            try:
+                setattr(employee, field, float(val))
+            except (ValueError, TypeError):
+                return Response({'errors': {field: 'Must be a valid number.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Handle outlets
+    outlet_ids = _get_outlet_ids(data)
+    valid_outlets = None
+    if outlet_ids:
+        outlet_ids = [str(i) for i in outlet_ids]
+        valid_outlets = list(Outlet.objects.filter(id__in=outlet_ids))
+        if len(valid_outlets) != len(outlet_ids):
+            return Response({'errors': {'outlets': 'One or more selected outlets are invalid.'}}, status=status.HTTP_400_BAD_REQUEST)
+        employee.outlets.set(valid_outlets)
+
+    # Handle primary_outlet
+    primary_outlet_id = data.get('primary_outlet')
+    if primary_outlet_id in [None, '', 'null']:
+        employee.primary_outlet = None
+    elif primary_outlet_id is not None:
+        try:
+            po = Outlet.objects.get(id=primary_outlet_id)
+            current_outlet_ids = (
+                [str(o.id) for o in valid_outlets]
+                if valid_outlets is not None
+                else [str(i) for i in employee.outlets.values_list('id', flat=True)]
+            )
+            if str(primary_outlet_id) not in current_outlet_ids:
+                return Response({'errors': {'primary_outlet': 'Primary outlet must be one of the selected outlets.'}}, status=status.HTTP_400_BAD_REQUEST)
+            employee.primary_outlet = po
+        except Outlet.DoesNotExist:
+            return Response({'errors': {'primary_outlet': 'Primary outlet not found.'}}, status=status.HTTP_400_BAD_REQUEST)
+
+    employee.save()
+
+    serializer = EmployeeSerializer(employee)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+

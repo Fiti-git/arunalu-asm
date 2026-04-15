@@ -57,6 +57,11 @@ urlpatterns = [
 
     path('api/employees/create', views.create_employee, name='create_employee'),
     path('api/editemployees/<int:employee_id>/', views.edit_employee, name='edit_delete_employee'),
+
+    # V2 employee endpoints (structured validation + primary_outlet)
+    path('api/v2/employees/', views.v2_employee_list, name='v2-employee-list'),
+    path('api/v2/employees/create/', views.v2_employee_create, name='v2-employee-create'),
+    path('api/v2/employees/<int:employee_id>/', views.v2_employee_update, name='v2-employee-update'),
     path('api/changepassword/<int:employee_id>/', views.ChangepswrdView.as_view(), name='edit-password'),
 
     # -----------------

@@ -77,7 +77,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
     is_active = serializers.BooleanField(read_only=True)
     groups = serializers.SerializerMethodField()
     outlets = serializers.PrimaryKeyRelatedField(queryset=Outlet.objects.all(), many=True)
-
+    primary_outlet = serializers.PrimaryKeyRelatedField(
+        queryset=Outlet.objects.all(), allow_null=True, required=False
+    )
 
     class Meta:
         model = Employee
@@ -89,6 +91,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             'phone_number',
             'date_of_birth',
             'outlets',
+            'primary_outlet',
             'cal_epf',
             'epf_cal_date',
             'epf_grade',
@@ -106,10 +109,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
             'reference_photo',
             'punchin_selfie',
             'punchout_selfie',
-            'is_active',
             'inactive_date',
         ]
-        
+
         read_only_fields = [
             'employee_id',
             'email',

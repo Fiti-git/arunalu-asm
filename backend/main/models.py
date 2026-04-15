@@ -26,6 +26,13 @@ class Employee(models.Model):
     phone_number = models.CharField(max_length=20, null=True, blank=True)
     date_of_birth = models.DateField()
     outlets = models.ManyToManyField('Outlet', related_name='employees', blank=True)
+    primary_outlet = models.ForeignKey(
+        'Outlet',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_employees'
+    )
     cal_epf = models.BooleanField(default=True)
     epf_cal_date = models.DateField(null=True, blank=True)
     epf_grade = models.CharField(max_length=20, null=True, blank=True)
