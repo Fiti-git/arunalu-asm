@@ -66,7 +66,7 @@ export default function DatabaseBackup() {
   return (
     <Box sx={{ p: 3, maxWidth: 600 }}>
       <Box sx={{ display: "flex", alignItems: "center", mb: 3, gap: 1.5 }}>
-        <StorageIcon sx={{ fontSize: 32, color: "#e6b904" }} />
+        <StorageIcon sx={{ fontSize: 32, color: 'primary.main' }} />
         <Typography variant="h5" fontWeight={700}>
           Database Backup
         </Typography>
@@ -97,12 +97,7 @@ export default function DatabaseBackup() {
           startIcon={loading ? <CircularProgress size={18} color="inherit" /> : <DownloadIcon />}
           onClick={handleDownload}
           disabled={loading}
-          sx={{
-            backgroundColor: "#e6b904",
-            color: "#000",
-            fontWeight: 700,
-            "&:hover": { backgroundColor: "#c9a200" },
-          }}
+          sx={{ fontWeight: 700 }}
         >
           {loading ? "Generating Backup…" : "Download Backup"}
         </Button>

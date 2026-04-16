@@ -1,498 +1,414 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Box,
-  Typography,
-  Button,
-  CircularProgress,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  TextField,
-  Paper,
-  Chip,
-  Collapse,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
-} from "@mui/material";
-import axios from "axios";
+  Box, Typography, TextField, Button, CircularProgress, Alert,
+  LinearProgress, Chip, Avatar, Divider, FormControl, InputLabel,
+  Select, MenuItem, IconButton, Tooltip,
+} from '@mui/material';
+import { DataGrid } from '@mui/x-data-grid';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+} from 'recharts';
+import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
+import StoreMallDirectoryOutlinedIcon from '@mui/icons-material/StoreMallDirectoryOutlined';
+import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
+import EventBusyOutlinedIcon from '@mui/icons-material/EventBusyOutlined';
+import BeachAccessOutlinedIcon from '@mui/icons-material/BeachAccessOutlined';
+import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import CloseIcon from '@mui/icons-material/Close';
+import api from 'utils/api';
+import { PageHeader, SectionLabel, StatCard } from 'components/ui';
+import { pickAvatarColor } from 'theme/tokens';
 
-const API_BASE = process.env.REACT_APP_API_URL || "http://123.231.60.24:1605";
-
-const formatDateOnly = (dateStr) => {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return String(dateStr);
-  return d.toLocaleDateString();
+const firstOfMonth = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+};
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const toDateOnly = (yyyyMmDd) => {
-  if (!yyyyMmDd) return null;
-  const d = new Date(yyyyMmDd);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
+const getInitials = (name = '') =>
+  name.trim().split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+
+function OutletCard({ outlet, selected, onClick }) {
+  const rate = Number(outlet.present_rate || 0);
+  const color = pickAvatarColor(outlet.name || '');
+  return (
+    <Box
+      onClick={() => onClick(outlet)}
+      sx={{
+        cursor: 'pointer',
+        position: 'relative',
+        p: 2, borderRadius: 2.5,
+        border: 2, borderColor: selected ? 'primary.main' : 'divider',
+        bgcolor: 'background.paper',
+        transition: 'all 0.18s',
+        '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' },
+        ...(selected && {
+          '&::before': {
+            content: '""',
+            position: 'absolute', left: 0, top: 12, bottom: 12,
+            width: 4, borderRadius: 4,
+            bgcolor: 'secondary.main',
+          },
+        }),
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+        <Avatar sx={{ bgcolor: color, fontWeight: 700, width: 36, height: 36, fontSize: '0.9rem' }}>
+          {getInitials(outlet.name)}
+        </Avatar>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography variant="subtitle2" fontWeight={700} noWrap>{outlet.name}</Typography>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {outlet.manager_name || 'No manager'}
+          </Typography>
+        </Box>
+      </Box>
+
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5, mb: 0.5 }}>
+        <Typography variant="h5" fontWeight={800} color="primary.main">{rate}%</Typography>
+        <Typography variant="caption" color="text.secondary">present rate</Typography>
+      </Box>
+
+      <LinearProgress
+        variant="determinate"
+        value={Math.min(rate, 100)}
+        sx={{
+          height: 6, borderRadius: 3, mb: 1.2,
+          bgcolor: 'grey.100',
+          '& .MuiLinearProgress-bar': { bgcolor: 'primary.main', borderRadius: 3 },
+        }}
+      />
+
+      <Box sx={{ display: 'flex', gap: 0.8, flexWrap: 'wrap' }}>
+        <Chip size="small" label={`${outlet.total_emp || 0} emp`} sx={{ fontSize: '0.7rem', height: 22 }} />
+        <Chip size="small" label={`${outlet.present_days || 0} P`} color="success" sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600 }} />
+        <Chip size="small" label={`${outlet.leave_days || 0} L`} color="warning" sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600 }} />
+        <Chip size="small" label={`${outlet.absent_days || 0} A`} color="error" sx={{ fontSize: '0.7rem', height: 22, fontWeight: 600 }} />
+      </Box>
+    </Box>
+  );
+}
 
 export default function AdminOutletSummary() {
-  // Default date range: last month to today
-  const today = new Date();
-  const priorMonth = new Date();
-  priorMonth.setMonth(today.getMonth() - 1);
+  const [startDate, setStartDate] = useState(firstOfMonth());
+  const [endDate, setEndDate] = useState(today());
 
-  const [userReport, setUserReport] = useState(null);
-  const [selectedOutlet, setSelectedOutlet] = useState("all");
-  const [selectedEmployee, setSelectedEmployee] = useState("all");
-  const [employeeList, setEmployeeList] = useState([]);
-
-  const [startDate, setStartDate] = useState(priorMonth.toISOString().split("T")[0]);
-  const [endDate, setEndDate] = useState(today.toISOString().split("T")[0]);
-
+  const [overview, setOverview] = useState(null);
+  const [trend, setTrend] = useState([]);
+  const [outlets, setOutlets] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
+  const [sortBy, setSortBy] = useState('rate_desc');
 
-  // summaries grouped by outlet
-  const [summaryByOutlet, setSummaryByOutlet] = useState({});
-  const [expanded, setExpanded] = useState(null); // { employeeId, type }
+  const [selectedOutlet, setSelectedOutlet] = useState(null);
+  const [outletTrend, setOutletTrend] = useState([]);
+  const [outletEmployees, setOutletEmployees] = useState([]);
+  const [drillLoading, setDrillLoading] = useState(false);
 
+  const fetchAll = useCallback(async () => {
+    if (!startDate || !endDate) return;
+    if (endDate < startDate) { setError('End date must be on or after start date.'); return; }
+    setLoading(true); setError('');
+    try {
+      const params = { start_date: startDate, end_date: endDate };
+      const [ovRes, trRes, outRes] = await Promise.all([
+        api.get('/report/outlet-summary/overview/', { params }),
+        api.get('/report/outlet-summary/trend/', { params }),
+        api.get('/report/outlet-summary/outlets/', { params }),
+      ]);
+      setOverview(ovRes.data);
+      setTrend(trRes.data || []);
+      setOutlets(outRes.data || []);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load outlet summary.');
+    } finally {
+      setLoading(false);
+    }
+  }, [startDate, endDate]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Refresh drill-down when range or selection changes
   useEffect(() => {
-    loadManagerOutletsAndEmployees();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!selectedOutlet) return;
+    let cancelled = false;
+    setDrillLoading(true);
+    const params = { start_date: startDate, end_date: endDate };
+    Promise.all([
+      api.get('/report/outlet-summary/trend/', { params: { ...params, outlet_id: selectedOutlet.outlet_id } }),
+      api.get(`/report/outlet-summary/outlets/${selectedOutlet.outlet_id}/employees/`, { params }),
+    ])
+      .then(([t, e]) => {
+        if (cancelled) return;
+        setOutletTrend(t.data || []);
+        setOutletEmployees(e.data || []);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setDrillLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedOutlet, startDate, endDate]);
 
-  const loadManagerOutletsAndEmployees = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = localStorage.getItem("access_token");
-      if (!token) {
-        setError("No access token found. Please log in first.");
-        setLoading(false);
-        return;
-      }
-
-      const userRes = await axios.get(`${API_BASE}/api/user/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const reportRes = await axios.get(`${API_BASE}/report/employees/user/${userRes.data.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      setUserReport(reportRes.data);
-
-      const allEmps = Object.values(reportRes.data.employees_by_outlet || {}).flatMap(
-        (o) => o.employees || []
-      );
-      setEmployeeList(allEmps);
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message || "Failed to load user report.");
-    } finally {
-      setLoading(false);
+  const sortedOutlets = useMemo(() => {
+    const list = [...outlets];
+    switch (sortBy) {
+      case 'rate_asc': list.sort((a, b) => Number(a.present_rate) - Number(b.present_rate)); break;
+      case 'name': list.sort((a, b) => (a.name || '').localeCompare(b.name || '')); break;
+      case 'absent_desc': list.sort((a, b) => Number(b.absent_days) - Number(a.absent_days)); break;
+      case 'size_desc': list.sort((a, b) => Number(b.total_emp) - Number(a.total_emp)); break;
+      default: list.sort((a, b) => Number(b.present_rate) - Number(a.present_rate)); break;
     }
-  };
+    return list;
+  }, [outlets, sortBy]);
 
-  const handleOutletChange = (event) => {
-    const outletId = event.target.value;
-    setSelectedOutlet(outletId);
-    setSelectedEmployee("all");
-    setSummaryByOutlet({});
-    setExpanded(null);
-    setError(null);
+  const donutData = useMemo(() => {
+    if (!selectedOutlet) return [];
+    return [
+      { name: 'Present', value: Number(selectedOutlet.present_days || 0), color: '#16A34A' },
+      { name: 'On Leave', value: Number(selectedOutlet.leave_days || 0), color: '#F59E0B' },
+      { name: 'Absent', value: Number(selectedOutlet.absent_days || 0), color: '#DC2626' },
+    ].filter((d) => d.value > 0);
+  }, [selectedOutlet]);
 
-    if (!userReport?.employees_by_outlet) {
-      setEmployeeList([]);
-      return;
-    }
-
-    if (outletId === "all") {
-      setEmployeeList(
-        Object.values(userReport.employees_by_outlet).flatMap((o) => o.employees || [])
-      );
-    } else {
-      setEmployeeList(userReport.employees_by_outlet[outletId]?.employees || []);
-    }
-  };
-
-  const buildReportUrl = (empId) => {
-    const params = [];
-    if (startDate) params.push(`start_date=${startDate}`);
-    if (endDate) params.push(`end_date=${endDate}`);
-    return `${API_BASE}/report/employee/${empId}${params.length ? `?${params.join("&")}` : ""}`;
-  };
-
-  const toggleExpand = (employeeId, type) => {
-    setExpanded((prev) => {
-      if (prev?.employeeId === employeeId && prev?.type === type) return null;
-      return { employeeId, type };
-    });
-  };
-
-  const handleFetchSummary = async () => {
-    setLoading(true);
-    setError(null);
-    setSummaryByOutlet({});
-    setExpanded(null);
-
-    try {
-      const token = localStorage.getItem("access_token");
-      if (!token) {
-        setError("No access token found. Please log in first.");
-        setLoading(false);
-        return;
-      }
-
-      if (!userReport?.employees_by_outlet) {
-        setError("Employees list not loaded yet.");
-        setLoading(false);
-        return;
-      }
-
-      let employeesToFetch = [];
-
-      if (selectedEmployee === "all") {
-        if (selectedOutlet === "all") {
-          employeesToFetch = Object.values(userReport.employees_by_outlet)
-            .flatMap((o) => o.employees || [])
-            .map((e) => e.employee_id);
-        } else {
-          employeesToFetch =
-            userReport.employees_by_outlet[selectedOutlet]?.employees?.map((e) => e.employee_id) ||
-            [];
-        }
-      } else {
-        employeesToFetch = [selectedEmployee];
-      }
-
-      if (!employeesToFetch.length) {
-        setError("No employees found for selection.");
-        setLoading(false);
-        return;
-      }
-
-      const requests = employeesToFetch.map((empId) =>
-        axios
-          .get(buildReportUrl(empId), {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-          .then((res) => res.data)
-          .catch((err) => {
-            console.error(`Report fetch failed for ${empId}`, err);
-            return null;
-          })
-      );
-
-      const results = (await Promise.all(requests)).filter(Boolean);
-
-      if (!results.length) {
-        setError("No report data returned for selected employees.");
-        setLoading(false);
-        return;
-      }
-
-      // employee_id -> outletId
-      const empToOutletIds = {};
-      Object.entries(userReport.employees_by_outlet).forEach(([outletId, outletData]) => {
-        (outletData.employees || []).forEach((e) => {
-          empToOutletIds[e.employee_id] = outletId;
-        });
-      });
-
-      const grouped = {};
-      const ensureOutlet = (outletId, outletName) => {
-        if (!grouped[outletId]) {
-          grouped[outletId] = { outlet_name: outletName || `Outlet ${outletId}`, employees: [] };
-        }
-      };
-
-      const start = toDateOnly(startDate); // ✅ used for inactive filter
-
-      for (const rep of results) {
-        const employeeId = rep.employee_details?.employee_id;
-
-        // ✅ REQUIRED RULE:
-        // show if active for ANY part of the range
-        // hide ONLY if inactive before the range starts
-        const inactiveDateStr = rep.employee_details?.inactive_date; // null or YYYY-MM-DD
-        if (inactiveDateStr && start) {
-          const inactive = toDateOnly(inactiveDateStr);
-          if (inactive && inactive < start) {
-            continue; // inactive before range -> skip employee
-          }
-        }
-
-        const fullname = rep.employee_details?.fullname || "";
-        const userFirstName = rep.employee_details?.user_first_name || "";
-        const displayName = `${fullname} - ${userFirstName}`;
-
-        const counts = { Present: 0, Absent: 0, "Blank Day": 0 };
-        const dates = { Present: [], Absent: [], "Blank Day": [] };
-
-        (rep.daily_report || []).forEach((day) => {
-          const status = day.attendance_status || "Blank Day";
-          if (counts[status] !== undefined) {
-            counts[status] += 1;
-            dates[status].push(day.work_date);
-          }
-        });
-
-        const sortAsc = (a, b) => new Date(a) - new Date(b);
-        dates.Present.sort(sortAsc);
-        dates.Absent.sort(sortAsc);
-        dates["Blank Day"].sort(sortAsc);
-
-        const outletId =
-          selectedOutlet !== "all" ? selectedOutlet : empToOutletIds[employeeId] || "unknown";
-
-        const outletName =
-          outletId !== "unknown"
-            ? userReport.employees_by_outlet[outletId]?.outlet_name
-            : "Unknown Outlet";
-
-        ensureOutlet(outletId, outletName);
-
-        grouped[outletId].employees.push({
-          employeeId,
-          name: displayName,
-          inactive_date: inactiveDateStr, // keep for display
-          counts,
-          dates,
-        });
-      }
-
-      Object.values(grouped).forEach((g) => {
-        g.employees.sort((a, b) => (b.counts.Absent || 0) - (a.counts.Absent || 0));
-      });
-
-      setSummaryByOutlet(grouped);
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message || "Failed to fetch summary.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const outletEntries = useMemo(() => Object.entries(userReport?.employees_by_outlet || {}), [
-    userReport,
-  ]);
-
-  const summaryOutletEntries = useMemo(() => {
-    return Object.entries(summaryByOutlet).sort((a, b) => {
-      const an = a[1]?.outlet_name || "";
-      const bn = b[1]?.outlet_name || "";
-      return an.localeCompare(bn);
-    });
-  }, [summaryByOutlet]);
+  const empColumns = [
+    {
+      field: 'fullname', headerName: 'Employee', flex: 1.2, minWidth: 180,
+      renderCell: ({ row }) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Avatar sx={{ width: 28, height: 28, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
+            {getInitials(row.fullname)}
+          </Avatar>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body2" fontWeight={600} noWrap>{row.fullname}</Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {row.empcode || `#${row.employee_id}`}
+            </Typography>
+          </Box>
+        </Box>
+      ),
+    },
+    { field: 'present_days', headerName: 'Present', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center' },
+    { field: 'leave_days', headerName: 'Leave', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center' },
+    { field: 'absent_days', headerName: 'Absent', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center' },
+    {
+      field: 'present_rate', headerName: 'Rate', flex: 0.7, minWidth: 110,
+      renderCell: ({ value }) => (
+        <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <LinearProgress variant="determinate" value={Math.min(Number(value || 0), 100)}
+            sx={{
+              flex: 1, height: 6, borderRadius: 3, bgcolor: 'grey.100',
+              '& .MuiLinearProgress-bar': {
+                bgcolor: Number(value) >= 80 ? 'success.main' : Number(value) >= 60 ? 'warning.main' : 'error.main',
+                borderRadius: 3,
+              },
+            }} />
+          <Typography variant="caption" fontWeight={700} sx={{ width: 40, textAlign: 'right' }}>{value}%</Typography>
+        </Box>
+      ),
+    },
+  ];
 
   return (
-    <Box sx={{ p: 4 }}>
-      <Typography
-        variant="h4"
-        sx={{
-          fontWeight: "bold",
-          mb: 3,
-          textTransform: "uppercase",
-          borderBottom: "3px solid #1976d2",
-          display: "inline-block",
-          pb: 0.5,
-          color: "#0d0d0dff",
-        }}
-      >
-        Employee Reports
-      </Typography>
+    <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <PageHeader
+        title="Outlet Summary"
+        subtitle="Network-wide attendance health for the selected date range"
+        actions={
+          <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+            <TextField label="From" type="date" size="small" value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 160 }} />
+            <TextField label="To" type="date" size="small" value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 160 }} />
+            <Tooltip title="Refresh">
+              <span>
+                <IconButton onClick={fetchAll} disabled={loading} color="primary">
+                  {loading ? <CircularProgress size={18} /> : <RefreshIcon />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+        }
+      />
 
-      {error && (
-        <Typography color="error" sx={{ mb: 2 }}>
-          {error}
-        </Typography>
-      )}
+      {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      {userReport && (
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "flex-start",
-            flexDirection: { xs: "column", sm: "row" },
-            alignItems: { xs: "stretch", sm: "center" },
-            flexWrap: "wrap",
-            gap: 2,
-            mb: 3,
-            backgroundColor: "#f9fafc",
-            p: 2.5,
-            borderRadius: 2,
-            border: "1px solid #e0e0e0",
-          }}
-        >
-          <FormControl
-            sx={{
-              minWidth: 200,
-              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: "#fff" },
-            }}
-          >
-            <InputLabel>Outlet</InputLabel>
-            <Select value={selectedOutlet} onChange={handleOutletChange} label="Outlet">
-              <MenuItem value="all">All Outlets</MenuItem>
-              {outletEntries.map(([outletId, outletData]) => (
-                <MenuItem key={outletId} value={outletId}>
-                  {outletData.outlet_name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+      {/* ── KPI Strip ───────────────────────────────── */}
+      <Box sx={{
+        display: 'grid', gap: 2,
+        gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)', md: 'repeat(6, 1fr)' },
+      }}>
+        <StatCard icon={<StoreMallDirectoryOutlinedIcon />} label="Outlets" value={overview?.outlets ?? '—'} color="primary" />
+        <StatCard icon={<PeopleAltOutlinedIcon />} label="Active Staff" value={overview?.active_emp ?? '—'} color="secondary" />
+        <StatCard icon={<EventAvailableOutlinedIcon />} label="Present (days)" value={overview?.present_days ?? '—'}
+          trend={overview ? `${overview.present_rate}% rate` : ''} color="success" />
+        <StatCard icon={<BeachAccessOutlinedIcon />} label="Leave (days)" value={overview?.leave_days ?? '—'} color="warning" />
+        <StatCard icon={<EventBusyOutlinedIcon />} label="Absent (days)" value={overview?.absent_days ?? '—'} color="error" />
+        <StatCard icon={<PendingActionsOutlinedIcon />} label="Pending Leaves" value={overview?.pending_leave_req ?? '—'} color="info" />
+      </Box>
 
-          <FormControl
-            sx={{
-              minWidth: 250,
-              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: "#fff" },
-            }}
-          >
-            <InputLabel>Employee</InputLabel>
-            <Select
-              value={selectedEmployee}
-              onChange={(e) => {
-                setSelectedEmployee(e.target.value);
-                setSummaryByOutlet({});
-                setExpanded(null);
-                setError(null);
-              }}
-              label="Employee"
-            >
-              <MenuItem value="all">All Employees</MenuItem>
-              {employeeList.map((emp) => (
-                <MenuItem key={emp.employee_id} value={emp.employee_id}>
-                  {emp.user_first_name} ({emp.fullname})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+      {/* ── Network Trend ──────────────────────────── */}
+      <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5, p: 2.5 }}>
+        <SectionLabel>Network Trend</SectionLabel>
+        {trend.length === 0 && !loading ? (
+          <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
+            No data for this range.
+          </Typography>
+        ) : (
+          <Box sx={{ height: 260, mt: 1 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trend} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="presentGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#16A34A" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#16A34A" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="leaveGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="notMarkedGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#DC2626" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="#DC2626" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+                <XAxis dataKey="date_label" tick={{ fontSize: 11, fill: '#6B7280' }} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} />
+                <RTooltip />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey="present" name="Present" stroke="#16A34A" strokeWidth={2} fill="url(#presentGrad)" />
+                <Area type="monotone" dataKey="leave" name="On Leave" stroke="#F59E0B" strokeWidth={2} fill="url(#leaveGrad)" />
+                <Area type="monotone" dataKey="not_marked" name="Not Marked" stroke="#DC2626" strokeWidth={2} fill="url(#notMarkedGrad)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Box>
+        )}
+      </Box>
 
-          <TextField
-            label="Start Date"
-            type="date"
-            InputLabelProps={{ shrink: true }}
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            sx={{
-              minWidth: 180,
-              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: "#fff" },
-            }}
-          />
-          <TextField
-            label="End Date"
-            type="date"
-            InputLabelProps={{ shrink: true }}
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            sx={{
-              minWidth: 180,
-              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: "#fff" },
-            }}
-          />
-
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleFetchSummary}
-            disabled={loading}
-            sx={{
-              height: 42,
-              borderRadius: 2,
-              px: 3,
-              textTransform: "none",
-              fontWeight: "bold",
-              boxShadow: "none",
-              "&:hover": { boxShadow: "0 2px 8px rgba(25, 118, 210, 0.2)" },
-            }}
-          >
-            {loading ? <CircularProgress size={20} /> : "Fetch Data"}
-          </Button>
-        </Box>
-      )}
-
-      {loading && (
-        <Box sx={{ display: "flex", justifyContent: "center", my: 3 }}>
-          <CircularProgress />
-        </Box>
-      )}
-
-      {!loading && summaryOutletEntries.length > 0 && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {summaryOutletEntries.map(([outletId, outletBlock]) => (
-            <Paper key={outletId} sx={{ p: 2.5, borderRadius: 2, border: "1px solid #e0e0e0" }}>
-              <Typography sx={{ fontWeight: 900, mb: 2, textTransform: "uppercase" }}>
-                Outlet: {outletBlock.outlet_name}
+      {/* ── Outlets Leaderboard + Drill-down ─────── */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: selectedOutlet ? '1fr 1fr' : '1fr' }, gap: 2.5 }}>
+        <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5, p: 2.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+            <SectionLabel>Outlets</SectionLabel>
+            <Box sx={{ ml: 'auto' }}>
+              <FormControl size="small" sx={{ minWidth: 170 }}>
+                <InputLabel>Sort by</InputLabel>
+                <Select label="Sort by" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                  <MenuItem value="rate_desc">Rate (high→low)</MenuItem>
+                  <MenuItem value="rate_asc">Rate (low→high)</MenuItem>
+                  <MenuItem value="absent_desc">Most absent</MenuItem>
+                  <MenuItem value="size_desc">Largest first</MenuItem>
+                  <MenuItem value="name">Name A→Z</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+          </Box>
+          <Box sx={{
+            display: 'grid', gap: 1.5,
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: '1fr 1fr',
+              md: selectedOutlet ? '1fr 1fr' : 'repeat(3, 1fr)',
+            },
+          }}>
+            {sortedOutlets.map((o) => (
+              <OutletCard
+                key={o.outlet_id}
+                outlet={o}
+                selected={selectedOutlet?.outlet_id === o.outlet_id}
+                onClick={(sel) => setSelectedOutlet(
+                  selectedOutlet?.outlet_id === sel.outlet_id ? null : sel
+                )}
+              />
+            ))}
+            {!loading && sortedOutlets.length === 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 4, gridColumn: '1 / -1', textAlign: 'center' }}>
+                No outlets found.
               </Typography>
+            )}
+          </Box>
+        </Box>
 
-              {outletBlock.employees.map((emp) => (
-                <Box
-                  key={emp.employeeId}
-                  sx={{
-                    p: 2,
-                    mb: 1.5,
-                    borderRadius: 2,
-                    border: "1px solid #eee",
-                    backgroundColor: "#fff",
-                  }}
-                >
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                    <Typography sx={{ fontWeight: 800 }}>{emp.name}</Typography>
+        {selectedOutlet && (
+          <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5, p: 2.5, minWidth: 0 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1.5 }}>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="h6" fontWeight={700} noWrap>{selectedOutlet.name}</Typography>
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  {selectedOutlet.manager_name || 'No manager'} · {selectedOutlet.address || ''}
+                </Typography>
+              </Box>
+              <IconButton size="small" onClick={() => setSelectedOutlet(null)}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+            <Divider sx={{ mb: 2 }} />
 
-                    {/* Optional: show inactive date always */}
-                    {emp.inactive_date && (
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={`Inactive on: ${formatDateOnly(emp.inactive_date)}`}
-                      />
+            {drillLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : (
+              <>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 2 }}>
+                  <Box sx={{ height: 180 }}>
+                    <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                      Breakdown
+                    </Typography>
+                    {donutData.length === 0 ? (
+                      <Typography variant="caption" color="text.secondary">No data</Typography>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={donutData} dataKey="value" innerRadius={40} outerRadius={64} paddingAngle={2}>
+                            {donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                          </Pie>
+                          <RTooltip />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
                     )}
                   </Box>
-
-                  <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
-                    {["Present", "Absent", "Blank Day"].map((type) => (
-                      <Chip
-                        key={type}
-                        label={`${type} = ${emp.counts[type]}`}
-                        color={type === "Present" ? "success" : type === "Absent" ? "error" : "warning"}
-                        clickable
-                        onClick={() => toggleExpand(emp.employeeId, type)}
-                        sx={{ fontWeight: 800 }}
-                      />
-                    ))}
+                  <Box sx={{ height: 180 }}>
+                    <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                      Daily Trend
+                    </Typography>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={outletTrend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
+                        <XAxis dataKey="date_label" tick={{ fontSize: 10, fill: '#6B7280' }} interval="preserveStartEnd" />
+                        <YAxis tick={{ fontSize: 10, fill: '#6B7280' }} />
+                        <RTooltip />
+                        <Area type="monotone" dataKey="present" stroke="#2F54A0" strokeWidth={2} fill="#2F54A0" fillOpacity={0.15} />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   </Box>
-
-                  {["Present", "Absent", "Blank Day"].map((type) => (
-                    <Collapse
-                      key={type}
-                      in={expanded?.employeeId === emp.employeeId && expanded?.type === type}
-                      timeout="auto"
-                      unmountOnExit
-                    >
-                      <Divider sx={{ my: 1.5 }} />
-                      <Typography sx={{ fontWeight: 800, mb: 1 }}>
-                        {type} Dates
-                      </Typography>
-
-                      {emp.dates[type]?.length ? (
-                        <List dense sx={{ maxHeight: 220, overflow: "auto" }}>
-                          {emp.dates[type].map((d, idx) => (
-                            <ListItem key={`${emp.employeeId}-${type}-${idx}`} disableGutters>
-                              <ListItemText primary={formatDateOnly(d)} />
-                            </ListItem>
-                          ))}
-                        </List>
-                      ) : (
-                        <Typography sx={{ color: "text.secondary" }}>No dates found.</Typography>
-                      )}
-                    </Collapse>
-                  ))}
                 </Box>
-              ))}
-            </Paper>
-          ))}
-        </Box>
-      )}
+
+                <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Employees ({outletEmployees.length})
+                </Typography>
+                <Box sx={{ height: 360 }}>
+                  <DataGrid
+                    rows={outletEmployees}
+                    columns={empColumns}
+                    getRowId={(r) => r.employee_id}
+                    disableRowSelectionOnClick
+                    pageSizeOptions={[10, 25, 50]}
+                    initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+                  />
+                </Box>
+              </>
+            )}
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 }

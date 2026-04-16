@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box, Button, Drawer, TextField, MenuItem, Typography,
   Alert, Divider, Switch, FormControlLabel, InputAdornment,
-  IconButton, Avatar, Chip, Tabs, Tab, Stepper, Step, StepLabel,
+  IconButton, Avatar, Tabs, Tab, Stepper, Step, StepLabel,
   DialogContent, DialogActions, Tooltip, Dialog,
-  CircularProgress, Stack, Pagination, InputBase,
+  CircularProgress, Stack, Pagination,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
@@ -17,12 +17,16 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CheckIcon from '@mui/icons-material/Check';
-import SearchIcon from '@mui/icons-material/Search';
 import CakeOutlinedIcon from '@mui/icons-material/CakeOutlined';
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
+import FaceIcon from '@mui/icons-material/Face';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useForm, Controller } from 'react-hook-form';
 import * as yup from 'yup';
 import { yupResolver } from '@hookform/resolvers/yup';
 import api from 'utils/api';
+import { PageHeader, SectionLabel, SearchInput } from 'components/ui';
+import { pickAvatarColor } from 'theme/tokens';
 
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://123.231.60.24:1605';
 
@@ -54,71 +58,97 @@ const defaultValues = {
   epf_com_per: 12.0, epf_emp_per: 8.0, etf_com_per: 3.0,
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 const getInitials = (name) =>
   (name || '?').split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
 
-const getAvatarColor = (name) => {
-  const colors = ['#3b5bdb','#0c8599','#2f9e44','#e67700','#c92a2a','#5f3dc4','#1864ab','#862e9c'];
-  let h = 0;
-  for (let i = 0; i < (name || '').length; i++) h = (name.charCodeAt(i) + h * 31) % colors.length;
-  return colors[h];
-};
-
-function SectionLabel({ icon, children }) {
+function PunchPhotoSlot({ label, src, tone }) {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, mt: 1 }}>
-      <Box sx={{ color: '#1976d2', display: 'flex' }}>{icon}</Box>
-      <Typography variant="overline" sx={{ fontWeight: 700, color: '#1976d2', fontSize: '0.72rem', letterSpacing: 1.5 }}>
-        {children}
+    <Box>
+      <Box
+        sx={{
+          height: 110,
+          borderRadius: 2,
+          overflow: 'hidden',
+          bgcolor: `${tone}.light`,
+          border: 1,
+          borderColor: 'divider',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {src ? (
+          <Box
+            component="img"
+            src={`${BASE_URL}${src}`}
+            alt={label}
+            sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        ) : (
+          <Typography variant="caption" sx={{ color: `${tone}.dark`, fontWeight: 500, opacity: 0.7 }}>
+            No Photo
+          </Typography>
+        )}
+      </Box>
+      <Typography
+        variant="caption"
+        sx={{
+          display: 'block',
+          textAlign: 'center',
+          mt: 0.5,
+          fontWeight: 600,
+          color: `${tone}.dark`,
+          fontSize: '0.68rem',
+          letterSpacing: '0.3px',
+        }}
+      >
+        {label}
       </Typography>
-      <Box sx={{ flex: 1, height: '1px', bgcolor: '#e8e8e8', ml: 1 }} />
     </Box>
   );
 }
 
-// ─── Employee Card ────────────────────────────────────────────────────────────
 function EmployeeCard({ emp, onEdit }) {
-  const color = getAvatarColor(emp.fullname);
+  const color = pickAvatarColor(emp.fullname);
   const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.fullname;
+  const hasRole = emp.group_name && emp.group_name !== '—';
 
   return (
     <Box
       sx={{
-        bgcolor: '#fff',
-        border: '1px solid #ebebeb',
+        bgcolor: 'background.paper',
+        border: 1,
+        borderColor: 'divider',
         borderRadius: 3,
-        p: 2.5,
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        gap: 1.5,
         transition: 'box-shadow 0.18s, transform 0.18s',
-        '&:hover': {
-          boxShadow: '0 6px 24px rgba(0,0,0,0.09)',
-          transform: 'translateY(-2px)',
-        },
+        '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' },
       }}
     >
-      {/* Top row: avatar + edit button */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Avatar
-          src={emp.reference_photo ? `${BASE_URL}${emp.reference_photo}` : undefined}
-          sx={{
-            width: 48, height: 48, bgcolor: color,
-            fontWeight: 700, fontSize: '1.1rem', letterSpacing: 0.5,
-          }}
-        >
-          {getInitials(emp.fullname)}
-        </Avatar>
+      {/* Teal banner */}
+      <Box
+        sx={{
+          position: 'relative',
+          height: 64,
+          bgcolor: 'primary.main',
+          backgroundImage: (theme) =>
+            `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+        }}
+      >
         <Tooltip title="Edit employee">
           <IconButton
             size="small"
             onClick={() => onEdit(emp)}
             sx={{
-              border: '1px solid #ebebeb',
-              borderRadius: 2,
-              color: '#888',
-              '&:hover': { bgcolor: '#e3f2fd', color: '#1976d2', borderColor: '#90caf9' },
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              bgcolor: 'rgba(255,255,255,0.18)',
+              color: 'common.white',
+              backdropFilter: 'blur(4px)',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
             }}
           >
             <EditOutlinedIcon fontSize="small" />
@@ -126,12 +156,31 @@ function EmployeeCard({ emp, onEdit }) {
         </Tooltip>
       </Box>
 
-      {/* Name */}
-      <Box>
+      {/* Avatar overlapping banner */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: '-32px' }}>
+        <Avatar
+          src={emp.reference_photo ? `${BASE_URL}${emp.reference_photo}` : undefined}
+          sx={{
+            width: 64,
+            height: 64,
+            bgcolor: color,
+            fontWeight: 700,
+            fontSize: '1.25rem',
+            letterSpacing: 0.5,
+            border: 3,
+            borderColor: 'background.paper',
+            boxShadow: 2,
+          }}
+        >
+          {getInitials(emp.fullname)}
+        </Avatar>
+      </Box>
+
+      {/* Name + role · @username */}
+      <Box sx={{ px: 2, pt: 1, textAlign: 'center' }}>
         <Typography
-          variant="subtitle2"
+          variant="subtitle1"
           fontWeight={700}
-          color="#111"
           sx={{ lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
         >
           {name}
@@ -141,50 +190,55 @@ function EmployeeCard({ emp, onEdit }) {
           color="text.secondary"
           sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}
         >
-          @{emp.fullname}
+          {hasRole ? `${emp.group_name} · ` : ''}@{emp.fullname}
         </Typography>
       </Box>
 
-      <Divider sx={{ borderColor: '#f5f5f5' }} />
-
-      {/* DOB */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-        <CakeOutlinedIcon sx={{ fontSize: 14, color: '#bbb' }} />
-        <Typography variant="caption" color="text.secondary">
-          {emp.date_of_birth || '—'}
-        </Typography>
-      </Box>
-
-      {/* Role */}
-      {emp.group_name && emp.group_name !== '—' && (
-        <Chip
-          label={emp.group_name}
-          size="small"
-          sx={{ alignSelf: 'flex-start', bgcolor: '#e8f4fd', color: '#1565c0', fontWeight: 600, fontSize: '0.72rem', height: 22 }}
-        />
-      )}
-
-      {/* Outlets */}
-      {emp.outlet_names?.length > 0 && (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-          {emp.outlet_names.slice(0, 2).map(n => (
-            <Chip key={n} label={n} size="small" variant="outlined" sx={{ fontSize: '0.68rem', height: 20, borderColor: '#ddd', color: '#555' }} />
-          ))}
-          {emp.outlet_names.length > 2 && (
-            <Chip label={`+${emp.outlet_names.length - 2}`} size="small" sx={{ fontSize: '0.68rem', height: 20, bgcolor: '#f5f5f5', color: '#777' }} />
-          )}
-        </Box>
-      )}
-
-      {/* Primary outlet */}
-      {emp.primary_outlet_name && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#2e7d32', flexShrink: 0 }} />
-          <Typography variant="caption" color="#2e7d32" fontWeight={600}>
-            {emp.primary_outlet_name}
+      {/* Meta */}
+      <Box sx={{ px: 2.5, pt: 2, pb: 2, display: 'flex', flexDirection: 'column', gap: 0.8 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+          <CakeOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+          <Typography variant="caption" color="text.secondary">
+            {emp.date_of_birth || '—'}
           </Typography>
         </Box>
-      )}
+
+        {emp.outlet_names?.length > 0 && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, minWidth: 0 }}>
+            <LocationOnOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', flexShrink: 0 }} />
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {emp.outlet_names.slice(0, 2).join(', ')}
+              {emp.outlet_names.length > 2 && ` +${emp.outlet_names.length - 2}`}
+            </Typography>
+          </Box>
+        )}
+
+        {emp.primary_outlet_name && (
+          <Box
+            sx={{
+              mt: 0.5,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 0.6,
+              alignSelf: 'flex-start',
+              bgcolor: 'success.light',
+              color: 'success.dark',
+              borderRadius: 999,
+              px: 1,
+              py: 0.25,
+            }}
+          >
+            <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'success.main' }} />
+            <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.68rem' }}>
+              Primary: {emp.primary_outlet_name}
+            </Typography>
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 }
@@ -214,6 +268,7 @@ export default function AdminEmployeeEditor() {
   const [editTab, setEditTab] = useState(0);
   const [editError, setEditError] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [clearingPhotos, setClearingPhotos] = useState(false);
 
   const createForm = useForm({ defaultValues, resolver: yupResolver(step1Schema) });
   const editForm = useForm({ defaultValues, resolver: yupResolver(editSchema) });
@@ -252,6 +307,7 @@ export default function AdminEmployeeEditor() {
 
   useEffect(() => {
     fetchEmployees(currentPage, search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- search is debounced via handleSearchChange; pagination must preserve current search value
   }, [currentPage, fetchEmployees]);
 
   const handleSearchChange = (e) => {
@@ -368,6 +424,26 @@ export default function AdminEmployeeEditor() {
     }
   };
 
+  const handleClearPhotos = async () => {
+    if (!editEmployee) return;
+    if (!window.confirm('Delete all photos (reference, punch-in, punch-out) for this employee?')) return;
+    setClearingPhotos(true);
+    setEditError('');
+    try {
+      const formData = new FormData();
+      formData.append('clear_images', 'true');
+      await api.put(`/report/employees/${editEmployee.employee_id}/`, formData);
+      setEditEmployee((prev) =>
+        prev ? { ...prev, reference_photo: null, punchin_selfie: null, punchout_selfie: null } : prev
+      );
+      fetchEmployees(currentPage, search);
+    } catch (err) {
+      setEditError(err.response?.data?.detail || 'Failed to clear photos.');
+    } finally {
+      setClearingPhotos(false);
+    }
+  };
+
   const primaryOutletOptionsCreate = outlets.filter(o =>
     Array.isArray(watchedCreateOutlets) && watchedCreateOutlets.map(Number).includes(o.id)
   );
@@ -381,56 +457,30 @@ export default function AdminEmployeeEditor() {
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
 
-      {/* ── Page Header ── */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-        <Box>
-          <Typography variant="h5" fontWeight={700} color="#111" sx={{ letterSpacing: '-0.3px' }}>
-            Employees
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {loading ? 'Loading…' : `${totalCount} employees`}
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-          {/* Search */}
-          <Box sx={{
-            display: 'flex', alignItems: 'center', gap: 1,
-            bgcolor: '#fff', border: '1px solid #e0e0e0', borderRadius: 2,
-            px: 1.5, py: 0.6,
-            '&:focus-within': { borderColor: '#1976d2', boxShadow: '0 0 0 2px rgba(25,118,210,0.12)' },
-          }}>
-            <SearchIcon sx={{ fontSize: 18, color: '#bbb' }} />
-            <InputBase
-              placeholder="Search employees…"
+      <PageHeader
+        title="Employees"
+        subtitle={loading ? 'Loading…' : `${totalCount} employees`}
+        actions={
+          <>
+            <SearchInput
               value={search}
               onChange={handleSearchChange}
-              sx={{ fontSize: '0.85rem', width: 200 }}
+              placeholder="Search employees…"
             />
-          </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={openCreate}
-            sx={{
-              textTransform: 'none', fontWeight: 600, borderRadius: '10px',
-              px: 2.5, py: 1, bgcolor: '#1976d2',
-              boxShadow: '0 2px 8px rgba(25,118,210,0.3)',
-              '&:hover': { bgcolor: '#1565c0' },
-            }}
-          >
-            Add Employee
-          </Button>
-        </Box>
-      </Box>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              Add Employee
+            </Button>
+          </>
+        }
+      />
 
-      {/* ── Card Grid ── */}
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
-          <CircularProgress size={32} sx={{ color: '#1976d2' }} />
+          <CircularProgress size={32} />
         </Box>
       ) : employees.length === 0 ? (
         <Box sx={{ textAlign: 'center', py: 12 }}>
-          <PersonOutlineIcon sx={{ fontSize: 52, color: '#ddd', mb: 1 }} />
+          <PersonOutlineIcon sx={{ fontSize: 52, color: 'text.disabled', mb: 1 }} />
           <Typography color="text.secondary">No employees found</Typography>
         </Box>
       ) : (
@@ -467,17 +517,17 @@ export default function AdminEmployeeEditor() {
         onClose={() => setCreateOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 4, boxShadow: '0 16px 48px rgba(0,0,0,0.15)' } }}
+        PaperProps={{ sx: { borderRadius: 4 } }}
       >
         <Box sx={{ px: 3, pt: 3, pb: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <Box>
-              <Typography variant="h6" fontWeight={700}>New Employee</Typography>
+              <Typography variant="h5">New Employee</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3 }}>
                 Step {activeStep + 1} of 3 — {['Account & Personal', 'Work Assignment', 'EPF & Salary'][activeStep]}
               </Typography>
             </Box>
-            <IconButton onClick={() => setCreateOpen(false)} size="small" sx={{ color: '#999', mt: -0.5 }}>
+            <IconButton onClick={() => setCreateOpen(false)} size="small" sx={{ mt: -0.5 }}>
               <CloseIcon fontSize="small" />
             </IconButton>
           </Box>
@@ -494,8 +544,8 @@ export default function AdminEmployeeEditor() {
                     <Box sx={{
                       width: 30, height: 30, borderRadius: '50%', display: 'flex',
                       alignItems: 'center', justifyContent: 'center',
-                      bgcolor: activeStep > i ? '#2e7d32' : activeStep === i ? '#1976d2' : '#e8e8e8',
-                      color: activeStep >= i ? '#fff' : '#999',
+                      bgcolor: activeStep > i ? 'success.main' : activeStep === i ? 'primary.main' : 'grey.200',
+                      color: activeStep >= i ? 'common.white' : 'text.disabled',
                       transition: 'all 0.2s',
                     }}>
                       {activeStep > i ? <CheckIcon sx={{ fontSize: 16 }} /> : s.icon}
@@ -503,7 +553,7 @@ export default function AdminEmployeeEditor() {
                   )}
                 >
                   <Typography variant="caption" fontWeight={activeStep === i ? 700 : 400}
-                    color={activeStep === i ? '#1976d2' : 'text.secondary'}>
+                    color={activeStep === i ? 'primary.main' : 'text.secondary'}>
                     {s.label}
                   </Typography>
                 </StepLabel>
@@ -635,20 +685,20 @@ export default function AdminEmployeeEditor() {
         <Divider />
         <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
           {activeStep > 0 && (
-            <Button startIcon={<ArrowBackIcon />} onClick={() => setActiveStep(s => s - 1)} variant="outlined" sx={{ borderRadius: '8px', textTransform: 'none' }}>
+            <Button startIcon={<ArrowBackIcon />} onClick={() => setActiveStep(s => s - 1)} variant="outlined">
               Back
             </Button>
           )}
           <Box sx={{ flex: 1 }} />
-          <Button onClick={() => setCreateOpen(false)} sx={{ textTransform: 'none', color: '#666' }}>Cancel</Button>
+          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
           {activeStep < 2 ? (
-            <Button endIcon={<ArrowForwardIcon />} onClick={handleNextStep} variant="contained" sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, px: 3 }}>
+            <Button endIcon={<ArrowForwardIcon />} onClick={handleNextStep} variant="contained" sx={{ px: 3 }}>
               Next
             </Button>
           ) : (
             <Button
-              onClick={handleCreateSubmit} variant="contained" disabled={createSubmitting}
-              sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, px: 3, bgcolor: '#2e7d32', '&:hover': { bgcolor: '#1b5e20' } }}
+              onClick={handleCreateSubmit} variant="contained" color="success" disabled={createSubmitting}
+              sx={{ px: 3 }}
               startIcon={createSubmitting ? <CircularProgress size={14} color="inherit" /> : <CheckIcon />}
             >
               {createSubmitting ? 'Creating…' : 'Create Employee'}
@@ -666,16 +716,16 @@ export default function AdminEmployeeEditor() {
         onClose={() => setEditDrawerOpen(false)}
         PaperProps={{ sx: { width: { xs: '100vw', sm: 480 }, display: 'flex', flexDirection: 'column' } }}
       >
-        <Box sx={{ px: 3, py: 2.5, bgcolor: '#f9fafb', borderBottom: '1px solid #ebebeb', flexShrink: 0 }}>
+        <Box sx={{ px: 3, py: 2.5, bgcolor: 'grey.50', borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Avatar sx={{ width: 44, height: 44, fontWeight: 700, fontSize: '1rem', bgcolor: getAvatarColor(editEmployee?.fullname || '') }}>
+            <Avatar sx={{ width: 44, height: 44, fontWeight: 700, fontSize: '1rem', bgcolor: pickAvatarColor(editEmployee?.fullname || '') }}>
               {getInitials(editEmployee?.fullname || '')}
             </Avatar>
             <Box sx={{ flex: 1 }}>
-              <Typography variant="subtitle1" fontWeight={700} color="#111">{editEmployee?.fullname}</Typography>
+              <Typography variant="subtitle1" fontWeight={700}>{editEmployee?.fullname}</Typography>
               <Typography variant="caption" color="text.secondary">{editEmployee?.email || 'No email'}</Typography>
             </Box>
-            <IconButton onClick={() => setEditDrawerOpen(false)} size="small" sx={{ color: '#999' }}>
+            <IconButton onClick={() => setEditDrawerOpen(false)} size="small">
               <CloseIcon />
             </IconButton>
           </Box>
@@ -684,14 +734,12 @@ export default function AdminEmployeeEditor() {
         <Tabs
           value={editTab}
           onChange={(_, v) => setEditTab(v)}
-          sx={{
-            px: 2, borderBottom: '1px solid #ebebeb', flexShrink: 0,
-            '& .MuiTab-root': { textTransform: 'none', fontWeight: 600, fontSize: '0.82rem', minWidth: 0, px: 2 },
-          }}
+          sx={{ px: 2, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
         >
           <Tab label="Personal" icon={<PersonOutlineIcon sx={{ fontSize: 16 }} />} iconPosition="start" />
           <Tab label="Work" icon={<WorkOutlineIcon sx={{ fontSize: 16 }} />} iconPosition="start" />
           <Tab label="EPF & Pay" icon={<AccountBalanceIcon sx={{ fontSize: 16 }} />} iconPosition="start" />
+          <Tab label="Photos" icon={<FaceIcon sx={{ fontSize: 16 }} />} iconPosition="start" />
         </Tabs>
 
         <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2.5 }}>
@@ -804,15 +852,83 @@ export default function AdminEmployeeEditor() {
               </Stack>
             </Box>
           )}
+
+          {editTab === 3 && (
+            <Box>
+              <SectionLabel icon={<FaceIcon />}>Reference Photo</SectionLabel>
+              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+                {editEmployee?.reference_photo ? (
+                  <Avatar
+                    src={`${BASE_URL}${editEmployee.reference_photo}`}
+                    alt={editEmployee.fullname}
+                    sx={{
+                      width: 140,
+                      height: 140,
+                      border: 3,
+                      borderColor: 'primary.light',
+                      boxShadow: 3,
+                    }}
+                  />
+                ) : (
+                  <Avatar
+                    sx={{
+                      width: 140,
+                      height: 140,
+                      bgcolor: 'grey.100',
+                      color: 'text.disabled',
+                      fontSize: '2.5rem',
+                      border: 3,
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <FaceIcon sx={{ fontSize: 48 }} />
+                  </Avatar>
+                )}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 3 }}>
+                Used for face recognition at punch-in/out
+              </Typography>
+
+              <SectionLabel icon={<FaceIcon />}>Recent Punch Photos</SectionLabel>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 3 }}>
+                <PunchPhotoSlot
+                  label="Punch In"
+                  src={editEmployee?.punchin_selfie}
+                  tone="success"
+                />
+                <PunchPhotoSlot
+                  label="Punch Out"
+                  src={editEmployee?.punchout_selfie}
+                  tone="warning"
+                />
+              </Box>
+
+              <Divider sx={{ my: 2 }} />
+
+              <Button
+                onClick={handleClearPhotos}
+                variant="outlined"
+                color="error"
+                fullWidth
+                disabled={clearingPhotos}
+                startIcon={clearingPhotos ? <CircularProgress size={14} color="inherit" /> : <DeleteOutlineIcon />}
+              >
+                {clearingPhotos ? 'Clearing…' : 'Clear All Photos'}
+              </Button>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
+                Removes reference photo and both punch selfies. Employee will need to re-register.
+              </Typography>
+            </Box>
+          )}
         </Box>
 
-        <Box sx={{ px: 3, py: 2, borderTop: '1px solid #ebebeb', bgcolor: '#f9fafb', flexShrink: 0, display: 'flex', gap: 1.5 }}>
-          <Button onClick={() => setEditDrawerOpen(false)} variant="outlined" sx={{ borderRadius: '8px', textTransform: 'none', flex: 1 }}>
+        <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: 'divider', bgcolor: 'grey.50', flexShrink: 0, display: 'flex', gap: 1.5 }}>
+          <Button onClick={() => setEditDrawerOpen(false)} variant="outlined" sx={{ flex: 1 }}>
             Cancel
           </Button>
           <Button
             onClick={handleEditSave} variant="contained" disabled={editSaving}
-            sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600, flex: 2 }}
+            sx={{ flex: 2 }}
             startIcon={editSaving ? <CircularProgress size={14} color="inherit" /> : <CheckIcon />}
           >
             {editSaving ? 'Saving…' : 'Save Changes'}

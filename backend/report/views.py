@@ -1047,3 +1047,628 @@ class EmployeeDetailView(APIView):
         except Employee.DoesNotExist:
             return Response({"error": "Employee not found"}, status=status.HTTP_404_NOT_FOUND)
 
+
+# =============================================================================
+# Admin Outlet Summary — range-native aggregation endpoints
+# All accept ?start_date=YYYY-MM-DD & ?end_date=YYYY-MM-DD (default: this month).
+# =============================================================================
+
+def _parse_range(request):
+    sd_raw = request.query_params.get('start_date')
+    ed_raw = request.query_params.get('end_date')
+    return parse_dates_or_default(sd_raw, ed_raw)
+
+
+def _user_outlet_scope(user):
+    """Return (is_admin, outlet_ids).
+    Admin/superuser → (True, None)  — no restriction.
+    Other users → (False, [ids])    — restricted to their assigned outlets.
+    """
+    if user.is_staff or user.is_superuser or user.groups.filter(name__iexact='Admin').exists():
+        return True, None
+    emp = getattr(user, 'employee', None)
+    if not emp:
+        return False, []
+    return False, list(emp.outlets.values_list('id', flat=True))
+
+
+class OutletSummaryOverviewAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_admin, outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and not outlet_ids:
+            return Response({
+                "total_emp": 0, "active_emp": 0, "inactive_emp": 0,
+                "outlets": 0, "present_days": 0, "leave_days": 0,
+                "absent_days": 0, "possible_emp_days": 0,
+                "pending_leave_req": 0, "present_rate": 0,
+                "start_date": sd.isoformat(), "end_date": ed.isoformat(),
+            })
+
+        # Build an emp-scope CTE — employees whose PRIMARY outlet is in scope
+        # (Never match via M2M, so employees in 2+ outlets aren't double-counted.)
+        if is_admin:
+            scoped_emp_cte = (
+                "scoped_emp AS ("
+                "  SELECT employee_id FROM public.main_employee"
+                "  WHERE is_active = TRUE AND primary_outlet_id IS NOT NULL"
+                ")"
+            )
+            outlet_count_sql = "(SELECT COUNT(*) FROM public.main_outlet)"
+            pending_sql = "(SELECT COUNT(*) FROM public.main_empleave WHERE LOWER(status) = 'pending')"
+            params = [sd, ed, sd, ed, sd, ed]
+        else:
+            scoped_emp_cte = (
+                "scoped_emp AS ("
+                "  SELECT employee_id FROM public.main_employee"
+                "  WHERE is_active = TRUE AND primary_outlet_id = ANY(%s)"
+                ")"
+            )
+            outlet_count_sql = "%s::int"
+            pending_sql = (
+                "(SELECT COUNT(*) FROM public.main_empleave l "
+                " WHERE LOWER(l.status) = 'pending' "
+                "   AND l.employee_id IN (SELECT employee_id FROM scoped_emp))"
+            )
+            params = [outlet_ids, sd, ed, sd, ed, sd, ed, len(outlet_ids)]
+
+        query = f"""
+        WITH {scoped_emp_cte},
+        emp_summary AS (
+          SELECT
+            (SELECT COUNT(*) FROM scoped_emp) AS total_emp,
+            (SELECT COUNT(*) FROM scoped_emp) AS active_emp,
+            0 AS inactive_emp
+        ),
+        dates AS (
+          SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
+        ),
+        present_days AS (
+          SELECT COUNT(*) AS c
+          FROM public.main_attendance a
+          INNER JOIN scoped_emp e ON e.employee_id = a.employee_id
+          WHERE a.date BETWEEN %s AND %s
+            AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+        ),
+        leave_days AS (
+          SELECT COUNT(*) AS c
+          FROM public.main_empleave l
+          INNER JOIN scoped_emp e ON e.employee_id = l.employee_id
+          WHERE l.leave_date BETWEEN %s AND %s
+            AND LOWER(l.status) = 'approved'
+        ),
+        totals AS (
+          SELECT (SELECT COUNT(*) FROM scoped_emp) * (SELECT COUNT(*) FROM dates) AS possible_emp_days
+        )
+        SELECT
+          e.total_emp,
+          e.active_emp,
+          e.inactive_emp,
+          {outlet_count_sql} AS outlets,
+          COALESCE(p.c, 0) AS present_days,
+          COALESCE(l.c, 0) AS leave_days,
+          GREATEST(t.possible_emp_days - COALESCE(p.c, 0) - COALESCE(l.c, 0), 0) AS absent_days,
+          t.possible_emp_days,
+          {pending_sql} AS pending_leave_req,
+          CASE WHEN t.possible_emp_days > 0
+            THEN ROUND(COALESCE(p.c, 0)::numeric * 100 / t.possible_emp_days, 1)
+            ELSE 0 END AS present_rate
+        FROM emp_summary e
+        CROSS JOIN totals t
+        LEFT JOIN present_days p ON TRUE
+        LEFT JOIN leave_days l ON TRUE;
+        """
+        try:
+            rows = run_sql(query, params)
+            data = rows[0] if rows else {}
+            data['start_date'] = sd.isoformat()
+            data['end_date'] = ed.isoformat()
+            return Response(data)
+        except Exception as e:
+            print("OutletSummaryOverviewAPIView error:", e)
+            return Response({"error": "Internal server error"}, status=500)
+
+
+class OutletSummaryTrendAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_admin, scope_outlet_ids = _user_outlet_scope(request.user)
+
+        outlet_id = request.query_params.get('outlet_id')
+        primary_filter = ""
+        leading_params = []
+        if outlet_id:
+            try:
+                outlet_id = int(outlet_id)
+            except (TypeError, ValueError):
+                return Response({"error": "Invalid outlet_id"}, status=400)
+            if not is_admin and outlet_id not in (scope_outlet_ids or []):
+                return Response({"error": "You are not assigned to this outlet."}, status=403)
+            primary_filter = "AND e.primary_outlet_id = %s"
+            leading_params.append(outlet_id)
+        elif not is_admin:
+            if not scope_outlet_ids:
+                return Response([])
+            primary_filter = "AND e.primary_outlet_id = ANY(%s)"
+            leading_params.append(scope_outlet_ids)
+
+        params = leading_params + [sd, ed, sd, ed, sd, ed]
+
+        query = f"""
+        WITH active_emp AS (
+          SELECT e.employee_id FROM public.main_employee e
+          WHERE e.is_active = TRUE AND e.primary_outlet_id IS NOT NULL {primary_filter}
+        ),
+        dates AS (
+          SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
+        ),
+        present_summary AS (
+          SELECT a.date::date AS d, COUNT(DISTINCT a.employee_id) AS c
+          FROM public.main_attendance a
+          INNER JOIN active_emp ae ON ae.employee_id = a.employee_id
+          WHERE a.date BETWEEN %s AND %s
+            AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+          GROUP BY a.date::date
+        ),
+        leave_summary AS (
+          SELECT l.leave_date::date AS d, COUNT(DISTINCT l.employee_id) AS c
+          FROM public.main_empleave l
+          INNER JOIN active_emp ae ON ae.employee_id = l.employee_id
+          WHERE l.leave_date BETWEEN %s AND %s
+            AND LOWER(l.status) = 'approved'
+          GROUP BY l.leave_date::date
+        ),
+        total_emp AS (SELECT COUNT(*) AS c FROM active_emp)
+        SELECT
+          to_char(dt.d, 'YYYY-MM-DD') AS date,
+          to_char(dt.d, 'DD Mon') AS date_label,
+          COALESCE(p.c, 0) AS present,
+          COALESCE(l.c, 0) AS leave,
+          GREATEST(t.c - COALESCE(p.c, 0) - COALESCE(l.c, 0), 0) AS not_marked
+        FROM dates dt
+        CROSS JOIN total_emp t
+        LEFT JOIN present_summary p ON p.d = dt.d
+        LEFT JOIN leave_summary l ON l.d = dt.d
+        ORDER BY dt.d;
+        """
+        try:
+            rows = run_sql(query, params)
+            return Response(rows)
+        except Exception as e:
+            print("OutletSummaryTrendAPIView error:", e)
+            return Response({"error": "Internal server error"}, status=500)
+
+
+class OutletSummaryOutletsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_admin, scope_outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and not scope_outlet_ids:
+            return Response([])
+
+        outlet_filter_sql = ""
+        outer_filter_sql = ""
+        extra_params = []
+        if not is_admin:
+            outlet_filter_sql = "AND e.primary_outlet_id = ANY(%s)"
+            outer_filter_sql = "WHERE o.id = ANY(%s)"
+            extra_params = [scope_outlet_ids]
+
+        query = f"""
+        WITH
+        date_range AS (
+          SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
+        ),
+        days_count AS (SELECT COUNT(*) AS n FROM date_range),
+        emp_outlet AS (
+          SELECT e.primary_outlet_id AS outlet_id, e.employee_id
+          FROM public.main_employee e
+          WHERE e.is_active = TRUE AND e.primary_outlet_id IS NOT NULL {outlet_filter_sql}
+        ),
+        present_rows AS (
+          SELECT eo.outlet_id, COUNT(*) AS c
+          FROM public.main_attendance a
+          INNER JOIN emp_outlet eo ON eo.employee_id = a.employee_id
+          WHERE a.date BETWEEN %s AND %s
+            AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+          GROUP BY eo.outlet_id
+        ),
+        leave_rows AS (
+          SELECT eo.outlet_id, COUNT(*) AS c
+          FROM public.main_empleave l
+          INNER JOIN emp_outlet eo ON eo.employee_id = l.employee_id
+          WHERE l.leave_date BETWEEN %s AND %s
+            AND LOWER(l.status) = 'approved'
+          GROUP BY eo.outlet_id
+        ),
+        outlet_totals AS (
+          SELECT outlet_id, COUNT(*) AS total_emp FROM emp_outlet GROUP BY outlet_id
+        ),
+        outlet_manager AS (
+          SELECT o.id AS outlet_id, e.fullname AS manager_name
+          FROM public.main_outlet o
+          LEFT JOIN public.main_employee e ON e.employee_id = o.manager_id
+        )
+        SELECT
+          o.id AS outlet_id,
+          o.name,
+          o.address,
+          COALESCE(om.manager_name, NULL) AS manager_name,
+          COALESCE(ot.total_emp, 0) AS total_emp,
+          COALESCE(p.c, 0) AS present_days,
+          COALESCE(l.c, 0) AS leave_days,
+          GREATEST(
+            COALESCE(ot.total_emp, 0) * (SELECT n FROM days_count)
+            - COALESCE(p.c, 0) - COALESCE(l.c, 0), 0
+          ) AS absent_days,
+          COALESCE(ot.total_emp, 0) * (SELECT n FROM days_count) AS possible_days,
+          CASE WHEN COALESCE(ot.total_emp, 0) > 0
+            THEN ROUND(COALESCE(p.c, 0)::numeric * 100
+                 / NULLIF(ot.total_emp * (SELECT n FROM days_count), 0), 1)
+            ELSE 0 END AS present_rate
+        FROM public.main_outlet o
+        LEFT JOIN outlet_totals ot ON ot.outlet_id = o.id
+        LEFT JOIN present_rows p ON p.outlet_id = o.id
+        LEFT JOIN leave_rows l ON l.outlet_id = o.id
+        LEFT JOIN outlet_manager om ON om.outlet_id = o.id
+        {outer_filter_sql}
+        ORDER BY o.name;
+        """
+        # param order: [sd, ed] then emp_outlet filter, then 2× range filters, then outer filter
+        params = [sd, ed]
+        if not is_admin:
+            params += extra_params  # outlet_id filter inside emp_outlet
+        params += [sd, ed, sd, ed]
+        if not is_admin:
+            params += extra_params  # outer filter
+        try:
+            rows = run_sql(query, params)
+            return Response(rows)
+        except Exception as e:
+            print("OutletSummaryOutletsAPIView error:", e)
+            return Response({"error": "Internal server error"}, status=500)
+
+
+class OutletSummaryOutletEmployeesAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, outlet_id):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_admin, scope_outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and outlet_id not in (scope_outlet_ids or []):
+            return Response({"error": "You are not assigned to this outlet."}, status=403)
+
+        query = """
+        WITH
+        date_range AS (
+          SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
+        ),
+        days_count AS (SELECT COUNT(*) AS n FROM date_range),
+        emp_outlet AS (
+          SELECT e.employee_id, e.fullname, e.empcode
+          FROM public.main_employee e
+          WHERE e.is_active = TRUE AND e.primary_outlet_id = %s
+        ),
+        present_days AS (
+          SELECT a.employee_id, COUNT(DISTINCT a.date) AS c
+          FROM public.main_attendance a
+          WHERE a.date BETWEEN %s AND %s
+            AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+          GROUP BY a.employee_id
+        ),
+        leave_days AS (
+          SELECT l.employee_id, COUNT(DISTINCT l.leave_date) AS c
+          FROM public.main_empleave l
+          WHERE l.leave_date BETWEEN %s AND %s
+            AND LOWER(l.status) = 'approved'
+          GROUP BY l.employee_id
+        )
+        SELECT
+          eo.employee_id,
+          eo.fullname,
+          eo.empcode,
+          COALESCE(pd.c, 0) AS present_days,
+          COALESCE(ld.c, 0) AS leave_days,
+          GREATEST((SELECT n FROM days_count) - COALESCE(pd.c, 0) - COALESCE(ld.c, 0), 0) AS absent_days,
+          (SELECT n FROM days_count) AS total_days,
+          CASE WHEN (SELECT n FROM days_count) > 0
+            THEN ROUND(COALESCE(pd.c, 0)::numeric * 100 / (SELECT n FROM days_count), 1)
+            ELSE 0 END AS present_rate
+        FROM emp_outlet eo
+        LEFT JOIN present_days pd ON pd.employee_id = eo.employee_id
+        LEFT JOIN leave_days ld ON ld.employee_id = eo.employee_id
+        ORDER BY eo.fullname;
+        """
+        try:
+            rows = run_sql(query, [sd, ed, outlet_id, sd, ed, sd, ed])
+            return Response(rows)
+        except Exception as e:
+            print("OutletSummaryOutletEmployeesAPIView error:", e)
+            return Response({"error": "Internal server error"}, status=500)
+
+
+# =============================================================================
+# Reports Section — 4 new range-native report endpoints
+# All respect outlet scope (admin → everyone, manager → primary_outlet in their outlets)
+# =============================================================================
+
+def _scoped_emp_sql(is_admin, outlet_ids):
+    """Return (sql_fragment, params) that yields a scoped_emp CTE."""
+    if is_admin:
+        return (
+            "scoped_emp AS ("
+            "  SELECT e.employee_id, e.fullname, e.empcode,"
+            "         o.id AS primary_outlet_id, o.name AS primary_outlet_name"
+            "  FROM public.main_employee e"
+            "  LEFT JOIN public.main_outlet o ON o.id = e.primary_outlet_id"
+            "  WHERE e.is_active = TRUE AND e.primary_outlet_id IS NOT NULL"
+            ")",
+            [],
+        )
+    return (
+        "scoped_emp AS ("
+        "  SELECT e.employee_id, e.fullname, e.empcode,"
+        "         o.id AS primary_outlet_id, o.name AS primary_outlet_name"
+        "  FROM public.main_employee e"
+        "  LEFT JOIN public.main_outlet o ON o.id = e.primary_outlet_id"
+        "  WHERE e.is_active = TRUE AND e.primary_outlet_id = ANY(%s)"
+        ")",
+        [outlet_ids],
+    )
+
+
+class MonthlySheetAPIView(APIView):
+    """Payroll-style grid: rows = employees, columns = days, cells = status code."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+        is_admin, outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and not outlet_ids:
+            return Response({"employees": [], "dates": [], "cells": {}, "holidays": []})
+
+        scoped_cte, scope_params = _scoped_emp_sql(is_admin, outlet_ids)
+
+        # Employees
+        emp_query = f"WITH {scoped_cte} SELECT * FROM scoped_emp ORDER BY primary_outlet_name, fullname;"
+        employees = run_sql(emp_query, scope_params)
+        emp_ids = [e['employee_id'] for e in employees]
+
+        # Date series
+        dates_rows = run_sql(
+            "SELECT to_char(d, 'YYYY-MM-DD') AS d FROM generate_series(%s::date, %s::date, INTERVAL '1 day') d ORDER BY d",
+            [sd, ed],
+        )
+        dates = [r['d'] for r in dates_rows]
+
+        # Attendance status per emp per day
+        att = run_sql(
+            "SELECT employee_id, to_char(date, 'YYYY-MM-DD') AS d, status "
+            "FROM public.main_attendance "
+            "WHERE employee_id = ANY(%s) AND date BETWEEN %s AND %s",
+            [emp_ids, sd, ed],
+        ) if emp_ids else []
+
+        # Approved leaves per emp per day
+        leaves = run_sql(
+            "SELECT employee_id, to_char(leave_date, 'YYYY-MM-DD') AS d "
+            "FROM public.main_empleave "
+            "WHERE employee_id = ANY(%s) AND leave_date BETWEEN %s AND %s "
+            "  AND LOWER(status) = 'approved'",
+            [emp_ids, sd, ed],
+        ) if emp_ids else []
+
+        # Holidays (active)
+        hol = run_sql(
+            "SELECT to_char(hdate, 'YYYY-MM-DD') AS d FROM public.holiday "
+            "WHERE active = TRUE AND hdate BETWEEN %s AND %s",
+            [sd, ed],
+        )
+        holidays = sorted({r['d'] for r in hol})
+
+        def code(status):
+            s = (status or '').lower()
+            if s in ('present', '1'): return 'P'
+            if s == 'late': return 'L'
+            if s == 'half day': return 'H'
+            if s == 'on leave': return 'V'
+            if s == 'absent': return 'A'
+            return '-'
+
+        cells = {eid: {} for eid in emp_ids}
+        for row in att:
+            cells[row['employee_id']][row['d']] = code(row['status'])
+        for row in leaves:
+            # Only fill if no attendance row already present (attendance wins)
+            if row['d'] not in cells.get(row['employee_id'], {}):
+                cells[row['employee_id']][row['d']] = 'V'
+
+        return Response({
+            "start_date": sd.isoformat(),
+            "end_date": ed.isoformat(),
+            "employees": employees,
+            "dates": dates,
+            "cells": cells,
+            "holidays": holidays,
+        })
+
+
+class LateComersAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+        is_admin, outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and not outlet_ids:
+            return Response([])
+
+        scoped_cte, scope_params = _scoped_emp_sql(is_admin, outlet_ids)
+
+        query = f"""
+        WITH {scoped_cte},
+        att AS (
+          SELECT a.employee_id,
+                 COUNT(*) FILTER (WHERE LOWER(a.status) = 'late') AS late_days,
+                 COUNT(*) AS total_records
+          FROM public.main_attendance a
+          INNER JOIN scoped_emp s ON s.employee_id = a.employee_id
+          WHERE a.date BETWEEN %s AND %s
+          GROUP BY a.employee_id
+        )
+        SELECT s.employee_id, s.fullname, s.empcode,
+               s.primary_outlet_id, s.primary_outlet_name,
+               COALESCE(att.late_days, 0) AS late_days,
+               COALESCE(att.total_records, 0) AS total_records,
+               CASE WHEN COALESCE(att.total_records, 0) > 0
+                 THEN ROUND(COALESCE(att.late_days, 0)::numeric * 100 / att.total_records, 1)
+                 ELSE 0 END AS late_rate
+        FROM scoped_emp s
+        LEFT JOIN att ON att.employee_id = s.employee_id
+        WHERE COALESCE(att.late_days, 0) > 0
+        ORDER BY late_days DESC, s.fullname;
+        """
+        try:
+            rows = run_sql(query, scope_params + [sd, ed])
+            return Response(rows)
+        except Exception as e:
+            print("LateComersAPIView error:", e)
+            return Response({"error": "Internal server error"}, status=500)
+
+
+class AbsenteeismAPIView(APIView):
+    """Per-employee absent day count over a range. ?min_days=N filters out low counts."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+        try:
+            min_days = int(request.query_params.get('min_days', 0) or 0)
+        except (TypeError, ValueError):
+            min_days = 0
+
+        is_admin, outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and not outlet_ids:
+            return Response([])
+
+        scoped_cte, scope_params = _scoped_emp_sql(is_admin, outlet_ids)
+
+        query = f"""
+        WITH {scoped_cte},
+        date_range AS (SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d),
+        days_count AS (SELECT COUNT(*) AS n FROM date_range),
+        present AS (
+          SELECT a.employee_id, COUNT(DISTINCT a.date) AS c
+          FROM public.main_attendance a
+          WHERE a.date BETWEEN %s AND %s
+            AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
+          GROUP BY a.employee_id
+        ),
+        leaves AS (
+          SELECT l.employee_id, COUNT(DISTINCT l.leave_date) AS c
+          FROM public.main_empleave l
+          WHERE l.leave_date BETWEEN %s AND %s
+            AND LOWER(l.status) = 'approved'
+          GROUP BY l.employee_id
+        )
+        SELECT s.employee_id, s.fullname, s.empcode,
+               s.primary_outlet_id, s.primary_outlet_name,
+               (SELECT n FROM days_count) AS total_days,
+               COALESCE(p.c, 0) AS present_days,
+               COALESCE(l.c, 0) AS leave_days,
+               GREATEST((SELECT n FROM days_count) - COALESCE(p.c, 0) - COALESCE(l.c, 0), 0) AS absent_days,
+               CASE WHEN (SELECT n FROM days_count) > 0
+                 THEN ROUND(GREATEST((SELECT n FROM days_count) - COALESCE(p.c, 0) - COALESCE(l.c, 0), 0)::numeric
+                            * 100 / (SELECT n FROM days_count), 1)
+                 ELSE 0 END AS absent_rate
+        FROM scoped_emp s
+        LEFT JOIN present p ON p.employee_id = s.employee_id
+        LEFT JOIN leaves l ON l.employee_id = s.employee_id
+        WHERE GREATEST((SELECT n FROM days_count) - COALESCE(p.c, 0) - COALESCE(l.c, 0), 0) >= %s
+        ORDER BY absent_days DESC, s.fullname;
+        """
+        try:
+            rows = run_sql(query, scope_params + [sd, ed, sd, ed, sd, ed, min_days])
+            return Response(rows)
+        except Exception as e:
+            print("AbsenteeismAPIView error:", e)
+            return Response({"error": "Internal server error"}, status=500)
+
+
+class OvertimeAPIView(APIView):
+    """Per-employee OT hours + worked hours + days-with-OT in the range."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+        is_admin, outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and not outlet_ids:
+            return Response([])
+
+        scoped_cte, scope_params = _scoped_emp_sql(is_admin, outlet_ids)
+
+        query = f"""
+        WITH {scoped_cte},
+        att AS (
+          SELECT a.employee_id,
+                 COALESCE(SUM(a.ot_hours), 0) AS ot_hours,
+                 COALESCE(SUM(a.worked_hours), 0) AS worked_hours,
+                 COUNT(*) FILTER (WHERE COALESCE(a.ot_hours, 0) > 0) AS days_with_ot
+          FROM public.main_attendance a
+          INNER JOIN scoped_emp s ON s.employee_id = a.employee_id
+          WHERE a.date BETWEEN %s AND %s
+          GROUP BY a.employee_id
+        )
+        SELECT s.employee_id, s.fullname, s.empcode,
+               s.primary_outlet_id, s.primary_outlet_name,
+               ROUND(COALESCE(att.ot_hours, 0)::numeric, 2) AS ot_hours,
+               ROUND(COALESCE(att.worked_hours, 0)::numeric, 2) AS worked_hours,
+               COALESCE(att.days_with_ot, 0) AS days_with_ot
+        FROM scoped_emp s
+        LEFT JOIN att ON att.employee_id = s.employee_id
+        WHERE COALESCE(att.ot_hours, 0) > 0
+        ORDER BY ot_hours DESC, s.fullname;
+        """
+        try:
+            rows = run_sql(query, scope_params + [sd, ed])
+            return Response(rows)
+        except Exception as e:
+            print("OvertimeAPIView error:", e)
+            return Response({"error": "Internal server error"}, status=500)

@@ -162,11 +162,22 @@ urlpatterns = [
     # -----------------
     path('api/simple-employees/', views.get_simple_employees, name='simple_employees'),
     path('api/simple-leave-requests/', views.get_simple_leave_requests, name='simple_leave_requests'),
+    path('api/primary-outlet-employees/', views.get_primary_outlet_employees, name='primary_outlet_employees'),
 
     # -----------------
     # REPORTS
     # -----------------
     path('report/', include('report.urls')),
+
+    # -----------------
+    # PAYROLL CALCULATION
+    # -----------------
+    path('calculation/', include('calculation.urls')),
+
+    # -----------------
+    # FINGERPRINT IMPORT
+    # -----------------
+    path('fingerprint/', include('fingerprint.urls')),
 
     # -----------------
     # OTHER APPS (if any)

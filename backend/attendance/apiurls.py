@@ -22,6 +22,8 @@ urlpatterns = [
     path("addleave/", api.add_leave, name="add_leave_by_maanger"),
     path('bulk-add/', api.bulk_add_attendance, name='bulk-add-attendance'),
     path('bulk-addleave/', api.bulk_add_leave, name='bulk-add-leave'),
+    path('bulk-addleave/v2/', api.bulk_add_leave_v2, name='bulk-add-leave-v2'),
+    path('leave/<int:id>/', api.delete_leave, name='delete-leave'),
 
     # --- V2 endpoints (rebuilt system) ---
     path('v2/', api.v2_attendance_list, name='v2-attendance-list'),
@@ -31,4 +33,17 @@ urlpatterns = [
     path('v2/edit-request/', api.v2_attendance_edit_request, name='v2-attendance-edit-request'),
     path('v2/edit-requests/', api.v2_attendance_edit_requests_list, name='v2-attendance-edit-requests-list'),
     path('v2/edit-requests/review/', api.v2_attendance_edit_requests_review, name='v2-attendance-edit-requests-review'),
+
+    # --- V3 attendance management (history / add / modify / delete) ---
+    path('v3/', api.v3_attendance_list, name='v3-attendance-list'),
+    path('v3/bulk-add/', api.v3_attendance_bulk_add, name='v3-attendance-bulk-add'),
+    # Static v3 sub-routes must come BEFORE the <int:id> catch-all
+    path('v3/modification-requests/', api.v3_modification_requests_list, name='v3-mod-requests-list'),
+    path('v3/modification-requests/<int:log_id>/approve/', api.v3_modification_request_approve, name='v3-mod-request-approve'),
+    path('v3/modification-requests/<int:log_id>/reject/', api.v3_modification_request_reject, name='v3-mod-request-reject'),
+    path('v3/lock-periods/', api.v3_lock_periods, name='v3-lock-periods'),
+    path('v3/lock-periods/<int:lock_id>/', api.v3_lock_period_detail, name='v3-lock-period-detail'),
+    path('v3/<int:id>/modifications/', api.v3_attendance_mod_history, name='v3-attendance-mod-history'),
+    path('v3/<int:id>/', api.v3_attendance_update, name='v3-attendance-update'),
+    path('v3/<int:id>/delete/', api.v3_attendance_delete, name='v3-attendance-delete'),
 ]

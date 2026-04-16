@@ -16,9 +16,35 @@ from .views import (
     OutletDataAPIView,
     EmployeeListCreateView,
     EmployeeDetailView,
+    # Outlet Summary — range-native
+    OutletSummaryOverviewAPIView,
+    OutletSummaryTrendAPIView,
+    OutletSummaryOutletsAPIView,
+    OutletSummaryOutletEmployeesAPIView,
+    # Reports section
+    MonthlySheetAPIView,
+    LateComersAPIView,
+    AbsenteeismAPIView,
+    OvertimeAPIView,
 )
 
 urlpatterns = [
+    # -------------------------------------------------------------------------
+    # Outlet Summary — range-native (start_date, end_date query params)
+    # -------------------------------------------------------------------------
+    path('outlet-summary/overview/', OutletSummaryOverviewAPIView.as_view(), name='outlet_summary_overview'),
+    path('outlet-summary/trend/', OutletSummaryTrendAPIView.as_view(), name='outlet_summary_trend'),
+    path('outlet-summary/outlets/', OutletSummaryOutletsAPIView.as_view(), name='outlet_summary_outlets'),
+    path('outlet-summary/outlets/<int:outlet_id>/employees/', OutletSummaryOutletEmployeesAPIView.as_view(), name='outlet_summary_outlet_employees'),
+
+    # -------------------------------------------------------------------------
+    # Reports section — range-native, outlet-scoped
+    # -------------------------------------------------------------------------
+    path('reports/monthly-sheet/', MonthlySheetAPIView.as_view(), name='reports_monthly_sheet'),
+    path('reports/late-comers/', LateComersAPIView.as_view(), name='reports_late_comers'),
+    path('reports/absenteeism/', AbsenteeismAPIView.as_view(), name='reports_absenteeism'),
+    path('reports/overtime/', OvertimeAPIView.as_view(), name='reports_overtime'),
+
     # -------------------------------------------------------------------------
     # Dashboard (all outlets)
     # -------------------------------------------------------------------------

@@ -164,21 +164,46 @@ def get_simple_employees(request):
 @api_view(['GET'])
 def get_simple_leave_requests(request):
     outlet_id = request.GET.get('outlet_id')
-    employee_name = request.GET.get('employee_name')
+    employee_id = request.GET.get('employee_id')
+    search = request.GET.get('search')
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
+    status_filter = request.GET.get('status')
 
     if not outlet_id:
         return Response({"error": "outlet_id is required"}, status=400)
 
-    # Base Query
-    leaves = EmpLeave.objects.filter(employee__outlets__id=outlet_id)
+    try:
+        outlet_id = int(outlet_id)
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid outlet_id"}, status=400)
 
-    # Filter by employee name (case insensitive)
-    if employee_name:
-        leaves = leaves.filter(employee__fullname__icontains=employee_name)
+    user = request.user
+    is_admin = user.is_staff or user.is_superuser
+    if not is_admin:
+        employee = getattr(user, 'employee', None)
+        if not employee or not employee.outlets.filter(id=outlet_id).exists():
+            return Response({"error": "You are not assigned to this outlet."}, status=403)
 
-    # Filter by date range
+    # Scope to employees whose PRIMARY outlet matches
+    leaves = EmpLeave.objects.select_related('employee', 'leave_type').filter(
+        employee__primary_outlet_id=outlet_id
+    )
+
+    if employee_id:
+        try:
+            leaves = leaves.filter(employee_id=int(employee_id))
+        except (TypeError, ValueError):
+            return Response({"error": "Invalid employee_id"}, status=400)
+
+    if search:
+        leaves = leaves.filter(
+            Q(employee__fullname__icontains=search)
+            | Q(employee__empcode__icontains=search)
+            | Q(employee__first_name__icontains=search)
+            | Q(employee__last_name__icontains=search)
+        )
+
     if start_date and end_date:
         leaves = leaves.filter(leave_date__range=[start_date, end_date])
     elif start_date:
@@ -186,9 +211,73 @@ def get_simple_leave_requests(request):
     elif end_date:
         leaves = leaves.filter(leave_date__lte=end_date)
 
-    leaves = leaves.order_by('-leave_refno')
+    if status_filter and status_filter != 'all':
+        leaves = leaves.filter(status=status_filter)
+
+    leaves = leaves.order_by('-leave_date', '-leave_refno')
 
     return paginate_queryset(request, leaves, SimpleLeaveSerializer)
+
+
+@api_view(['GET'])
+def get_primary_outlet_employees(request):
+    """Employees whose PRIMARY outlet equals the given outlet_id.
+    Accessible to admins, or managers who are assigned to that outlet.
+    Default response is a lightweight dropdown payload.
+    Pass ?detail=true for full employee info (photos, groups, contact, etc.).
+    """
+    outlet_id = request.GET.get('outlet_id')
+    if not outlet_id:
+        return Response({"error": "outlet_id is required"}, status=400)
+    try:
+        outlet_id = int(outlet_id)
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid outlet_id"}, status=400)
+
+    user = request.user
+    is_admin = user.is_staff or user.is_superuser
+    if not is_admin:
+        employee = getattr(user, 'employee', None)
+        if not employee or not employee.outlets.filter(id=outlet_id).exists():
+            return Response({"error": "You are not assigned to this outlet."}, status=403)
+
+    detail = str(request.GET.get('detail', '')).lower() in ('1', 'true', 'yes')
+
+    if not detail:
+        employees = (
+            Employee.objects
+            .filter(primary_outlet_id=outlet_id, is_active=True)
+            .order_by('fullname')
+            .values('employee_id', 'fullname', 'empcode')
+        )
+        return Response(list(employees))
+
+    qs = (
+        Employee.objects
+        .filter(primary_outlet_id=outlet_id)
+        .select_related('user')
+        .prefetch_related('user__groups')
+        .order_by('fullname')
+    )
+    result = []
+    for e in qs:
+        result.append({
+            "employee_id": e.employee_id,
+            "fullname": e.fullname,
+            "empcode": e.empcode,
+            "first_name": e.user.first_name if e.user else '',
+            "last_name": e.user.last_name if e.user else '',
+            "email": e.user.email if e.user else '',
+            "phone_number": e.phone_number,
+            "idnumber": e.idnumber,
+            "date_of_birth": e.date_of_birth.isoformat() if e.date_of_birth else None,
+            "is_active": e.is_active,
+            "groups": [g.name for g in e.user.groups.all()] if e.user else [],
+            "reference_photo": e.reference_photo.url if e.reference_photo else None,
+            "punchin_selfie": e.punchin_selfie.url if e.punchin_selfie else None,
+            "punchout_selfie": e.punchout_selfie.url if e.punchout_selfie else None,
+        })
+    return Response(result)
 
     
 

@@ -2,6 +2,11 @@ import React, { useState } from "react";
 import { Box, useMediaQuery } from "@mui/material";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
+import {
+  SIDEBAR_WIDTH_OPEN,
+  SIDEBAR_WIDTH_COLLAPSED,
+  HEADER_HEIGHT,
+} from "../theme/tokens";
 
 function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -9,51 +14,52 @@ function Layout({ children }) {
 
   const toggleSidebar = () => setSidebarOpen((prev) => !prev);
 
+  const sidebarWidth = isSmall
+    ? 0
+    : sidebarOpen
+    ? SIDEBAR_WIDTH_OPEN
+    : SIDEBAR_WIDTH_COLLAPSED;
+
   return (
     <Box
       sx={{
         display: "flex",
         width: "100%",
         height: "100vh",
-        overflowX: "hidden", // 🔥 Prevent horizontal scroll globally
-        backgroundColor: "#f5f6fa",
+        overflowX: "hidden",
       }}
     >
-      {/* Sidebar */}
       <Sidebar sidebarOpen={!isSmall && sidebarOpen} />
 
-      {/* Main Content */}
       <Box
         sx={{
           flexGrow: 1,
-          ml: !isSmall ? (sidebarOpen ? "260px" : "70px") : 0,
+          ml: `${sidebarWidth}px`,
           transition: "margin-left 0.3s ease-in-out",
-          overflowX: "hidden", // ✅ double safeguard
+          overflowX: "hidden",
           width: "100%",
-          maxWidth: "100vw", // ✅ never exceed viewport width
+          maxWidth: "100vw",
         }}
       >
-        {/* Sticky Header */}
         <Box
-          sx={{
+          sx={(theme) => ({
             position: "fixed",
             top: 0,
             left: 0,
             right: 0,
-            zIndex: 1000,
+            zIndex: theme.zIndex.appBar,
             overflow: "hidden",
-          }}
+          })}
         >
           <Header onMenuClick={toggleSidebar} />
         </Box>
 
-        {/* Main Content Area */}
         <Box
           sx={{
-            mt: "72px", // header height
+            mt: `${HEADER_HEIGHT}px`,
             p: { xs: 2, md: 3 },
-            minHeight: "calc(100vh - 72px)",
-            overflowX: "hidden", // ✅ content-level safety
+            minHeight: `calc(100vh - ${HEADER_HEIGHT}px)`,
+            overflowX: "hidden",
             maxWidth: "100%",
             boxSizing: "border-box",
           }}

@@ -143,7 +143,7 @@ export default function LeaveSummary() {
               "& .MuiOutlinedInput-root": {
                 height: "100%",
                 "& fieldset": {
-                  borderColor: "rgba(25, 118, 210, 0.5)",
+                  borderColor: "divider",
                 },
                 "&:hover fieldset": {
                   borderColor: "primary.main",
@@ -203,7 +203,7 @@ export default function LeaveSummary() {
             disableRowSelectionOnClick
             sx={{
               borderRadius: 2,
-              '& .MuiDataGrid-row:hover': { backgroundColor: '#f5f5f5' },
+              '& .MuiDataGrid-row:hover': { backgroundColor: 'grey.50' },
               '& .MuiDataGrid-cell:focus': { outline: 'none' },
             }}
           />

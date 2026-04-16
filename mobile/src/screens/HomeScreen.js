@@ -47,24 +47,28 @@ const getFirstName = (decoded) => {
 const PAGE_SIZE = 5;
 
 const STATUS_COLOR = { approved: '#059669', rejected: '#DC2626', pending: '#D97706', cancelled: '#6B7280' };
+const ATT_STATUS_COLOR = { Present: '#059669', Late: '#D97706', 'Half Day': '#EA580C', Absent: '#DC2626', 'On Leave': '#2563EB' };
 
 // ─── Component ───────────────────────────────────────────────────────────────
 const HomeScreen = () => {
   const navigation = useNavigation();
 
-  const [firstName, setFirstName]     = useState('');
-  const [punchState, setPunchState]   = useState('loading');
-  const [checkInTime, setCheckInTime] = useState('');
-  const [recentLeaves, setRecentLeaves] = useState([]);
-  const [leaveCount, setLeaveCount]   = useState(0);
-  const [activityPage, setActivityPage] = useState(1);
-  const [menuOpen, setMenuOpen]       = useState(false);
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [gpsStatus, setGpsStatus]     = useState('Fetching location...');
-  const [gpsCoords, setGpsCoords]     = useState(null);
-  const [selfieUri, setSelfieUri]     = useState(null);
-  const [submitting, setSubmitting]   = useState(false);
-  const [successMsg, setSuccessMsg]   = useState('');
+  const [firstName, setFirstName]         = useState('');
+  const [punchState, setPunchState]       = useState('loading');
+  const [checkInTime, setCheckInTime]     = useState('');
+  const [checkOutTime, setCheckOutTime]   = useState('');
+  const [recentLeaves, setRecentLeaves]   = useState([]);
+  const [leaveCount, setLeaveCount]       = useState(0);
+  const [activityPage, setActivityPage]   = useState(1);
+  const [menuOpen, setMenuOpen]           = useState(false);
+  const [sheetVisible, setSheetVisible]   = useState(false);
+  const [gpsStatus, setGpsStatus]         = useState('Fetching location...');
+  const [gpsCoords, setGpsCoords]         = useState(null);
+  const [selfieUri, setSelfieUri]         = useState(null);
+  const [submitting, setSubmitting]       = useState(false);
+  const [successMsg, setSuccessMsg]       = useState('');
+  const [profilePhoto, setProfilePhoto]   = useState(null);
+  const [attendanceHistory, setAttendanceHistory] = useState([]);
 
   useEffect(() => {
     getToken().then(token => {
@@ -75,14 +79,19 @@ const HomeScreen = () => {
   const loadData = useCallback(async () => {
     setPunchState('loading');
     try {
-      const [todayRes, historyRes] = await Promise.all([
+      const [todayRes, historyRes, profileRes, attHistRes] = await Promise.all([
         apiGet(ENDPOINTS.todayAttendance),
         apiGet(ENDPOINTS.myLeaves),
+        apiGet(ENDPOINTS.employeeProfile),
+        apiGet(ENDPOINTS.attendanceHistory),
       ]);
       setPunchState(todayRes.punched_in ? 'in' : 'out');
       setCheckInTime(todayRes.check_in_time || '');
+      setCheckOutTime(todayRes.check_out_time || '');
       setRecentLeaves(historyRes);
       setLeaveCount(historyRes.length);
+      setProfilePhoto(profileRes.reference_photo_url || null);
+      setAttendanceHistory(Array.isArray(attHistRes) ? attHistRes : []);
     } catch { setPunchState('out'); }
   }, []);
 
@@ -171,14 +180,23 @@ const HomeScreen = () => {
       {/* ── Coloured header banner ── */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.greetingText}>{greeting()},</Text>
             <Text style={styles.nameText}>{firstName || 'there'}</Text>
             <Text style={styles.dateText}>{fmtDate()}</Text>
           </View>
-          <Pressable onPress={() => setMenuOpen(p => !p)} hitSlop={12} style={styles.menuBtn}>
-            <Text style={styles.menuBtnText}>{'\u22EE'}</Text>
-          </Pressable>
+          <View style={styles.headerRight}>
+            {profilePhoto ? (
+              <Image source={{ uri: profilePhoto }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitial}>{(firstName || 'U')[0].toUpperCase()}</Text>
+              </View>
+            )}
+            <Pressable onPress={() => setMenuOpen(p => !p)} hitSlop={12} style={styles.menuBtn}>
+              <Text style={styles.menuBtnText}>{'\u22EE'}</Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* Live clock */}
@@ -273,7 +291,43 @@ const HomeScreen = () => {
           </View>
         </View>
 
-        {/* ── Recent activity ── */}
+        {/* ── 7-day attendance history ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Last 7 Days Attendance</Text>
+          {attendanceHistory.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyIcon}>{'\uD83D\uDCC5'}</Text>
+              <Text style={styles.emptyText}>No attendance records found</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.thCell, { flex: 1.4 }]}>Date</Text>
+                <Text style={styles.thCell}>In</Text>
+                <Text style={styles.thCell}>Out</Text>
+                <Text style={styles.thCell}>Status</Text>
+              </View>
+              {attendanceHistory.map((item, idx) => (
+                <View key={item.date} style={[styles.tableRow, idx % 2 === 0 && styles.tableRowAlt]}>
+                  <Text style={[styles.tdCell, { flex: 1.4, fontSize: 12 }]}>{item.date}</Text>
+                  <Text style={[styles.tdCell, { fontSize: 12 }]}>{item.check_in_time || '--'}</Text>
+                  <Text style={[styles.tdCell, { fontSize: 12 }]}>{item.check_out_time || '--'}</Text>
+                  <View style={styles.tdCell}>
+                    <Text style={[
+                      styles.statusChip,
+                      { color: ATT_STATUS_COLOR[item.status] ?? '#6B7280',
+                        backgroundColor: (ATT_STATUS_COLOR[item.status] ?? '#6B7280') + '18' },
+                    ]} numberOfLines={1}>
+                      {item.status || '--'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+        </View>
+
+        {/* ── Recent leave activity ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Leave Activity</Text>
 
@@ -389,11 +443,18 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
   },
   headerTop:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  headerRight: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   greetingText: { fontSize: 14, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
   nameText:    { fontSize: 26, color: '#fff', fontWeight: '800', marginTop: 2 },
   dateText:    { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
   menuBtn:     { padding: 4, marginTop: 4 },
   menuBtnText: { fontSize: 26, color: '#fff', lineHeight: 30 },
+  avatar: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)' },
+  avatarPlaceholder: {
+    width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)',
+  },
+  avatarInitial: { color: '#fff', fontSize: 22, fontWeight: '800' },
 
   headerClock: {
     fontSize: 48, fontWeight: '800', color: '#fff',

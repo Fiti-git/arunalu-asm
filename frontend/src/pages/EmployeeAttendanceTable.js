@@ -198,7 +198,7 @@ export default function EmployeeAttendanceTable({ data }) {
           if (params.row.rowType === "attendance") return "attendance-row"; // Present -> Green
           return "blank-row"; // Blank Day -> Red
         }}
-        sx={{
+        sx={(theme) => ({
           "& .MuiDataGrid-row": {
             maxHeight: 'none !important',
           },
@@ -207,22 +207,22 @@ export default function EmployeeAttendanceTable({ data }) {
             paddingTop: '8px',
             paddingBottom: '8px',
           },
-          // 🟢 Attendance (Present) -> Green
+          // Attendance (Present) -> Green
           "& .attendance-row": {
-            backgroundColor: "#d9f99d", // Light Green
-            "&:hover": { backgroundColor: "#bef264" }, // Slightly darker green on hover
+            backgroundColor: theme.palette.success.light,
+            "&:hover": { backgroundColor: theme.palette.success.main },
           },
-          // 🟡 Leave -> Yellow
+          // Leave -> Yellow
           "& .leave-row": {
-            backgroundColor: "#fef08a", // Light Yellow/Gold
-            "&:hover": { backgroundColor: "#fde047" }, // Slightly darker yellow on hover
+            backgroundColor: theme.palette.warning.light,
+            "&:hover": { backgroundColor: theme.palette.warning.main },
           },
-          // 🔴 Blank Day -> Red
+          // Blank Day -> Red
           "& .blank-row": {
-            backgroundColor: "#fecaca", // Light Red/Pink
-            "&:hover": { backgroundColor: "#fca5a5" }, // Slightly darker red on hover
+            backgroundColor: theme.palette.error.light,
+            "&:hover": { backgroundColor: theme.palette.error.main },
           },
-        }}
+        })}
       />
     </div>
   );

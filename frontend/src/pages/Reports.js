@@ -209,7 +209,7 @@ export default function EmployeeDataReport() {
           gap: 2,
         }}
       >
-        <Typography variant="h4" sx={{ fontWeight: 'bold', borderBottom: '3px solid #1976d2' }}>
+        <Typography variant="h4" sx={{ fontWeight: 'bold', borderBottom: 3, borderColor: 'primary.main' }}>
           EMPLOYEE REPORT
         </Typography>
 
@@ -257,7 +257,7 @@ export default function EmployeeDataReport() {
             disableRowSelectionOnClick
             sx={{
               borderRadius: 2,
-              '& .MuiDataGrid-row:hover': { backgroundColor: '#f5f5f5' },
+              '& .MuiDataGrid-row:hover': { backgroundColor: 'grey.50' },
               '& .MuiDataGrid-cell:focus': { outline: 'none' },
               '& .record-type-cell': { fontWeight: 'bold' },
             }}

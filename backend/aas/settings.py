@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     'report',
     'users',
     'mobile_api',
+    'calculation',
+    'fingerprint',
 ]
 
 # ------------------------------------------------------------------------------

@@ -66,14 +66,14 @@ function SelectOutlet() {
           display: 'flex',
           overflow: 'hidden',
           boxShadow: '0px 20px 40px rgba(0,0,0,0.25)',
-          backgroundColor: '#ffffff',
+          backgroundColor: 'background.paper',
         }}
       >
         {/* Left Side: Logo */}
         <Box
           sx={{
             width: '45%',
-            backgroundColor: '#f8f8f8',
+            backgroundColor: 'grey.50',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
@@ -86,7 +86,7 @@ function SelectOutlet() {
               borderRadius: '50%',
               overflow: 'hidden',
               boxShadow: '0px 6px 20px rgba(0,0,0,0.2)',
-              backgroundColor: 'white',
+              backgroundColor: 'background.paper',
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',
@@ -128,7 +128,7 @@ function SelectOutlet() {
                   onChange={(e) => setSelectedOutlet(e.target.value)}
                   required
                   sx={{
-                    backgroundColor: '#fafafa',
+                    backgroundColor: 'grey.50',
                     borderRadius: 2,
                   }}
                 >
@@ -145,12 +145,7 @@ function SelectOutlet() {
                 fullWidth
                 sx={{
                   mt: 4,
-                  backgroundColor: '#e6b904',
-                  color: '#000',
                   fontWeight: 'bold',
-                  '&:hover': {
-                    backgroundColor: '#d1a803',
-                  },
                   borderRadius: 2,
                   py: 1.5,
                 }}

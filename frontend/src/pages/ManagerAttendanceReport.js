@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Box,
   Typography,
-  Paper,
   Button,
   CircularProgress,
   FormControl,
@@ -22,7 +21,6 @@ export default function MANReports() {
   const priorMonth = new Date();
   priorMonth.setMonth(today.getMonth() - 1);
 
-  const [userInfo, setUserInfo] = useState(null);
   const [userReport, setUserReport] = useState(null);
   const [selectedOutlet, setSelectedOutlet] = useState("all");
   const [selectedEmployee, setSelectedEmployee] = useState("all");
@@ -35,28 +33,7 @@ export default function MANReports() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch logged-in user info first
-  useEffect(() => {
-    fetchUserInfo();
-  }, []);
-
-  // Fetch employee list when userReport loads
-  useEffect(() => {
-    if (userReport) {
-      // Here: Filter employees only from your specific outlet (e.g., outlet_id = 1)
-      const outletId = 1; // Change this to your desired outlet id or get dynamically
-      if (
-        userReport.employees_by_outlet &&
-        userReport.employees_by_outlet[outletId]
-      ) {
-        setEmployeeList(userReport.employees_by_outlet[outletId].employees);
-      } else {
-        setEmployeeList([]);
-      }
-    }
-  }, [userReport]);
-
-  const fetchUserInfo = async () => {
+  const fetchUserInfo = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -71,14 +48,31 @@ export default function MANReports() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      setUserInfo(response.data);
       fetchUserReport(response.data.id, token);
     } catch (err) {
       console.error("Error fetching user info:", err);
       setError(err.response?.data?.detail || err.message);
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchUserInfo();
+  }, [fetchUserInfo]);
+
+  useEffect(() => {
+    if (userReport) {
+      const outletId = 1;
+      if (
+        userReport.employees_by_outlet &&
+        userReport.employees_by_outlet[outletId]
+      ) {
+        setEmployeeList(userReport.employees_by_outlet[outletId].employees);
+      } else {
+        setEmployeeList([]);
+      }
+    }
+  }, [userReport]);
 
   const fetchUserReport = async (userId, token) => {
     setLoading(true);
@@ -181,10 +175,11 @@ export default function MANReports() {
           fontWeight: "bold",
           mb: 3,
           textTransform: "uppercase",
-          borderBottom: "3px solid #1976d2",
+          borderBottom: 3,
+          borderColor: 'primary.main',
           display: "inline-block",
           pb: 0.5,
-          color: "#0d0d0ff",
+          color: 'text.primary',
         }}
       >
         Employee Reports
@@ -206,10 +201,11 @@ export default function MANReports() {
             flexWrap: "wrap",
             gap: 2,
             mb: 3,
-            backgroundColor: "#f9fafc",
+            backgroundColor: 'grey.50',
             p: 2.5,
             borderRadius: 2,
-            border: "1px solid #e0e0e0",
+            border: 1,
+            borderColor: 'divider',
           }}
         >
           <FormControl
@@ -218,8 +214,8 @@ export default function MANReports() {
               "& .MuiOutlinedInput-root": {
                 borderRadius: 2,
                 height: 42,
-                backgroundColor: "#fff",
-                "&:hover fieldset": { borderColor: "#1976d2" },
+                backgroundColor: 'background.paper',
+                "&:hover fieldset": { borderColor: 'primary.main' },
               },
             }}
           >
@@ -246,8 +242,8 @@ export default function MANReports() {
               "& .MuiOutlinedInput-root": {
                 borderRadius: 2,
                 height: 42,
-                backgroundColor: "#fff",
-                "&:hover fieldset": { borderColor: "#1976d2" },
+                backgroundColor: 'background.paper',
+                "&:hover fieldset": { borderColor: 'primary.main' },
               },
             }}
             disabled={!selectedOutlet}
@@ -282,8 +278,8 @@ export default function MANReports() {
               "& .MuiOutlinedInput-root": {
                 borderRadius: 2,
                 height: 42,
-                backgroundColor: "#fff",
-                "&:hover fieldset": { borderColor: "#1976d2" },
+                backgroundColor: 'background.paper',
+                "&:hover fieldset": { borderColor: 'primary.main' },
               },
             }}
           />
@@ -298,8 +294,8 @@ export default function MANReports() {
               "& .MuiOutlinedInput-root": {
                 borderRadius: 2,
                 height: 42,
-                backgroundColor: "#fff",
-                "&:hover fieldset": { borderColor: "#1976d2" },
+                backgroundColor: 'background.paper',
+                "&:hover fieldset": { borderColor: 'primary.main' },
               },
             }}
           />
@@ -313,10 +309,8 @@ export default function MANReports() {
               height: 42,
               borderRadius: 2,
               px: 3,
-              textTransform: "none",
               fontWeight: "bold",
               boxShadow: "none",
-              "&:hover": { boxShadow: "0 2px 8px rgba(25, 118, 210, 0.2)" },
             }}
           >
             {loading ? <CircularProgress size={20} /> : "Fetch Data"}
@@ -339,7 +333,7 @@ export default function MANReports() {
               mb: 2,
               fontWeight: "bold",
               textTransform: "uppercase",
-              color: "#37474f",
+              color: 'text.primary',
             }}
           >
             Employee Report

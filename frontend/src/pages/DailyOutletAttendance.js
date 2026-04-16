@@ -294,10 +294,11 @@ export default function MANReports() {
           fontWeight: "bold",
           mb: 3,
           textTransform: "uppercase",
-          borderBottom: "3px solid #1976d2",
+          borderBottom: 3,
+          borderColor: 'primary.main',
           display: "inline-block",
           pb: 0.5,
-          color: "#0d0d0dff",
+          color: 'text.primary',
         }}
       >
         Employee Reports
@@ -319,16 +320,17 @@ export default function MANReports() {
             flexWrap: "wrap",
             gap: 2,
             mb: 3,
-            backgroundColor: "#f9fafc",
+            backgroundColor: 'grey.50',
             p: 2.5,
             borderRadius: 2,
-            border: "1px solid #e0e0e0",
+            border: 1,
+            borderColor: 'divider',
           }}
         >
           <FormControl
             sx={{
               minWidth: 200,
-              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: "#fff" },
+              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: 'background.paper' },
             }}
           >
             <InputLabel>Outlet</InputLabel>
@@ -345,7 +347,7 @@ export default function MANReports() {
           <FormControl
             sx={{
               minWidth: 250,
-              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: "#fff" },
+              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: 'background.paper' },
             }}
           >
             <InputLabel>Employee</InputLabel>
@@ -376,7 +378,7 @@ export default function MANReports() {
             onChange={(e) => setStartDate(e.target.value)}
             sx={{
               minWidth: 180,
-              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: "#fff" },
+              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: 'background.paper' },
             }}
           />
           <TextField
@@ -387,7 +389,7 @@ export default function MANReports() {
             onChange={(e) => setEndDate(e.target.value)}
             sx={{
               minWidth: 180,
-              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: "#fff" },
+              "& .MuiOutlinedInput-root": { borderRadius: 2, height: 42, backgroundColor: 'background.paper' },
             }}
           />
 
@@ -400,10 +402,8 @@ export default function MANReports() {
               height: 42,
               borderRadius: 2,
               px: 3,
-              textTransform: "none",
               fontWeight: "bold",
               boxShadow: "none",
-              "&:hover": { boxShadow: "0 2px 8px rgba(25, 118, 210, 0.2)" },
             }}
           >
             {loading ? <CircularProgress size={20} /> : "Fetch Data"}
@@ -420,7 +420,7 @@ export default function MANReports() {
       {!loading && summaryOutletEntries.length > 0 && (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {summaryOutletEntries.map(([outletId, outletBlock]) => (
-            <Paper key={outletId} sx={{ p: 2.5, borderRadius: 2, border: "1px solid #e0e0e0" }}>
+            <Paper key={outletId} sx={{ p: 2.5, borderRadius: 2, border: 1, borderColor: 'divider' }}>
               <Typography sx={{ fontWeight: 900, mb: 2, textTransform: "uppercase" }}>
                 Outlet: {outletBlock.outlet_name}
               </Typography>
@@ -432,8 +432,9 @@ export default function MANReports() {
                     p: 2,
                     mb: 1.5,
                     borderRadius: 2,
-                    border: "1px solid #eee",
-                    backgroundColor: "#fff",
+                    border: 1,
+                    borderColor: 'divider',
+                    backgroundColor: 'background.paper',
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>

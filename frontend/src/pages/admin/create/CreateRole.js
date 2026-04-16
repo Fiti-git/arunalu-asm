@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { TextField, Button, Typography, Box, Snackbar } from '@mui/material';
-import axios from 'axios';
 import api from 'utils/api';
 
 const CreateRolePage = () => {

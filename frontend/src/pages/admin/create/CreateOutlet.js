@@ -73,7 +73,7 @@ const CreateOutlet = ({ onSuccess }) => {
         mt: 6,
         p: 4,
         borderRadius: 3,
-        bgcolor: '#fff',
+        bgcolor: 'background.paper',
       }}
     >
       <Typography variant="h5" gutterBottom align="left" fontWeight="600" mb={3}>

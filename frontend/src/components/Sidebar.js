@@ -5,30 +5,31 @@ import {
   ListItem,
   ListItemButton,
   ListItemText,
-  Divider,
   Tooltip,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { NavLink } from "react-router-dom";
 import { getUserRole } from "../utils/auth";
+import { SIDEBAR_WIDTH_OPEN, SIDEBAR_WIDTH_COLLAPSED } from "../theme/tokens";
 
 // Icons
-import DashboardIcon from "@mui/icons-material/Dashboard";
 import GroupIcon from "@mui/icons-material/Group";
 import StoreIcon from "@mui/icons-material/Store";
-import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import WorkHistoryIcon from "@mui/icons-material/WorkHistory";
-import LockResetIcon from "@mui/icons-material/LockReset";
 import TaskIcon from "@mui/icons-material/Task";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
-import SummarizeIcon from "@mui/icons-material/Summarize";
 import EditCalendarIcon from "@mui/icons-material/EditCalendar";
 import BackupIcon from "@mui/icons-material/Backup";
-import FaceIcon from "@mui/icons-material/Face";
 import ToggleOnIcon from "@mui/icons-material/ToggleOn";
+import LockClockIcon from "@mui/icons-material/LockClock";
+import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import PersonSearchOutlinedIcon from "@mui/icons-material/PersonSearchOutlined";
+import CalculateOutlinedIcon from "@mui/icons-material/CalculateOutlined";
+import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
 
 function Sidebar({ sidebarOpen, onClose }) {
   const role = getUserRole() || "";
@@ -38,155 +39,159 @@ function Sidebar({ sidebarOpen, onClose }) {
   const navItems = [
     // MAIN
     {
-      text: "DASHBOARD",
-      path: normalizedRole === "Admin" ? "/admin/dashboard" : "/manager/dashboard",
+      text: "Dashboard",
+      path: normalizedRole === "Admin" ? "/admin/reports/outlet-summary" : "/manager/dashboard",
       roles: ["Admin", "Manager"],
       icon: <AnalyticsIcon />,
-      group: "MAIN",
-    },
-    {
-      text: "OUTLET SUMMARY",
-      path: "/admin/reports/outlet-summary",
-      roles: ["Admin"],
-      icon: <DashboardIcon />,
-      group: "MAIN",
+      group: "Overview",
     },
 
     // ADMIN - MANAGEMENT
     {
-      text: "EMPLOYEE",
+      text: "Employees",
       path: "/admin/employees/editor",
       roles: ["Admin"],
       icon: <GroupIcon />,
-      group: "MANAGEMENT",
+      group: "Management",
     },
     {
-      text: "USER STATUS",
+      text: "User Status",
       path: "/admin/employees/status",
       roles: ["Admin"],
       icon: <ToggleOnIcon />,
-      group: "MANAGEMENT",
+      group: "Management",
     },
     {
-      text: "OUTLETS",
+      text: "Outlets",
       path: "/admin/outlets",
       roles: ["Admin"],
       icon: <StoreIcon />,
-      group: "MANAGEMENT",
+      group: "Management",
     },
     {
-      text: "HOLIDAYS",
-      path: "/admin/create/holidays",
-      roles: ["Admin"],
-      icon: <CalendarMonthIcon />,
-      group: "MANAGEMENT",
-    },
-    {
-      text: "LEAVE",
+      text: "Leave & Holidays",
       path: "/admin/create/leave",
       roles: ["Admin"],
       icon: <EditCalendarIcon />,
-      group: "MANAGEMENT",
+      group: "Management",
     },
 
-    // ADMIN - SETTINGS
+    // ADMIN - OPERATIONS
     {
-      text: "CHANGE PASSWORD",
-      path: "/admin/employees/password-reset",
-      roles: ["Admin"],
-      icon: <LockResetIcon />,
-      group: "SETTINGS",
-    },
-    {
-      text: "FACE REFERENCE IMAGES",
-      path: "/admin/employees/face-reference",
-      roles: ["Admin"],
-      icon: <FaceIcon />,
-      group: "SETTINGS",
-    },
-
-    // ADMIN - ASSIGNMENTS
-    {
-      text: "LEAVE MANAGEMENT",
+      text: "Leave Management",
       path: "/admin/assign/leave",
       roles: ["Admin"],
       icon: <WorkHistoryIcon />,
-      group: "ASSIGNMENTS",
+      group: "Operations",
+    },
+    {
+      text: "Attendance Management",
+      path: "/admin/attendance",
+      roles: ["Admin"],
+      icon: <TaskIcon />,
+      group: "Operations",
+    },
+    {
+      text: "Attendance Locks",
+      path: "/admin/attendance-locks",
+      roles: ["Admin"],
+      icon: <LockClockIcon />,
+      group: "Operations",
     },
 
     // ADMIN - REPORTS
     {
-      text: "DETAIL REPORTS",
-      path: "/admin/reports/attendance",
+      text: "Reports",
+      path: "/admin/reports",
       roles: ["Admin"],
       icon: <QueryStatsIcon />,
-      group: "REPORTS",
+      group: "Reports",
+    },
+    {
+      text: "Attendance Detail",
+      path: "/admin/reports/attendance-detail",
+      roles: ["Admin"],
+      icon: <AssessmentOutlinedIcon />,
+      group: "Reports",
+    },
+    {
+      text: "Payroll",
+      path: "/admin/payroll",
+      roles: ["Admin"],
+      icon: <CalculateOutlinedIcon />,
+      group: "Payroll",
+    },
+    {
+      text: "Fingerprint Import",
+      path: "/admin/fingerprint",
+      roles: ["Admin"],
+      icon: <FingerprintOutlinedIcon />,
+      group: "Payroll",
     },
 
     // MANAGER - MANAGEMENT
     {
-      text: "EMPLOYEES",
+      text: "Employees",
       path: "/manager/employees",
       roles: ["Manager"],
       icon: <ManageAccountsIcon />,
-      group: "MANAGEMENT",
+      group: "Management",
     },
     {
-      text: "LEAVE APPROVAL",
+      text: "Leave Management",
       path: "/manager/leave-approval",
       roles: ["Manager"],
       icon: <FactCheckIcon />,
-      group: "MANAGEMENT",
+      group: "Management",
     },
     {
-      text: "OUTLET LOG",
-      path: "/manager/daily-outlet-attendance",
-      roles: ["Manager"],
-      icon: <StoreIcon />,
-      group: "MANAGEMENT",
-    },
-    {
-      text: "OUTLET LEAVE SUMMARY",
-      path: "/manager/outlet-leave-summary",
-      roles: ["Manager"],
-      icon: <SummarizeIcon />,
-      group: "MANAGEMENT",
-    },
-
-    // MANAGER - MODIFICATIONS
-    {
-      text: "ATTENDANCE",
+      text: "Attendance Management",
       path: "/manager/attendance-editor",
       roles: ["Manager"],
       icon: <TaskIcon />,
-      group: "MODIFICATIONS",
+      group: "Management",
     },
+
+    // MANAGER - REPORTS
     {
-      text: "LEAVE",
-      path: "/manager/bulk-leave-assignment",
-      roles: ["Manager"],
-      icon: <EditCalendarIcon />,
-      group: "MODIFICATIONS",
-    },
-    {
-      text: "REPORTS",
+      text: "Reports",
       path: "/manager/reports",
       roles: ["Manager"],
       icon: <QueryStatsIcon />,
-      group: "MODIFICATIONS",
+      group: "Reports",
+    },
+    {
+      text: "Attendance Detail",
+      path: "/manager/reports/attendance-detail",
+      roles: ["Manager"],
+      icon: <AssessmentOutlinedIcon />,
+      group: "Reports",
+    },
+    {
+      text: "Employee Report",
+      path: "/manager/reports/employee",
+      roles: ["Manager"],
+      icon: <PersonSearchOutlinedIcon />,
+      group: "Reports",
+    },
+    {
+      text: "Fingerprint Import",
+      path: "/manager/fingerprint",
+      roles: ["Manager"],
+      icon: <FingerprintOutlinedIcon />,
+      group: "Operations",
     },
 
     // MANAGER - SYSTEM
     {
-      text: "DATABASE BACKUP",
+      text: "Database Backup",
       path: "/manager/database-backup",
       roles: ["Manager"],
       icon: <BackupIcon />,
-      group: "SYSTEM",
+      group: "System",
     },
   ];
 
-  // Group items by category
   const groupedNav = navItems.reduce((acc, item) => {
     if (item.roles.includes(normalizedRole)) {
       acc[item.group] = acc[item.group] || [];
@@ -198,75 +203,138 @@ function Sidebar({ sidebarOpen, onClose }) {
   return (
     <Box
       sx={{
-        width: sidebarOpen ? 240 : 72,
+        width: sidebarOpen ? SIDEBAR_WIDTH_OPEN : SIDEBAR_WIDTH_COLLAPSED,
         height: "100vh",
-        pt: 9,
-        backgroundColor: "#fff",
-        borderRight: "1px solid #e0e0e0",
+        pt: 10,
+        bgcolor: "background.paper",
+        borderRight: 1,
+        borderColor: "divider",
         position: "fixed",
         top: 0,
         left: 0,
-        zIndex: 999,
+        zIndex: (theme) => theme.zIndex.appBar - 1,
         transition: "width 0.3s ease-in-out",
         overflowY: "auto",
         scrollbarWidth: "none",
         "&::-webkit-scrollbar": { display: "none" },
+        // Echoes the header's gold accent bar — thin vertical gold strip on the far right
+        "&::after": {
+          content: '""',
+          position: "absolute",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 2,
+          backgroundImage: (theme) =>
+            `linear-gradient(180deg, ${theme.palette.secondary.light} 0%, ${theme.palette.secondary.main} 50%, ${theme.palette.secondary.dark} 100%)`,
+          opacity: 0.6,
+          pointerEvents: "none",
+        },
       }}
     >
-      {Object.entries(groupedNav).map(([group, items]) => (
-        <Box key={group}>
-          {sidebarOpen && (
-            <Typography
-              variant="caption"
-              sx={{
-                pl: 2,
-                pt: 1,
-                pb: 0.5,
-                color: "#777",
-                fontWeight: 600,
-                textTransform: "uppercase",
-              }}
-            >
-              {group}
-            </Typography>
+      {Object.entries(groupedNav).map(([group, items], gi) => (
+        <Box key={group} sx={{ pb: 1 }}>
+          {sidebarOpen ? (
+            <Box sx={{ px: 2.25, pt: gi === 0 ? 0.5 : 1.75, pb: 0.75 }}>
+              <Typography
+                sx={{
+                  fontSize: "0.65rem",
+                  fontWeight: 700,
+                  letterSpacing: 1.4,
+                  textTransform: "uppercase",
+                  color: "secondary.dark",
+                }}
+              >
+                {group}
+              </Typography>
+            </Box>
+          ) : (
+            gi > 0 && (
+              <Box sx={{
+                mx: 1.5, my: 0.75, height: 1,
+                bgcolor: 'divider',
+              }} />
+            )
           )}
 
-          <List sx={{ px: 1 }}>
+          <List sx={{ px: 1, py: 0 }} disablePadding>
             {items.map((item) => (
-              <ListItem key={item.text} disablePadding>
+              <ListItem key={item.text} disablePadding sx={{ mb: 0.25 }}>
                 <Tooltip title={!sidebarOpen ? item.text : ""} placement="right" arrow>
                   <ListItemButton
                     component={NavLink}
                     to={item.path}
                     onClick={onClose}
                     sx={{
+                      position: 'relative',
                       borderRadius: 2,
-                      px: sidebarOpen ? 2 : 1.5,
+                      px: sidebarOpen ? 1.75 : 1,
+                      py: 1,
                       justifyContent: sidebarOpen ? "flex-start" : "center",
-                      "&.active": {
-                        backgroundColor: "#e6b904",
-                        color: "#000",
-                        fontWeight: "bold",
+                      color: 'text.primary',
+                      transition: 'background-color 0.15s, color 0.15s',
+                      '&:hover': {
+                        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06),
                       },
-                      "&:hover": {
-                        backgroundColor: "#fff8dc",
+                      '& .MuiTypography-root': { fontWeight: 500 },
+                      '&.active': {
+                        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.12),
+                        color: 'primary.main',
+                        '& .MuiTypography-root': { fontWeight: 700 },
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          left: 0,
+                          top: 6,
+                          bottom: 6,
+                          width: 3,
+                          borderRadius: 4,
+                          backgroundColor: (theme) => theme.palette.secondary.main,
+                        },
                       },
                     }}
                   >
-                    <Box sx={{ color: "inherit", minWidth: 0 }}>{item.icon}</Box>
+                    <Box
+                      sx={{
+                        minWidth: 0, display: 'flex', alignItems: 'center',
+                        '& svg': { fontSize: 20 },
+                      }}
+                    >
+                      {item.icon}
+                    </Box>
 
                     {sidebarOpen && (
-                      <ListItemText primary={item.text} sx={{ ml: 2, whiteSpace: "nowrap" }} />
+                      <ListItemText
+                        primary={item.text}
+                        slotProps={{
+                          primary: { fontSize: '0.82rem', lineHeight: 1.3 },
+                        }}
+                        sx={{ ml: 1.75, whiteSpace: "nowrap" }}
+                      />
                     )}
                   </ListItemButton>
                 </Tooltip>
               </ListItem>
             ))}
           </List>
-
-          <Divider sx={{ my: 1 }} />
         </Box>
       ))}
+
+      {sidebarOpen && (
+        <Box sx={{ mt: 'auto', px: 2.5, py: 2, textAlign: 'center' }}>
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              fontSize: '0.65rem',
+              color: 'text.disabled',
+              letterSpacing: 0.5,
+            }}
+          >
+            ARUNALU · Staff Management
+          </Typography>
+        </Box>
+      )}
     </Box>
   );
 }

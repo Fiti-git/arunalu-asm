@@ -89,7 +89,7 @@ const LoginPage = () => {
 
   const handleRoleBasedNavigation = (role) => {
     const roleBasedRedirect = {
-      Admin: '/admin/dashboard',
+      Admin: '/admin/reports/outlet-summary',
       Manager: '/manager/dashboard',
     };
 
@@ -143,23 +143,22 @@ const LoginPage = () => {
       }}
     >
       <Paper
-        elevation={10}
         sx={{
           borderRadius: isMobile ? 2 : 4,
           width: getPaperWidth(),
           height: getPaperHeight(),
           display: 'flex',
           overflow: 'hidden',
-          boxShadow: '0px 20px 40px rgba(0,0,0,0.25)',
-          backgroundColor: '#ffffff',
+          boxShadow: (theme) => theme.shadows[6],
+          bgcolor: 'background.paper',
           flexDirection: isMobile ? 'column' : 'row',
         }}
       >
         {/* Logo Section */}
-        <Box 
-          sx={{ 
-            width: isMobile ? '100%' : '45%', 
-            backgroundColor: '#f8f8f8',
+        <Box
+          sx={{
+            width: isMobile ? '100%' : '45%',
+            bgcolor: 'grey.50',
             display: 'flex',
             justifyContent: 'center',
             alignItems: isMobile ? 'flex-start' : 'center',
@@ -173,8 +172,8 @@ const LoginPage = () => {
               height: getLogoContainerSize(),
               borderRadius: '50%',
               overflow: 'hidden',
-              boxShadow: '0px 6px 20px rgba(0,0,0,0.2)',
-              backgroundColor: 'white',
+              boxShadow: (theme) => theme.shadows[3],
+              bgcolor: 'background.paper',
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',
@@ -252,11 +251,6 @@ const LoginPage = () => {
               disabled={loading}
               sx={{
                 mt: 3,
-                backgroundColor: '#e6b904',
-                color: '#000',
-                fontWeight: 'bold',
-                '&:hover': { backgroundColor: '#d1a803' },
-                borderRadius: 2,
                 py: isMobile ? 1 : 1.5,
               }}
             >

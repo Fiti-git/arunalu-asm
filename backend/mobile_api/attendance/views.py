@@ -19,26 +19,101 @@ logger = logging.getLogger(__name__)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def today_attendance(request):
-    """Return today's open attendance record (check_out_time is null), if any."""
+    """Return today's attendance status and last punch-in time."""
     try:
         employee = request.user.employee
     except Exception:
         return Response({"error": "Employee profile not found"}, status=403)
 
-    record = Attendance.objects.filter(
+    today = timezone.now().date()
+
+    # Check for an open (not yet punched out) record
+    open_record = Attendance.objects.filter(
         employee=employee,
-        date=timezone.now().date(),
+        date=today,
         check_out_time__isnull=True,
     ).last()
 
-    if record:
-        check_in_local = timezone.localtime(record.check_in_time)
+    if open_record:
+        check_in_local = timezone.localtime(open_record.check_in_time)
         return Response({
             "punched_in": True,
             "check_in_time": check_in_local.strftime("%H:%M"),
-            "attendance_id": record.attendance_id,
+            "check_out_time": None,
+            "attendance_id": open_record.attendance_id,
         })
-    return Response({"punched_in": False})
+
+    # No open record — check if they punched in and out already today
+    last_record = Attendance.objects.filter(
+        employee=employee,
+        date=today,
+    ).last()
+
+    if last_record:
+        check_in_local = timezone.localtime(last_record.check_in_time)
+        check_out_local = timezone.localtime(last_record.check_out_time) if last_record.check_out_time else None
+        return Response({
+            "punched_in": False,
+            "check_in_time": check_in_local.strftime("%H:%M"),
+            "check_out_time": check_out_local.strftime("%H:%M") if check_out_local else None,
+            "attendance_id": last_record.attendance_id,
+        })
+
+    return Response({"punched_in": False, "check_in_time": None, "check_out_time": None})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def employee_profile(request):
+    """Return employee profile including reference photo URL."""
+    try:
+        employee = request.user.employee
+    except Exception:
+        return Response({"error": "Employee profile not found"}, status=403)
+
+    reference_photo_url = None
+    if employee.reference_photo:
+        reference_photo_url = request.build_absolute_uri(employee.reference_photo.url)
+
+    return Response({
+        "fullname": employee.fullname,
+        "empcode": employee.empcode,
+        "reference_photo_url": reference_photo_url,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def attendance_history(request):
+    """Return attendance records for the last 7 days."""
+    try:
+        employee = request.user.employee
+    except Exception:
+        return Response({"error": "Employee profile not found"}, status=403)
+
+    from datetime import timedelta
+    today = timezone.now().date()
+    week_ago = today - timedelta(days=6)
+
+    records = Attendance.objects.filter(
+        employee=employee,
+        date__gte=week_ago,
+        date__lte=today,
+    ).order_by('-date')
+
+    data = []
+    for r in records:
+        check_in_local = timezone.localtime(r.check_in_time) if r.check_in_time else None
+        check_out_local = timezone.localtime(r.check_out_time) if r.check_out_time else None
+        data.append({
+            "date": r.date.strftime("%Y-%m-%d"),
+            "status": r.status,
+            "check_in_time": check_in_local.strftime("%H:%M") if check_in_local else None,
+            "check_out_time": check_out_local.strftime("%H:%M") if check_out_local else None,
+            "worked_hours": round(r.worked_hours, 2) if r.worked_hours else None,
+        })
+
+    return Response(data)
 
 
 @api_view(['POST'])

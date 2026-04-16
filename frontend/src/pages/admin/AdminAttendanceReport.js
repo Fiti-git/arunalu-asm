@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Box,
   Typography,
@@ -22,7 +22,6 @@ export default function MANReports() {
   const priorMonth = new Date();
   priorMonth.setMonth(today.getMonth() - 1);
 
-  const [userInfo, setUserInfo] = useState(null);
   const [userReport, setUserReport] = useState(null);
   const [selectedOutlet, setSelectedOutlet] = useState("all");
   const [selectedEmployee, setSelectedEmployee] = useState("all");
@@ -33,11 +32,7 @@ export default function MANReports() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchUserInfo();
-  }, []);
-
-  const fetchUserInfo = async () => {
+  const fetchUserInfo = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -52,14 +47,17 @@ export default function MANReports() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      setUserInfo(response.data);
       fetchUserReport(response.data.id, token);
     } catch (err) {
       console.error("Error fetching user info:", err);
       setError(err.response?.data?.detail || err.message);
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchUserInfo();
+  }, [fetchUserInfo]);
 
   const fetchUserReport = async (userId, token) => {
     setLoading(true);
@@ -167,11 +165,11 @@ export default function MANReports() {
         mt: 3,
         borderRadius: 3,
         boxShadow: 4,
-        backgroundColor: "#fafafa",
+        backgroundColor: 'grey.50',
         textTransform: 'uppercase',
       }}
     >
-      <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3, color: "#1976d2" }}>
+      <Typography variant="h4" sx={{ fontWeight: "bold", mb: 3, color: 'primary.main' }}>
         Employee Attendance Reports
       </Typography>
 
@@ -275,7 +273,7 @@ export default function MANReports() {
             sx={{
               mt: 4,
               mb: 1,
-              color: "#333",
+              color: 'text.primary',
               fontWeight: 600,
             }}
           >

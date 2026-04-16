@@ -82,7 +82,7 @@ const CreateEmployee = () => {
   };
 
   return (
-    <Box sx={{ width: '80%', mx: 'auto', p: 3, boxShadow: 2, borderRadius: 2, bgcolor: '#fafafa' }}>
+    <Box sx={{ width: '80%', mx: 'auto', p: 3, boxShadow: 2, borderRadius: 2, bgcolor: 'grey.50' }}>
       <Typography variant="h4" mb={4} align="left">
         CREATE EMPLOYEE
       </Typography>

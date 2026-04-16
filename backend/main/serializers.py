@@ -185,8 +185,11 @@ class LeaveEmployeeSerializer(serializers.ModelSerializer):
             'outlets',
         ]
 class SimpleLeaveSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(source='employee.fullname', read_only=True)
-    leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
+    employee_id = serializers.IntegerField(source='employee.employee_id', read_only=True)
+    employee_fullname = serializers.CharField(source='employee.fullname', read_only=True)
+    empcode = serializers.CharField(source='employee.empcode', read_only=True)
+    leave_type_name = serializers.CharField(source='leave_type.att_type_name', read_only=True)
+    leave_type_code = serializers.CharField(source='leave_type.att_type', read_only=True)
 
     class Meta:
         model = EmpLeave
@@ -195,6 +198,11 @@ class SimpleLeaveSerializer(serializers.ModelSerializer):
             'leave_date',
             'remarks',
             'status',
-            'employee_name',
+            'add_date',
+            'action_date',
+            'employee_id',
+            'employee_fullname',
+            'empcode',
             'leave_type_name',
+            'leave_type_code',
         ]

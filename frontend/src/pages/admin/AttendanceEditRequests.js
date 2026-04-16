@@ -166,13 +166,13 @@ export default function AttendanceEditRequests() {
       field: "current_check_in",
       headerName: "Current In",
       width: 115,
-      renderCell: (params) => <span style={{ color: "#6b7280" }}>{isoToHHMM(params.value)}</span>,
+      renderCell: (params) => <span style={{ color: "#6b7280" }}>{isoToHHMM(params.value)}</span>, // theme text.secondary-ish
     },
     {
       field: "current_check_out",
       headerName: "Current Out",
       width: 115,
-      renderCell: (params) => <span style={{ color: "#6b7280" }}>{isoToHHMM(params.value)}</span>,
+      renderCell: (params) => <span style={{ color: "#6b7280" }}>{isoToHHMM(params.value)}</span>, // theme text.secondary-ish
     },
     {
       field: "proposed_check_in",
@@ -253,8 +253,8 @@ export default function AttendanceEditRequests() {
           mb: 3,
           p: 2.5,
           borderRadius: 3,
-          background: "linear-gradient(135deg, #312e81 0%, #7c3aed 100%)",
-          color: "#fff",
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -272,7 +272,7 @@ export default function AttendanceEditRequests() {
           <IconButton
             onClick={fetchRequests}
             disabled={loading}
-            sx={{ color: "#fff", bgcolor: "rgba(255,255,255,0.15)", "&:hover": { bgcolor: "rgba(255,255,255,0.25)" } }}
+            sx={{ color: 'primary.contrastText', bgcolor: "rgba(255,255,255,0.15)", "&:hover": { bgcolor: "rgba(255,255,255,0.25)" } }}
           >
             <RefreshIcon />
           </IconButton>
@@ -311,9 +311,10 @@ export default function AttendanceEditRequests() {
           disableRowSelectionOnClick
           sx={{
             borderRadius: 2,
-            border: "1px solid #e5e7eb",
-            "& .MuiDataGrid-columnHeaders": { backgroundColor: "#f8fafc", fontWeight: 700 },
-            "& .MuiDataGrid-row:hover": { backgroundColor: "#faf5ff" },
+            border: 1,
+            borderColor: 'divider',
+            "& .MuiDataGrid-columnHeaders": { backgroundColor: 'grey.50', fontWeight: 700 },
+            "& .MuiDataGrid-row:hover": { backgroundColor: 'grey.50' },
             "& .MuiDataGrid-cell:focus": { outline: "none" },
           }}
         />

@@ -153,6 +153,72 @@ class AttendanceEditRequest(models.Model):
         return f"EditRequest #{self.request_id} - {self.attendance} - {self.status}"
 
 
+class AttendanceModificationLog(models.Model):
+    STATUS_CHOICES = [
+        ('Applied', 'Applied'),
+        ('Pending', 'Pending'),
+        ('Approved', 'Approved'),
+        ('Rejected', 'Rejected'),
+    ]
+
+    log_id = models.AutoField(primary_key=True)
+    attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name='modification_logs')
+
+    original_date = models.DateField(null=True, blank=True)
+    original_check_in_time = models.DateTimeField(null=True, blank=True)
+    original_check_out_time = models.DateTimeField(null=True, blank=True)
+    original_status = models.CharField(max_length=20, null=True, blank=True)
+
+    new_date = models.DateField(null=True, blank=True)
+    new_check_in_time = models.DateTimeField(null=True, blank=True)
+    new_check_out_time = models.DateTimeField(null=True, blank=True)
+    new_status = models.CharField(max_length=20, null=True, blank=True)
+
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='Applied')
+    reason = models.TextField(blank=True, default='')
+
+    requested_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='attendance_mods_requested',
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    reviewed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='attendance_mods_reviewed',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f"ModLog #{self.log_id} for Att #{self.attendance_id} ({self.status})"
+
+
+class AttendanceLockPeriod(models.Model):
+    """Admin-defined (outlet, date range) lock. Records inside an ACTIVE period
+    require admin approval to modify, regardless of the default 45-day rule."""
+    lock_id = models.AutoField(primary_key=True)
+    outlet = models.ForeignKey('Outlet', on_delete=models.CASCADE, related_name='lock_periods')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    note = models.TextField(blank=True, default='')
+    active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_lock_periods',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Lock #{self.lock_id} - {self.outlet.name} {self.start_date}..{self.end_date}"
+
+
 class LeaveType(models.Model):
     id = models.AutoField(primary_key=True)  # Explicitly adding an auto-incrementing primary key field
     att_type = models.CharField(max_length=50, unique=True)  # Unique identifier for attendance type
