@@ -108,6 +108,7 @@ function Sidebar({ sidebarOpen, onClose }) {
       roles: ["Admin"],
       icon: <QueryStatsIcon />,
       group: "Reports",
+      feature: "reports_advanced",
     },
     {
       text: "Attendance Detail",

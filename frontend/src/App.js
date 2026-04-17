@@ -261,7 +261,7 @@ function App() {
 
           {/* Reports section — admin */}
           <Route path="/admin/reports" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><ReportsHub /></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="reports_advanced"><ReportsHub /></FeatureGate></Layout></ProtectedRoute>
           } />
           <Route path="/admin/reports/monthly-sheet" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><MonthlySheetReport /></Layout></ProtectedRoute>
