@@ -3,7 +3,14 @@ from django.db import migrations
 
 def seed_service_provider(apps, schema_editor):
     Group = apps.get_model('auth', 'Group')
-    Group.objects.get_or_create(name='ServiceProvider')
+    if not Group.objects.filter(name='ServiceProvider').exists():
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO auth_group (name) VALUES (%s) ON CONFLICT DO NOTHING",
+                ['ServiceProvider']
+            )
+
 
 
 def remove_service_provider(apps, schema_editor):
