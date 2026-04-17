@@ -2,7 +2,8 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import Layout from './components/Layout';
-import { isAuthenticated, getUserRole } from './utils/auth';
+import { isAuthenticated, getUserRole, isServiceProvider } from './utils/auth';
+import FeatureGate from './components/FeatureGate';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -54,9 +55,16 @@ const EmployeeCalculation = lazy(() => import('./pages/payroll/EmployeeCalculati
 const FingerprintHub = lazy(() => import('./pages/fingerprint/FingerprintHub'));
 const FingerprintUploadDetail = lazy(() => import('./pages/fingerprint/FingerprintUploadDetail'));
 
+// License
+const LicenseSetupRequired = lazy(() => import('./pages/LicenseSetupRequired'));
+const LicenseConfiguration = lazy(() => import('./pages/admin/LicenseConfiguration'));
+
 
 const ProtectedRoute = ({ role, children, requiredRole }) => {
-  return isAuthenticated() && role === requiredRole ? children : <Navigate to="/" />;
+  if (!isAuthenticated()) return <Navigate to="/" />;
+  if (role === requiredRole) return children;
+  if (role === 'ServiceProvider' && (requiredRole === 'Admin' || requiredRole === 'Manager')) return children;
+  return <Navigate to="/" />;
 };
 
 const PageFallback = () => (
@@ -72,8 +80,9 @@ function App() {
     <BrowserRouter>
       <Suspense fallback={<PageFallback />}>
         <Routes>
-          {/* Public Route */}
+          {/* Public Routes */}
           <Route path="/" element={<LoginPage />} />
+          <Route path="/license-setup-required" element={<LicenseSetupRequired />} />
 
           {/* Admin Dashboard — redirected to Outlet Summary */}
           <Route path="/admin/dashboard" element={<Navigate to="/admin/reports/outlet-summary" replace />} />
@@ -143,8 +152,15 @@ function App() {
           } />
           <Route path="/manager/database-backup" element={
             <ProtectedRoute role={role} requiredRole="Manager">
-              <Layout><DatabaseBackup /></Layout>
+              <Layout><FeatureGate feature="database_backup"><DatabaseBackup /></FeatureGate></Layout>
             </ProtectedRoute>
+          } />
+
+          {/* License Configuration — ServiceProvider only */}
+          <Route path="/admin/license-configuration" element={
+            isAuthenticated() && isServiceProvider()
+              ? <Layout><LicenseConfiguration /></Layout>
+              : <Navigate to="/" />
           } />
 
           {/* Admin Routes */}
@@ -234,7 +250,7 @@ function App() {
           } />
           <Route path="/admin/attendance-edit-requests" element={
             <ProtectedRoute role={role} requiredRole="Admin">
-              <Layout><AttendanceEditRequests /></Layout>
+              <Layout><FeatureGate feature="attendance_edit_requests"><AttendanceEditRequests /></FeatureGate></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/employees/status" element={
@@ -268,24 +284,24 @@ function App() {
 
           {/* Payroll / Calculation — admin only */}
           <Route path="/admin/payroll" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><PayrollHub /></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><PayrollHub /></FeatureGate></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/employee/:employeeId" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><EmployeeCalculation /></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EmployeeCalculation /></FeatureGate></Layout></ProtectedRoute>
           } />
 
           {/* Fingerprint Import — admin + manager */}
           <Route path="/admin/fingerprint" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FingerprintHub /></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="fingerprint_import"><FingerprintHub /></FeatureGate></Layout></ProtectedRoute>
           } />
           <Route path="/admin/fingerprint/:uploadId" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FingerprintUploadDetail /></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="fingerprint_import"><FingerprintUploadDetail /></FeatureGate></Layout></ProtectedRoute>
           } />
           <Route path="/manager/fingerprint" element={
-            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FingerprintHub /></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FeatureGate feature="fingerprint_import"><FingerprintHub /></FeatureGate></Layout></ProtectedRoute>
           } />
           <Route path="/manager/fingerprint/:uploadId" element={
-            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FingerprintUploadDetail /></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FeatureGate feature="fingerprint_import"><FingerprintUploadDetail /></FeatureGate></Layout></ProtectedRoute>
           } />
 
           {/* Reports section — manager */}

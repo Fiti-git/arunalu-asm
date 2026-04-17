@@ -12,16 +12,39 @@ export const getUserRole = () => {
   return decoded.role;
 };
 
+export const isServiceProvider = () => {
+  return getUserRole() === 'ServiceProvider';
+};
+
+export const getLicense = () => {
+  try {
+    return JSON.parse(localStorage.getItem('license') || '{}');
+  } catch {
+    return {};
+  }
+};
+
+export const hasFeature = (code) => {
+  const lic = getLicense();
+  return lic.features?.includes(code) ?? true;
+};
+
+export const getLicenseState = () => {
+  const lic = getLicense();
+  return lic.state || 'active';
+};
+
+export const isReadOnly = () => {
+  return getLicenseState() === 'readonly';
+};
+
 export const logout = () => {
-  // Remove all relevant auth-related keys from localStorage
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
   localStorage.removeItem('auth');
   localStorage.removeItem('role');
   localStorage.removeItem('outlet');
   localStorage.removeItem('outletList');
-  // Add other keys to clear here if needed
-
-  // Force a hard reload of the page to reset app state fully
+  localStorage.removeItem('license');
   window.location.reload();
 };

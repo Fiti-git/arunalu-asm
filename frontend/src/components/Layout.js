@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, useMediaQuery } from "@mui/material";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
+import LicenseBanner from "./LicenseBanner";
 import {
   SIDEBAR_WIDTH_OPEN,
   SIDEBAR_WIDTH_COLLAPSED,
@@ -64,6 +65,7 @@ function Layout({ children }) {
             boxSizing: "border-box",
           }}
         >
+          <LicenseBanner />
           {children}
         </Box>
       </Box>

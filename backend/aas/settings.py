@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'mobile_api',
     'calculation',
     'fingerprint',
+    'licensing',
 ]
 
 # ------------------------------------------------------------------------------
@@ -63,6 +64,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'licensing.middleware.LicenseMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -155,6 +157,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ------------------------------------------------------------------------------
 # FACE RECOGNITION / AWS
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# LICENSE ENCRYPTION
+# ------------------------------------------------------------------------------
+LICENSE_ENCRYPTION_KEY = os.getenv('LICENSE_ENCRYPTION_KEY', '')
+
 HAARCASCADE_FILE_PATH = BASE_DIR / 'models' / 'haarcascade_frontalface_default.xml'
 
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')

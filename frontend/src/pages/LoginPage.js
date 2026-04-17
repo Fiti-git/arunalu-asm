@@ -77,6 +77,16 @@ const LoginPage = () => {
       localStorage.setItem('outlet', outlets[0].id);
       localStorage.setItem('outlet_name', outlets[0].name);
 
+      // Fetch license status after login
+      try {
+        const licRes = await axios.get(`${API_BASE}/api/license/status/`, {
+          headers: { Authorization: `Bearer ${access}` },
+        });
+        localStorage.setItem('license', JSON.stringify(licRes.data));
+      } catch {
+        // License fetch is non-blocking — may fail on unconfigured instances
+      }
+
       handleRoleBasedNavigation(role, outlets);
       window.location.reload();
 
@@ -91,6 +101,7 @@ const LoginPage = () => {
     const roleBasedRedirect = {
       Admin: '/admin/reports/outlet-summary',
       Manager: '/manager/dashboard',
+      ServiceProvider: '/admin/reports/outlet-summary',
     };
 
     const navigateToRolePage = roleBasedRedirect[role] || '/';
