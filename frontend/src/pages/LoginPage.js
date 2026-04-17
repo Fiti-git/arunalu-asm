@@ -72,10 +72,15 @@ const LoginPage = () => {
       const decoded = jwtDecode(access);
       const { role } = decoded;
 
-      const userDetails = await fetchUserDetails(access);
-      const { outlets } = userDetails;
-      localStorage.setItem('outlet', outlets[0].id);
-      localStorage.setItem('outlet_name', outlets[0].name);
+      // ServiceProvider has no Employee profile — skip user details
+      if (role !== 'ServiceProvider') {
+        const userDetails = await fetchUserDetails(access);
+        const { outlets } = userDetails;
+        if (outlets && outlets.length > 0) {
+          localStorage.setItem('outlet', outlets[0].id);
+          localStorage.setItem('outlet_name', outlets[0].name);
+        }
+      }
 
       // Fetch license status after login
       try {
@@ -87,7 +92,7 @@ const LoginPage = () => {
         // License fetch is non-blocking — may fail on unconfigured instances
       }
 
-      handleRoleBasedNavigation(role, outlets);
+      handleRoleBasedNavigation(role);
       window.location.reload();
 
     } catch (err) {
