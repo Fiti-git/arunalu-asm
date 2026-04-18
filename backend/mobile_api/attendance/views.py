@@ -27,10 +27,12 @@ def today_attendance(request):
 
     today = timezone.now().date()
 
-    # Check for an open (not yet punched out) record
+    # Check for ANY open (not yet punched out) record — could be from today
+    # or from a previous day where the user forgot to punch out. Until this
+    # session is closed, no new punch-in is allowed, so the app must show
+    # PUNCH OUT instead of PUNCH IN.
     open_record = Attendance.objects.filter(
         employee=employee,
-        date=today,
         check_out_time__isnull=True,
     ).last()
 
@@ -39,6 +41,8 @@ def today_attendance(request):
         return Response({
             "punched_in": True,
             "check_in_time": check_in_local.strftime("%H:%M"),
+            "check_in_date": check_in_local.strftime("%Y-%m-%d"),
+            "is_carryover": open_record.date != today,
             "check_out_time": None,
             "attendance_id": open_record.attendance_id,
         })
