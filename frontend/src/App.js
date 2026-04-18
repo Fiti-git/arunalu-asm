@@ -46,6 +46,7 @@ const AbsenteeismReport = lazy(() => import('./pages/reports/AbsenteeismReport')
 const OvertimeReport = lazy(() => import('./pages/reports/OvertimeReport'));
 const ModificationAuditReport = lazy(() => import('./pages/reports/ModificationAuditReport'));
 const EmployeeReport = lazy(() => import('./pages/reports/EmployeeReport'));
+const LocationVerificationReport = lazy(() => import('./pages/reports/LocationVerificationReport'));
 
 // Payroll / Calculation
 const PayrollHub = lazy(() => import('./pages/payroll/PayrollHub'));
@@ -281,6 +282,9 @@ function App() {
           <Route path="/admin/reports/employee" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><EmployeeReport /></Layout></ProtectedRoute>
           } />
+          <Route path="/admin/reports/location-verification" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="reports_advanced"><LocationVerificationReport /></FeatureGate></Layout></ProtectedRoute>
+          } />
 
           {/* Payroll / Calculation — admin only */}
           <Route path="/admin/payroll" element={
@@ -325,6 +329,9 @@ function App() {
           } />
           <Route path="/manager/reports/employee" element={
             <ProtectedRoute role={role} requiredRole="Manager"><Layout><EmployeeReport /></Layout></ProtectedRoute>
+          } />
+          <Route path="/manager/reports/location-verification" element={
+            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FeatureGate feature="reports_advanced"><LocationVerificationReport /></FeatureGate></Layout></ProtectedRoute>
           } />
 
         </Routes>

@@ -1672,3 +1672,90 @@ class OvertimeAPIView(APIView):
         except Exception as e:
             print("OvertimeAPIView error:", e)
             return Response({"error": "Internal server error"}, status=500)
+
+
+class LocationVerificationAPIView(APIView):
+    """Per-punch location match report.
+
+    For each attendance record in range, computes the nearest outlet (among the
+    employee's assigned outlets) and the distance in meters for both check-in
+    and check-out, plus whether each punch fell inside the outlet's radius.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from main.utils import haversine
+        from main.models import Attendance
+
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+        is_admin, outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and not outlet_ids:
+            return Response([])
+
+        qs = (Attendance.objects
+              .filter(date__gte=sd, date__lte=ed)
+              .select_related('employee')
+              .prefetch_related('employee__outlets'))
+
+        if not is_admin:
+            qs = qs.filter(employee__outlets__id__in=outlet_ids).distinct()
+
+        def nearest(lat, lon, outlets):
+            try:
+                if lat is None or lon is None or not outlets:
+                    return None, None
+                best = None
+                best_dist = None
+                for o in outlets:
+                    d = haversine(float(lat), float(lon), o.latitude, o.longitude)
+                    if best_dist is None or d < best_dist:
+                        best_dist = d
+                        best = o
+                return best, best_dist
+            except (TypeError, ValueError):
+                return None, None
+
+        results = []
+        for a in qs.order_by('-date', '-check_in_time'):
+            emp = a.employee
+            outlets = list(emp.outlets.all())
+
+            in_outlet, in_dist = nearest(a.check_in_lat, a.check_in_long, outlets)
+            out_outlet, out_dist = nearest(a.check_out_lat, a.check_out_long, outlets)
+
+            in_match = (
+                in_outlet is not None and in_dist is not None
+                and in_dist <= in_outlet.radius_meters
+            )
+            out_match = (
+                out_outlet is not None and out_dist is not None
+                and out_dist <= out_outlet.radius_meters
+            )
+
+            results.append({
+                "attendance_id": a.attendance_id,
+                "date": a.date.isoformat() if a.date else None,
+                "employee_id": emp.employee_id,
+                "empcode": emp.empcode,
+                "fullname": emp.fullname,
+                "check_in_time": timezone.localtime(a.check_in_time).strftime("%H:%M") if a.check_in_time else None,
+                "check_in_lat": a.check_in_lat,
+                "check_in_long": a.check_in_long,
+                "check_in_outlet_name": in_outlet.name if in_outlet else None,
+                "check_in_distance_m": round(in_dist, 1) if in_dist is not None else None,
+                "check_in_radius_m": in_outlet.radius_meters if in_outlet else None,
+                "check_in_match": in_match,
+                "check_out_time": timezone.localtime(a.check_out_time).strftime("%H:%M") if a.check_out_time else None,
+                "check_out_lat": a.check_out_lat,
+                "check_out_long": a.check_out_long,
+                "check_out_outlet_name": out_outlet.name if out_outlet else None,
+                "check_out_distance_m": round(out_dist, 1) if out_dist is not None else None,
+                "check_out_radius_m": out_outlet.radius_meters if out_outlet else None,
+                "check_out_match": out_match,
+            })
+
+        return Response(results)

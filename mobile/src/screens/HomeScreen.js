@@ -57,6 +57,8 @@ const HomeScreen = () => {
   const [punchState, setPunchState]       = useState('loading');
   const [checkInTime, setCheckInTime]     = useState('');
   const [checkOutTime, setCheckOutTime]   = useState('');
+  const [isCarryover, setIsCarryover]     = useState(false);
+  const [checkInDate, setCheckInDate]     = useState('');
   const [recentLeaves, setRecentLeaves]   = useState([]);
   const [leaveCount, setLeaveCount]       = useState(0);
   const [activityPage, setActivityPage]   = useState(1);
@@ -88,6 +90,8 @@ const HomeScreen = () => {
       setPunchState(todayRes.punched_in ? 'in' : 'out');
       setCheckInTime(todayRes.check_in_time || '');
       setCheckOutTime(todayRes.check_out_time || '');
+      setIsCarryover(!!todayRes.is_carryover);
+      setCheckInDate(todayRes.check_in_date || '');
       setRecentLeaves(historyRes);
       setLeaveCount(historyRes.length);
       setProfilePhoto(profileRes.reference_photo_url || null);
@@ -209,7 +213,10 @@ const HomeScreen = () => {
             {punchState === 'loading' ? 'Loading...' : punchState === 'in' ? 'Checked In' : 'Not Checked In'}
           </Text>
           {punchState === 'in' && checkInTime
-            ? <Text style={styles.statusPillSince}> since {fmtTime(checkInTime)}</Text>
+            ? <Text style={styles.statusPillSince}>
+                {' '}since {fmtTime(checkInTime)}
+                {isCarryover ? ` (${checkInDate})` : ''}
+              </Text>
             : null}
         </View>
       </View>
@@ -240,7 +247,13 @@ const HomeScreen = () => {
             >
               <Text style={styles.actionCardEmoji}>{isPunchIn ? '\u{1F4F2}' : '\u{1F6AA}'}</Text>
               <Text style={styles.actionCardTitle}>{isPunchIn ? 'PUNCH IN' : 'PUNCH OUT'}</Text>
-              <Text style={styles.actionCardSub}>{isPunchIn ? 'Tap to check in' : 'Tap to check out'}</Text>
+              <Text style={styles.actionCardSub}>
+                {isPunchIn
+                  ? 'Tap to check in'
+                  : isCarryover
+                    ? 'Unfinished session — tap to close'
+                    : 'Tap to check out'}
+              </Text>
               {checkInTime ? (
                 <View style={styles.actionCardInfo}>
                   <Text style={styles.actionCardInfoText}>Last in: {fmtTime(checkInTime)}</Text>

@@ -26,6 +26,7 @@ from .views import (
     LateComersAPIView,
     AbsenteeismAPIView,
     OvertimeAPIView,
+    LocationVerificationAPIView,
 )
 
 urlpatterns = [
@@ -44,6 +45,7 @@ urlpatterns = [
     path('reports/late-comers/', LateComersAPIView.as_view(), name='reports_late_comers'),
     path('reports/absenteeism/', AbsenteeismAPIView.as_view(), name='reports_absenteeism'),
     path('reports/overtime/', OvertimeAPIView.as_view(), name='reports_overtime'),
+    path('reports/location-verification/', LocationVerificationAPIView.as_view(), name='reports_location_verification'),
 
     # -------------------------------------------------------------------------
     # Dashboard (all outlets)

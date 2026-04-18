@@ -8,6 +8,7 @@ import WatchLaterOutlinedIcon from '@mui/icons-material/WatchLaterOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import PersonSearchOutlinedIcon from '@mui/icons-material/PersonSearchOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
+import MyLocationOutlinedIcon from '@mui/icons-material/MyLocationOutlined';
 import { alpha } from '@mui/material/styles';
 import { PageHeader } from 'components/ui';
 import { getUserRole } from 'utils/auth';
@@ -27,6 +28,8 @@ const reports = [
     desc: 'Pick an employee — day-by-day activity, late marks, leaves, totals.', icon: <PersonSearchOutlinedIcon />, tone: 'success' },
   { slug: 'attendance-detail', title: 'Attendance Detail',
     desc: 'Classic per-employee attendance drill-down grouped by outlet.', icon: <AssessmentOutlinedIcon />, tone: 'primary' },
+  { slug: 'location-verification', title: 'Location Verification',
+    desc: 'Per-punch GPS vs. outlet match — nearest outlet, distance, in/out of radius.', icon: <MyLocationOutlinedIcon />, tone: 'info' },
 ];
 
 export default function ReportsHub() {
