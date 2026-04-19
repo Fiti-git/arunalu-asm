@@ -1702,8 +1702,17 @@ class BlankDatesAPIView(APIView):
         )
         SELECT ed.employee_id, ed.fullname, ed.empcode,
                ed.primary_outlet_id, ed.primary_outlet_name,
-               ed.d AS blank_date,
-               TO_CHAR(ed.d, 'Dy') AS weekday
+               ed.d AS work_date,
+               TO_CHAR(ed.d, 'Dy') AS weekday,
+               'Blank Day' AS attendance_status,
+               NULL::time   AS check_in_time,
+               NULL::time   AS check_out_time,
+               NULL::numeric AS worked_hours,
+               NULL::integer AS leave_refno,
+               NULL::text    AS leave_remarks,
+               NULL::integer AS leave_type_id,
+               NULL::text    AS att_type,
+               NULL::text    AS att_type_name
         FROM emp_dates ed
         LEFT JOIN att  ON att.employee_id = ed.employee_id AND att.d = ed.d
         LEFT JOIN lv   ON lv.employee_id  = ed.employee_id AND lv.d  = ed.d

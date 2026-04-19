@@ -86,13 +86,15 @@ export default function EmployeeReport() {
   useEffect(() => { fetchReport(); }, [fetchReport]);
 
   const totals = useMemo(() => {
-    if (!report?.daily_report) return { present: 0, late: 0, leave: 0, absent: 0 };
+    if (!report?.daily_report) return { present: 0, leave: 0 };
     const rows = report.daily_report;
+    const isLeave = (r) => r.leave_refno != null || (r.attendance_status || '').toLowerCase() === 'on leave';
     return {
-      present: rows.filter((r) => (r.attendance_status || '').toLowerCase() === 'present').length,
-      late: rows.filter((r) => (r.attendance_status || '').toLowerCase() === 'late').length,
-      leave: rows.filter((r) => (r.attendance_status || '').toLowerCase() === 'on leave').length,
-      absent: rows.filter((r) => (r.attendance_status || '').toLowerCase() === 'absent').length,
+      present: rows.filter((r) => {
+        const v = (r.attendance_status || '').toLowerCase();
+        return !isLeave(r) && (v === 'present' || v === 'late' || v === 'half day');
+      }).length,
+      leave: rows.filter(isLeave).length,
     };
   }, [report]);
 
@@ -112,7 +114,11 @@ export default function EmployeeReport() {
       },
     },
     { field: 'attendance_status', headerName: 'Status', flex: 0.7, minWidth: 110,
-      renderCell: ({ value }) => {
+      renderCell: ({ value, row }) => {
+        if (row.leave_refno != null) {
+          const label = row.att_type_name || 'Leave';
+          return <Chip label={label} size="small" color="info" sx={{ fontWeight: 600 }} />;
+        }
         const v = (value || '').toLowerCase();
         if (v === 'absent' || v === 'late') return null;
         return value ? <Chip label={value} size="small" color={statusChipColor(value)} sx={{ fontWeight: 600 }} /> : null;

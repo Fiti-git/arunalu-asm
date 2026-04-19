@@ -85,7 +85,7 @@ export default function BlankDatesReport() {
     },
     { field: 'primary_outlet_name', headerName: 'Outlet', flex: 1, minWidth: 160 },
     {
-      field: 'blank_date', headerName: 'Blank Date', flex: 0.8, minWidth: 140,
+      field: 'work_date', headerName: 'Date', flex: 0.8, minWidth: 140,
       renderCell: ({ value, row }) => {
         const d = new Date(value);
         const label = isNaN(d.getTime()) ? value : d.toLocaleDateString();
@@ -98,8 +98,10 @@ export default function BlankDatesReport() {
       },
     },
     {
-      field: 'status', headerName: 'Status', flex: 0.6, minWidth: 140, sortable: false,
-      renderCell: () => <Chip label="No record" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />,
+      field: 'attendance_status', headerName: 'Status', flex: 0.6, minWidth: 140, sortable: false,
+      renderCell: ({ value }) => (
+        <Chip label={value || 'Blank Day'} size="small" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
+      ),
     },
   ];
 
@@ -112,8 +114,9 @@ export default function BlankDatesReport() {
       empcode: 'Emp Code',
       fullname: 'Employee',
       primary_outlet_name: 'Outlet',
-      blank_date: 'Blank Date',
+      work_date: 'Date',
       weekday: 'Weekday',
+      attendance_status: 'Status',
     });
   };
 
