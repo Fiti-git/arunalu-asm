@@ -5,6 +5,7 @@ import {
   IconButton, Avatar, Tabs, Tab, Stepper, Step, StepLabel,
   DialogContent, DialogActions, Tooltip, Dialog,
   CircularProgress, Stack, Pagination,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
@@ -108,138 +109,94 @@ function PunchPhotoSlot({ label, src, tone }) {
   );
 }
 
-function EmployeeCard({ emp, onEdit }) {
+const Dash = () => <Typography variant="caption" color="text.disabled">—</Typography>;
+
+function EmployeeRow({ emp, onEdit }) {
   const color = pickAvatarColor(emp.fullname);
   const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.fullname;
   const hasRole = emp.group_name && emp.group_name !== '—';
 
   return (
-    <Box
-      sx={{
-        bgcolor: 'background.paper',
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 3,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        transition: 'box-shadow 0.18s, transform 0.18s',
-        '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' },
-      }}
-    >
-      {/* Teal banner */}
-      <Box
-        sx={{
-          position: 'relative',
-          height: 64,
-          bgcolor: 'primary.main',
-          backgroundImage: (theme) =>
-            `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-        }}
-      >
-        <Tooltip title="Edit employee">
-          <IconButton
-            size="small"
-            onClick={() => onEdit(emp)}
-            sx={{
-              position: 'absolute',
-              top: 8,
-              right: 8,
-              bgcolor: 'rgba(255,255,255,0.18)',
-              color: 'common.white',
-              backdropFilter: 'blur(4px)',
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
-            }}
+    <TableRow hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+      <TableCell>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Avatar
+            src={emp.reference_photo ? `${BASE_URL}${emp.reference_photo}` : undefined}
+            sx={{ width: 40, height: 40, bgcolor: color, fontWeight: 700, fontSize: '0.95rem' }}
           >
-            <EditOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Box>
-
-      {/* Avatar overlapping banner */}
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: '-32px' }}>
-        <Avatar
-          src={emp.reference_photo ? `${BASE_URL}${emp.reference_photo}` : undefined}
-          sx={{
-            width: 64,
-            height: 64,
-            bgcolor: color,
-            fontWeight: 700,
-            fontSize: '1.25rem',
-            letterSpacing: 0.5,
-            border: 3,
-            borderColor: 'background.paper',
-            boxShadow: 2,
-          }}
-        >
-          {getInitials(emp.fullname)}
-        </Avatar>
-      </Box>
-
-      {/* Name + role · @username */}
-      <Box sx={{ px: 2, pt: 1, textAlign: 'center' }}>
-        <Typography
-          variant="subtitle1"
-          fontWeight={700}
-          sx={{ lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-        >
-          {name}
-        </Typography>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}
-        >
-          {hasRole ? `${emp.group_name} · ` : ''}@{emp.fullname}
-        </Typography>
-      </Box>
-
-      {/* Meta */}
-      <Box sx={{ px: 2.5, pt: 2, pb: 2, display: 'flex', flexDirection: 'column', gap: 0.8 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-          <CakeOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-          <Typography variant="caption" color="text.secondary">
-            {emp.date_of_birth || '—'}
-          </Typography>
+            {getInitials(emp.fullname)}
+          </Avatar>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body2" fontWeight={600} noWrap>{name}</Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>@{emp.fullname}</Typography>
+          </Box>
         </Box>
-
-        {emp.outlet_names?.length > 0 && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, minWidth: 0 }}>
+      </TableCell>
+      <TableCell>
+        {hasRole ? <Chip label={emp.group_name} size="small" variant="outlined" /> : <Dash />}
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" color="text.secondary" noWrap>{emp.email || '—'}</Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" color="text.secondary" noWrap>{emp.phone_number || '—'}</Typography>
+      </TableCell>
+      <TableCell>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
+          <CakeOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+          <Typography variant="caption" color="text.secondary">{emp.date_of_birth || '—'}</Typography>
+        </Box>
+      </TableCell>
+      <TableCell>
+        <Typography variant="caption" color="text.secondary">{emp.idnumber || '—'}</Typography>
+      </TableCell>
+      <TableCell>
+        {emp.outlet_names?.length > 0 ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, minWidth: 0, maxWidth: 220 }}>
             <LocationOnOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', flexShrink: 0 }} />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            >
+            <Typography variant="caption" color="text.secondary" noWrap>
               {emp.outlet_names.slice(0, 2).join(', ')}
               {emp.outlet_names.length > 2 && ` +${emp.outlet_names.length - 2}`}
             </Typography>
           </Box>
-        )}
-
-        {emp.primary_outlet_name && (
-          <Box
-            sx={{
-              mt: 0.5,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 0.6,
-              alignSelf: 'flex-start',
-              bgcolor: 'success.light',
-              color: 'success.dark',
-              borderRadius: 999,
-              px: 1,
-              py: 0.25,
-            }}
-          >
-            <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: 'success.main' }} />
-            <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.68rem' }}>
-              Primary: {emp.primary_outlet_name}
-            </Typography>
-          </Box>
-        )}
-      </Box>
-    </Box>
+        ) : <Dash />}
+      </TableCell>
+      <TableCell>
+        {emp.primary_outlet_name ? (
+          <Chip
+            label={emp.primary_outlet_name}
+            size="small"
+            sx={{ bgcolor: 'success.light', color: 'success.dark', fontWeight: 600 }}
+          />
+        ) : <Dash />}
+      </TableCell>
+      <TableCell>
+        <Typography variant="caption" color="text.secondary">{emp.employ_number || '—'}</Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="caption" color="text.secondary">{emp.epf_number || '—'}</Typography>
+      </TableCell>
+      <TableCell align="right">
+        <Typography variant="caption" color="text.secondary">
+          {emp.basic_salary ? `Rs. ${Number(emp.basic_salary).toLocaleString()}` : '—'}
+        </Typography>
+      </TableCell>
+      <TableCell align="center">
+        <Chip
+          label={emp.cal_epf ? 'Yes' : 'No'}
+          size="small"
+          color={emp.cal_epf ? 'success' : 'default'}
+          variant="outlined"
+        />
+      </TableCell>
+      <TableCell align="right">
+        <Tooltip title="Edit employee">
+          <IconButton size="small" onClick={() => onEdit(emp)} color="primary">
+            <EditOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -484,15 +441,40 @@ export default function AdminEmployeeEditor() {
           <Typography color="text.secondary">No employees found</Typography>
         </Box>
       ) : (
-        <Box sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' },
-          gap: 2,
-        }}>
-          {employees.map(emp => (
-            <EmployeeCard key={emp.employee_id} emp={emp} onEdit={openEdit} />
-          ))}
-        </Box>
+        <TableContainer
+          sx={{
+            bgcolor: 'background.paper',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 2,
+            overflowX: 'auto',
+          }}
+        >
+          <Table size="small" sx={{ minWidth: 1400 }}>
+            <TableHead>
+              <TableRow sx={{ bgcolor: 'grey.50' }}>
+                <TableCell sx={{ fontWeight: 700 }}>Employee</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Role</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Email</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Phone</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Date of Birth</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>ID Number</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Outlets</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Primary Outlet</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Emp. No.</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>EPF No.</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Basic Salary</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>Calc EPF</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {employees.map(emp => (
+                <EmployeeRow key={emp.employee_id} emp={emp} onEdit={openEdit} />
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
 
       {/* ── Pagination ── */}
