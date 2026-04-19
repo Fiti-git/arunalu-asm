@@ -43,6 +43,7 @@ const ReportsHub = lazy(() => import('./pages/reports/ReportsHub'));
 const MonthlySheetReport = lazy(() => import('./pages/reports/MonthlySheetReport'));
 const LateComersReport = lazy(() => import('./pages/reports/LateComersReport'));
 const AbsenteeismReport = lazy(() => import('./pages/reports/AbsenteeismReport'));
+const BlankDatesReport = lazy(() => import('./pages/reports/BlankDatesReport'));
 const OvertimeReport = lazy(() => import('./pages/reports/OvertimeReport'));
 const ModificationAuditReport = lazy(() => import('./pages/reports/ModificationAuditReport'));
 const EmployeeReport = lazy(() => import('./pages/reports/EmployeeReport'));
@@ -273,6 +274,9 @@ function App() {
           <Route path="/admin/reports/absenteeism" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><AbsenteeismReport /></Layout></ProtectedRoute>
           } />
+          <Route path="/admin/reports/blank-dates" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><BlankDatesReport /></Layout></ProtectedRoute>
+          } />
           <Route path="/admin/reports/overtime" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><OvertimeReport /></Layout></ProtectedRoute>
           } />
@@ -320,6 +324,9 @@ function App() {
           } />
           <Route path="/manager/reports/absenteeism" element={
             <ProtectedRoute role={role} requiredRole="Manager"><Layout><AbsenteeismReport /></Layout></ProtectedRoute>
+          } />
+          <Route path="/manager/reports/blank-dates" element={
+            <ProtectedRoute role={role} requiredRole="Manager"><Layout><BlankDatesReport /></Layout></ProtectedRoute>
           } />
           <Route path="/manager/reports/overtime" element={
             <ProtectedRoute role={role} requiredRole="Manager"><Layout><OvertimeReport /></Layout></ProtectedRoute>

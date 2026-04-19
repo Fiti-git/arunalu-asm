@@ -25,6 +25,7 @@ from .views import (
     MonthlySheetAPIView,
     LateComersAPIView,
     AbsenteeismAPIView,
+    BlankDatesAPIView,
     OvertimeAPIView,
     LocationVerificationAPIView,
 )
@@ -44,6 +45,7 @@ urlpatterns = [
     path('reports/monthly-sheet/', MonthlySheetAPIView.as_view(), name='reports_monthly_sheet'),
     path('reports/late-comers/', LateComersAPIView.as_view(), name='reports_late_comers'),
     path('reports/absenteeism/', AbsenteeismAPIView.as_view(), name='reports_absenteeism'),
+    path('reports/blank-dates/', BlankDatesAPIView.as_view(), name='reports_blank_dates'),
     path('reports/overtime/', OvertimeAPIView.as_view(), name='reports_overtime'),
     path('reports/location-verification/', LocationVerificationAPIView.as_view(), name='reports_location_verification'),
 

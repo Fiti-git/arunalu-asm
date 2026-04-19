@@ -12,9 +12,7 @@ import api from 'utils/api';
 import { pickAvatarColor } from 'theme/tokens';
 import { PageHeader, StatCard } from 'components/ui';
 import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
-import EventBusyOutlinedIcon from '@mui/icons-material/EventBusyOutlined';
 import BeachAccessOutlinedIcon from '@mui/icons-material/BeachAccessOutlined';
-import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import { firstOfMonth, today, exportCsv, getInitials, rangeFieldSx } from './shared';
 import { getUserRole } from 'utils/auth';
 
@@ -114,7 +112,11 @@ export default function EmployeeReport() {
       },
     },
     { field: 'attendance_status', headerName: 'Status', flex: 0.7, minWidth: 110,
-      renderCell: ({ value }) => <Chip label={value || '—'} size="small" color={statusChipColor(value)} sx={{ fontWeight: 600 }} /> },
+      renderCell: ({ value }) => {
+        const v = (value || '').toLowerCase();
+        if (v === 'absent' || v === 'late') return null;
+        return value ? <Chip label={value} size="small" color={statusChipColor(value)} sx={{ fontWeight: 600 }} /> : null;
+      } },
     { field: 'check_in_time', headerName: 'Check-in', flex: 0.6, minWidth: 100,
       renderCell: ({ value }) => <Typography variant="body2">{fmtT(value)}</Typography> },
     { field: 'check_out_time', headerName: 'Check-out', flex: 0.6, minWidth: 100,
@@ -214,11 +216,9 @@ export default function EmployeeReport() {
         </Box>
       )}
 
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' } }}>
+      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' } }}>
         <StatCard icon={<EventAvailableOutlinedIcon />} label="Present" value={totals.present} color="success" />
-        <StatCard icon={<AccessTimeOutlinedIcon />} label="Late" value={totals.late} color="warning" />
         <StatCard icon={<BeachAccessOutlinedIcon />} label="Leave" value={totals.leave} color="info" />
-        <StatCard icon={<EventBusyOutlinedIcon />} label="Absent" value={totals.absent} color="error" />
       </Box>
 
       <Box sx={{ height: 540, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>

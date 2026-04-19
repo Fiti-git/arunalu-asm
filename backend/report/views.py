@@ -1628,6 +1628,99 @@ class AbsenteeismAPIView(APIView):
             return Response({"error": "Internal server error"}, status=500)
 
 
+class BlankDatesAPIView(APIView):
+    """Dates within a range where an employee has no attendance record and no approved leave.
+
+    Query params:
+      start_date, end_date  — required range
+      outlet_id             — optional, filter to one outlet (must be in user's scope)
+      employee_id           — optional, limit to a single employee
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sd, ed = _parse_range(request)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+        is_admin, outlet_ids = _user_outlet_scope(request.user)
+        if not is_admin and not outlet_ids:
+            return Response([])
+
+        outlet_id = request.query_params.get('outlet_id')
+        employee_id = request.query_params.get('employee_id')
+
+        try:
+            outlet_id = int(outlet_id) if outlet_id else None
+        except (TypeError, ValueError):
+            outlet_id = None
+        try:
+            employee_id = int(employee_id) if employee_id else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        if outlet_id is not None and not is_admin and outlet_id not in (outlet_ids or []):
+            return Response([])
+
+        scoped_cte, scope_params = _scoped_emp_sql(is_admin, outlet_ids)
+
+        extra_where = ""
+        extra_params = []
+        if outlet_id is not None:
+            extra_where += " AND s.primary_outlet_id = %s"
+            extra_params.append(outlet_id)
+        if employee_id is not None:
+            extra_where += " AND s.employee_id = %s"
+            extra_params.append(employee_id)
+
+        query = f"""
+        WITH {scoped_cte},
+        date_range AS (
+          SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
+        ),
+        emp_dates AS (
+          SELECT s.employee_id, s.fullname, s.empcode,
+                 s.primary_outlet_id, s.primary_outlet_name,
+                 dr.d
+          FROM scoped_emp s
+          CROSS JOIN date_range dr
+          WHERE 1 = 1 {extra_where}
+        ),
+        att AS (
+          SELECT a.employee_id, a.date AS d
+          FROM public.main_attendance a
+          WHERE a.date BETWEEN %s AND %s
+          GROUP BY a.employee_id, a.date
+        ),
+        lv AS (
+          SELECT l.employee_id, l.leave_date AS d
+          FROM public.main_empleave l
+          WHERE l.leave_date BETWEEN %s AND %s
+            AND LOWER(l.status) = 'approved'
+          GROUP BY l.employee_id, l.leave_date
+        )
+        SELECT ed.employee_id, ed.fullname, ed.empcode,
+               ed.primary_outlet_id, ed.primary_outlet_name,
+               ed.d AS blank_date,
+               TO_CHAR(ed.d, 'Dy') AS weekday
+        FROM emp_dates ed
+        LEFT JOIN att  ON att.employee_id = ed.employee_id AND att.d = ed.d
+        LEFT JOIN lv   ON lv.employee_id  = ed.employee_id AND lv.d  = ed.d
+        WHERE att.d IS NULL AND lv.d IS NULL
+        ORDER BY ed.fullname, ed.d;
+        """
+
+        params = scope_params + extra_params + [sd, ed, sd, ed, sd, ed]
+
+        try:
+            rows = run_sql(query, params)
+            return Response(rows)
+        except Exception as e:
+            print("BlankDatesAPIView error:", e)
+            return Response({"error": "Internal server error"}, status=500)
+
+
 class OvertimeAPIView(APIView):
     """Per-employee OT hours + worked hours + days-with-OT in the range."""
     permission_classes = [IsAuthenticated]

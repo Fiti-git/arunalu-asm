@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import EventBusyOutlinedIcon from '@mui/icons-material/EventBusyOutlined';
+import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
 import WatchLaterOutlinedIcon from '@mui/icons-material/WatchLaterOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import PersonSearchOutlinedIcon from '@mui/icons-material/PersonSearchOutlined';
@@ -20,6 +21,8 @@ const reports = [
     desc: 'Employees ranked by number of late check-ins in the range.', icon: <AccessTimeOutlinedIcon />, tone: 'warning' },
   { slug: 'absenteeism', title: 'Absenteeism',
     desc: 'Employees with absent days above a threshold, with absent rate %.', icon: <EventBusyOutlinedIcon />, tone: 'error' },
+  { slug: 'blank-dates', title: 'Blank Dates',
+    desc: 'Dates with no attendance and no leave — pick one employee or all for an outlet.', icon: <EventNoteOutlinedIcon />, tone: 'warning' },
   { slug: 'overtime', title: 'Overtime',
     desc: 'Per-employee OT hours + days with OT for the range.', icon: <WatchLaterOutlinedIcon />, tone: 'info' },
   { slug: 'modification-audit', title: 'Attendance Modification Audit',
