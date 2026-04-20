@@ -121,20 +121,44 @@ const buildColumns = (onEdit) => [
     valueGetter: (_, row) =>
       `${row.first_name || ''} ${row.last_name || ''}`.trim() || row.fullname,
     renderCell: ({ row, value }) => (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, height: '100%' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+          width: '100%',
+          height: '100%',
+          py: 1,
+        }}
+      >
         <Avatar
           src={row.reference_photo ? `${BASE_URL}${row.reference_photo}` : undefined}
           sx={{
-            width: 36, height: 36,
+            width: 40, height: 40, flexShrink: 0,
             bgcolor: pickAvatarColor(row.fullname),
             fontWeight: 700, fontSize: '0.9rem',
           }}
         >
           {getInitials(row.fullname)}
         </Avatar>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="body2" fontWeight={600} noWrap>{value}</Typography>
-          <Typography variant="caption" color="text.secondary" noWrap>@{row.fullname}</Typography>
+        <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.3 }}>
+          <Typography
+            variant="body2"
+            fontWeight={600}
+            noWrap
+            sx={{ lineHeight: 1.3 }}
+            title={value}
+          >
+            {value}
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            noWrap
+            sx={{ lineHeight: 1.3 }}
+          >
+            @{row.fullname}
+          </Typography>
         </Box>
       </Box>
     ),
@@ -529,8 +553,8 @@ export default function AdminEmployeeEditor() {
           columns={buildColumns(openEdit)}
           getRowId={(row) => row.employee_id}
           loading={loading}
-          rowHeight={64}
-          columnHeaderHeight={48}
+          rowHeight={72}
+          columnHeaderHeight={52}
           disableRowSelectionOnClick
           paginationMode="server"
           rowCount={totalCount}
@@ -541,8 +565,14 @@ export default function AdminEmployeeEditor() {
             border: 0,
             '& .MuiDataGrid-columnHeaders': { bgcolor: 'grey.50' },
             '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 700 },
+            '& .MuiDataGrid-cell': {
+              display: 'flex',
+              alignItems: 'center',
+              py: 0.5,
+            },
             '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': { outline: 'none' },
             '& .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within': { outline: 'none' },
+            '& .MuiDataGrid-row': { alignItems: 'center' },
           }}
           slots={{
             noRowsOverlay: () => (
