@@ -520,7 +520,8 @@ export default function AdminEmployeeEditor() {
           border: 1,
           borderColor: 'divider',
           borderRadius: 2,
-          height: 640,
+          height: 'calc(100vh - 220px)',
+          minHeight: 560,
         }}
       >
         <DataGrid

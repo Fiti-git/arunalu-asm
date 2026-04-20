@@ -1013,7 +1013,19 @@ def _get_outlet_ids(data):
 @permission_classes([IsAuthenticated])
 def v2_employee_list(request):
     """Return paginated active employees including primary_outlet."""
-    employees = Employee.objects.filter(is_active=True).select_related('primary_outlet')
+    employees = Employee.objects.filter(is_active=True).select_related('primary_outlet', 'user')
+    search = (request.query_params.get('search') or '').strip()
+    if search:
+        employees = employees.filter(
+            Q(fullname__icontains=search) |
+            Q(empcode__icontains=search) |
+            Q(idnumber__icontains=search) |
+            Q(phone_number__icontains=search) |
+            Q(epf_number__icontains=search) |
+            Q(user__first_name__icontains=search) |
+            Q(user__last_name__icontains=search) |
+            Q(user__email__icontains=search)
+        ).distinct()
     return paginate_queryset(request, employees, EmployeeSerializer)
 
 
