@@ -529,7 +529,8 @@ export default function AdminEmployeeEditor() {
           columns={buildColumns(openEdit)}
           getRowId={(row) => row.employee_id}
           loading={loading}
-          rowHeight={56}
+          rowHeight={64}
+          columnHeaderHeight={48}
           disableRowSelectionOnClick
           paginationMode="server"
           rowCount={totalCount}
