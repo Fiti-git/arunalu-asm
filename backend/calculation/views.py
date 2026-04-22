@@ -11,10 +11,14 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from main.models import Attendance, Employee, EmpLeave, LeaveType, Holiday
-from .models import EmployeeSalary, PaymentVoucher, VoucherAllowance, VoucherDeduction
+from .models import (
+    EmployeeSalary, PaymentVoucher, VoucherAllowance, VoucherDeduction,
+    EmployeeOutletAllocation,
+)
 from .serializers import (
     EmployeeSalarySerializer, PaymentVoucherSerializer,
 )
+from .services import split_voucher_by_outlet
 
 
 # =============================================================================
@@ -493,3 +497,372 @@ def payroll_employee_list(request):
             "voucher_period_end": latest.period_end.isoformat() if latest else None,
         })
     return Response(result)
+
+
+# =============================================================================
+# Outlet allocation management
+# =============================================================================
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def allocation_list(request):
+    """List all employees (optionally filtered by outlet) with their current
+    outlet allocations. Useful for the admin allocation editor."""
+    gate = _gate_payroll(request)
+    if gate: return gate
+
+    qs = (Employee.objects.filter(is_active=True)
+          .prefetch_related("outlets", "outlet_allocations__outlet")
+          .select_related("primary_outlet")
+          .order_by("fullname"))
+
+    outlet_id = request.GET.get("outlet")
+    if outlet_id:
+        try:
+            qs = qs.filter(outlets__id=int(outlet_id)).distinct()
+        except (TypeError, ValueError):
+            return Response({"error": "Invalid outlet"}, status=400)
+
+    only_multi = request.GET.get("multi_only", "").lower() in ("1", "true", "yes")
+
+    result = []
+    for e in qs:
+        outlets = list(e.outlets.all())
+        if only_multi and len(outlets) < 2:
+            continue
+        rows = list(e.outlet_allocations.all())
+        allocations = [
+            {
+                "outlet_id": r.outlet_id,
+                "outlet_name": r.outlet.name,
+                "percentage": float(r.percentage),
+            }
+            for r in rows
+        ]
+        result.append({
+            "employee_id": e.employee_id,
+            "fullname": e.fullname,
+            "empcode": e.empcode,
+            "primary_outlet_id": e.primary_outlet_id,
+            "primary_outlet_name": e.primary_outlet.name if e.primary_outlet_id else None,
+            "outlets": [{"id": o.id, "name": o.name} for o in outlets],
+            "allocations": allocations,
+            "has_explicit": len(allocations) > 0,
+        })
+    return Response(result)
+
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def allocation_set(request, employee_id):
+    """Bulk-set allocations for one employee. Body: [{outlet_id, percentage}, ...].
+    Sum must equal 100 (allowing 0.01 tolerance). All outlets must be in
+    employee.outlets. Replaces any existing rows atomically."""
+    if not _is_admin_user(request.user):
+        return Response({"error": "Only admins can edit allocations."}, status=403)
+
+    emp = get_object_or_404(Employee, pk=employee_id)
+    payload = request.data
+    if not isinstance(payload, list):
+        return Response({"error": "Body must be a list."}, status=400)
+
+    valid_outlet_ids = set(emp.outlets.values_list("id", flat=True))
+    cleaned = []
+    total = Decimal(0)
+    seen = set()
+    for item in payload:
+        try:
+            oid = int(item.get("outlet_id"))
+            pct = Decimal(str(item.get("percentage")))
+        except (TypeError, ValueError, AttributeError):
+            return Response({"error": "Each entry needs outlet_id and percentage."}, status=400)
+        if oid not in valid_outlet_ids:
+            return Response({"error": f"Outlet {oid} is not assigned to this employee."}, status=400)
+        if oid in seen:
+            return Response({"error": f"Outlet {oid} listed more than once."}, status=400)
+        if pct < 0 or pct > 100:
+            return Response({"error": "Percentage must be between 0 and 100."}, status=400)
+        seen.add(oid)
+        total += pct
+        cleaned.append((oid, pct))
+
+    if cleaned and abs(total - Decimal("100")) > Decimal("0.01"):
+        return Response({"error": f"Percentages must sum to 100 (got {total})."}, status=400)
+
+    with transaction.atomic():
+        EmployeeOutletAllocation.objects.filter(employee=emp).delete()
+        for oid, pct in cleaned:
+            EmployeeOutletAllocation.objects.create(
+                employee=emp, outlet_id=oid, percentage=pct,
+            )
+
+    rows = [
+        {"outlet_id": r.outlet_id, "outlet_name": r.outlet.name, "percentage": float(r.percentage)}
+        for r in emp.outlet_allocations.select_related("outlet").all()
+    ]
+    return Response({"employee_id": emp.employee_id, "allocations": rows})
+
+
+# =============================================================================
+# Payroll report helpers
+# =============================================================================
+
+def _parse_month(month_str):
+    """Accept 'YYYY-MM'. Return (first_day, last_day) as date objects."""
+    from calendar import monthrange
+    if not month_str:
+        today = date.today()
+        y, m = today.year, today.month
+    else:
+        try:
+            y, m = [int(x) for x in month_str.split("-")[:2]]
+        except (ValueError, AttributeError):
+            return None, None
+    last = monthrange(y, m)[1]
+    return date(y, m, 1), date(y, m, last)
+
+
+def _vouchers_for_month(month_str, outlet_id=None):
+    """Return locked vouchers whose period overlaps the month."""
+    sd, ed = _parse_month(month_str)
+    if sd is None:
+        return None, None, None
+
+    qs = (PaymentVoucher.objects
+          .filter(status="Locked", period_start__lte=ed, period_end__gte=sd)
+          .select_related("employee", "employee__primary_outlet")
+          .prefetch_related("employee__outlets", "employee__outlet_allocations__outlet"))
+
+    if outlet_id:
+        try:
+            oid = int(outlet_id)
+            qs = qs.filter(employee__outlets__id=oid).distinct()
+        except (TypeError, ValueError):
+            return None, None, None
+
+    return qs, sd, ed
+
+
+# =============================================================================
+# Payroll report endpoints
+# =============================================================================
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def payroll_report_employees(request):
+    """Per-employee salary list for a given month."""
+    gate = _gate_payroll(request)
+    if gate: return gate
+
+    vouchers, sd, ed = _vouchers_for_month(request.GET.get("month"), request.GET.get("outlet"))
+    if vouchers is None:
+        return Response({"error": "Invalid month (use YYYY-MM)."}, status=400)
+
+    rows = []
+    totals = {"gross": Decimal(0), "epf_emp": Decimal(0), "epf_com": Decimal(0),
+              "etf_com": Decimal(0), "net": Decimal(0)}
+
+    for v in vouchers:
+        emp = v.employee
+        outlets = ", ".join(o.name for o in emp.outlets.all())
+        rows.append({
+            "voucher_id": v.id,
+            "employee_id": emp.employee_id,
+            "empcode": emp.empcode,
+            "fullname": emp.fullname,
+            "primary_outlet_name": emp.primary_outlet.name if emp.primary_outlet_id else None,
+            "outlets": outlets,
+            "period_start": v.period_start.isoformat(),
+            "period_end": v.period_end.isoformat(),
+            "gross_pay": float(v.gross_pay),
+            "epf_employee_deduction": float(v.epf_employee_deduction),
+            "epf_company_contribution": float(v.epf_company_contribution),
+            "etf_company_contribution": float(v.etf_company_contribution),
+            "deduction_total": float(v.deduction_total),
+            "net_pay": float(v.net_pay),
+        })
+        totals["gross"] += v.gross_pay
+        totals["epf_emp"] += v.epf_employee_deduction
+        totals["epf_com"] += v.epf_company_contribution
+        totals["etf_com"] += v.etf_company_contribution
+        totals["net"] += v.net_pay
+
+    return Response({
+        "month_start": sd.isoformat(),
+        "month_end": ed.isoformat(),
+        "rows": rows,
+        "totals": {k: float(v) for k, v in totals.items()},
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def payroll_report_outlet_summary(request):
+    """Total salary cost per outlet for a given month, after allocation split."""
+    gate = _gate_payroll(request)
+    if gate: return gate
+
+    vouchers, sd, ed = _vouchers_for_month(request.GET.get("month"), request.GET.get("outlet"))
+    if vouchers is None:
+        return Response({"error": "Invalid month (use YYYY-MM)."}, status=400)
+
+    agg = {}  # outlet_id -> {name, total, employee_ids}
+    for v in vouchers:
+        for part in split_voucher_by_outlet(v):
+            oid = part["outlet_id"]
+            bucket = agg.setdefault(oid, {
+                "outlet_id": oid,
+                "outlet_name": part["outlet_name"],
+                "total_cost": 0.0,
+                "employee_ids": set(),
+            })
+            bucket["total_cost"] += part["amount"]
+            bucket["employee_ids"].add(v.employee_id)
+
+    rows = []
+    grand = 0.0
+    for b in agg.values():
+        rows.append({
+            "outlet_id": b["outlet_id"],
+            "outlet_name": b["outlet_name"],
+            "employee_count": len(b["employee_ids"]),
+            "total_cost": round(b["total_cost"], 2),
+        })
+        grand += b["total_cost"]
+    rows.sort(key=lambda r: r["outlet_name"])
+
+    return Response({
+        "month_start": sd.isoformat(),
+        "month_end": ed.isoformat(),
+        "rows": rows,
+        "grand_total": round(grand, 2),
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def payroll_report_multi_outlet(request):
+    """Per-outlet split lines for employees assigned to >1 outlet."""
+    gate = _gate_payroll(request)
+    if gate: return gate
+
+    vouchers, sd, ed = _vouchers_for_month(request.GET.get("month"), request.GET.get("outlet"))
+    if vouchers is None:
+        return Response({"error": "Invalid month (use YYYY-MM)."}, status=400)
+
+    rows = []
+    for v in vouchers:
+        emp = v.employee
+        emp_outlets = list(emp.outlets.all())
+        if len(emp_outlets) < 2:
+            continue
+        for part in split_voucher_by_outlet(v):
+            rows.append({
+                "voucher_id": v.id,
+                "employee_id": emp.employee_id,
+                "empcode": emp.empcode,
+                "fullname": emp.fullname,
+                "net_pay": float(v.net_pay),
+                "outlet_id": part["outlet_id"],
+                "outlet_name": part["outlet_name"],
+                "percentage": part["percentage"],
+                "amount": part["amount"],
+            })
+    rows.sort(key=lambda r: (r["fullname"], r["outlet_name"]))
+
+    return Response({
+        "month_start": sd.isoformat(),
+        "month_end": ed.isoformat(),
+        "rows": rows,
+    })
+
+
+# =============================================================================
+# Excel export
+# =============================================================================
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def payroll_report_export(request):
+    """Export a payroll report tab as .xlsx.
+    Query: tab=employees|outlet-summary|multi-outlet, month=YYYY-MM, outlet=<id>?"""
+    gate = _gate_payroll(request)
+    if gate: return gate
+
+    import io
+    from openpyxl import Workbook
+    from django.http import HttpResponse
+
+    tab = request.GET.get("tab", "employees")
+    month = request.GET.get("month")
+    outlet_id = request.GET.get("outlet")
+
+    vouchers, sd, ed = _vouchers_for_month(month, outlet_id)
+    if vouchers is None:
+        return Response({"error": "Invalid month."}, status=400)
+
+    wb = Workbook()
+    ws = wb.active
+    month_label = sd.strftime("%Y-%m") if sd else ""
+
+    if tab == "employees":
+        ws.title = "Per-Employee"
+        ws.append(["Emp Code", "Name", "Outlets", "Period",
+                   "Gross", "EPF (Emp)", "EPF (Com)", "ETF (Com)", "Deductions", "Net"])
+        for v in vouchers:
+            emp = v.employee
+            ws.append([
+                emp.empcode,
+                emp.fullname,
+                ", ".join(o.name for o in emp.outlets.all()),
+                f"{v.period_start} .. {v.period_end}",
+                float(v.gross_pay),
+                float(v.epf_employee_deduction),
+                float(v.epf_company_contribution),
+                float(v.etf_company_contribution),
+                float(v.deduction_total),
+                float(v.net_pay),
+            ])
+        filename = f"payroll_employees_{month_label}.xlsx"
+
+    elif tab == "outlet-summary":
+        ws.title = "Outlet Summary"
+        ws.append(["Outlet", "Employees", "Total Cost"])
+        agg = {}
+        for v in vouchers:
+            for part in split_voucher_by_outlet(v):
+                oid = part["outlet_id"]
+                bucket = agg.setdefault(oid, {"name": part["outlet_name"],
+                                              "total": 0.0, "emps": set()})
+                bucket["total"] += part["amount"]
+                bucket["emps"].add(v.employee_id)
+        for oid, b in sorted(agg.items(), key=lambda kv: kv[1]["name"]):
+            ws.append([b["name"], len(b["emps"]), round(b["total"], 2)])
+        filename = f"payroll_outlet_summary_{month_label}.xlsx"
+
+    elif tab == "multi-outlet":
+        ws.title = "Multi-Outlet Split"
+        ws.append(["Emp Code", "Name", "Net Pay", "Outlet", "Percentage", "Amount"])
+        for v in vouchers:
+            emp = v.employee
+            if emp.outlets.count() < 2:
+                continue
+            for part in split_voucher_by_outlet(v):
+                ws.append([
+                    emp.empcode, emp.fullname, float(v.net_pay),
+                    part["outlet_name"], part["percentage"], part["amount"],
+                ])
+        filename = f"payroll_multi_outlet_{month_label}.xlsx"
+
+    else:
+        return Response({"error": "Unknown tab."}, status=400)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp

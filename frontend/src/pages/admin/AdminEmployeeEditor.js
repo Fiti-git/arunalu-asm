@@ -826,7 +826,9 @@ export default function AdminEmployeeEditor() {
               <SectionLabel icon={<PersonOutlineIcon sx={{ fontSize: 18 }} />}>Account</SectionLabel>
               <Stack spacing={2} sx={{ mb: 3 }}>
                 <Controller name="fullname" control={editForm.control} render={({ field }) => (
-                  <TextField {...field} label="Username *" size="small" fullWidth error={!!editErrors.fullname} helperText={editErrors.fullname?.message} />
+                  <TextField {...field} label="Full Name *" size="small" fullWidth
+                    error={!!editErrors.fullname}
+                    helperText={editErrors.fullname?.message || 'Also used as the login username'} />
                 )} />
                 <Controller name="email" control={editForm.control} render={({ field }) => (
                   <TextField {...field} label="Email" type="email" size="small" fullWidth error={!!editErrors.email} helperText={editErrors.email?.message} />

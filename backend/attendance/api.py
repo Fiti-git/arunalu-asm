@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from .face_recognition import compare_faces
 from django.conf import settings
 from dateutil import parser
+from notifications.sms import send_sms
 
 
 
@@ -591,6 +592,19 @@ def update_leave_status(request, id):
     leave_request.action_date = timezone.now().date()
     leave_request.action_user = user
     leave_request.save()
+
+    phone = leave_request.employee.phone_number
+    if phone:
+        verb = 'approved' if new_status == 'approved' else 'rejected'
+        leave_date = leave_request.date.strftime('%Y-%m-%d') if leave_request.date else ''
+        msg = (
+            f"Hi {leave_request.employee.fullname}, your leave on {leave_date} "
+            f"has been {verb}. - Arunalu ASM"
+        )
+        try:
+            send_sms(phone=phone, message=msg, event=f'leave_{verb}')
+        except Exception:
+            logger.exception('Failed to send leave status SMS')
 
     return Response({"message": f"Leave request {new_status}."}, status=200)
 

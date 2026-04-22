@@ -1,6 +1,18 @@
 from rest_framework import serializers
 
-from .models import EmployeeSalary, PaymentVoucher, VoucherAllowance, VoucherDeduction
+from .models import (
+    EmployeeSalary, PaymentVoucher, VoucherAllowance, VoucherDeduction,
+    EmployeeOutletAllocation,
+)
+
+
+class EmployeeOutletAllocationSerializer(serializers.ModelSerializer):
+    outlet_name = serializers.CharField(source="outlet.name", read_only=True)
+
+    class Meta:
+        model = EmployeeOutletAllocation
+        fields = ["id", "employee", "outlet", "outlet_name", "percentage", "updated_at"]
+        read_only_fields = ["updated_at", "outlet_name"]
 
 
 class EmployeeSalarySerializer(serializers.ModelSerializer):

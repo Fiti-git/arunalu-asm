@@ -104,3 +104,25 @@ class VoucherDeduction(models.Model):
 
     def __str__(self):
         return f"{self.label}: {self.amount}"
+
+
+class EmployeeOutletAllocation(models.Model):
+    """How an employee's monthly salary cost is split across the outlets they work at.
+
+    Percentages for a given employee must sum to 100 (validated in serializer).
+    If no allocation rows exist for an employee, fallback is:
+      1) primary_outlet → 100%
+      2) else equal split across employee.outlets
+    """
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="outlet_allocations"
+    )
+    outlet = models.ForeignKey("main.Outlet", on_delete=models.CASCADE)
+    percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("employee", "outlet")]
+
+    def __str__(self):
+        return f"{self.employee_id} @ {self.outlet_id}: {self.percentage}%"

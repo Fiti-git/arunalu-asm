@@ -126,6 +126,22 @@ function Sidebar({ sidebarOpen, onClose }) {
       feature: "payroll",
     },
     {
+      text: "Outlet Allocations",
+      path: "/admin/payroll/outlet-allocations",
+      roles: ["Admin"],
+      icon: <StoreIcon />,
+      group: "Payroll",
+      feature: "payroll",
+    },
+    {
+      text: "Payroll Report",
+      path: "/admin/payroll/report",
+      roles: ["Admin"],
+      icon: <AssessmentOutlinedIcon />,
+      group: "Payroll",
+      feature: "payroll",
+    },
+    {
       text: "Fingerprint Import",
       path: "/admin/fingerprint",
       roles: ["Admin"],

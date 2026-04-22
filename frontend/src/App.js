@@ -52,6 +52,8 @@ const LocationVerificationReport = lazy(() => import('./pages/reports/LocationVe
 // Payroll / Calculation
 const PayrollHub = lazy(() => import('./pages/payroll/PayrollHub'));
 const EmployeeCalculation = lazy(() => import('./pages/payroll/EmployeeCalculation'));
+const OutletAllocations = lazy(() => import('./pages/payroll/OutletAllocations'));
+const PayrollReport = lazy(() => import('./pages/payroll/PayrollReport'));
 
 // Fingerprint Import
 const FingerprintHub = lazy(() => import('./pages/fingerprint/FingerprintHub'));
@@ -296,6 +298,12 @@ function App() {
           } />
           <Route path="/admin/payroll/employee/:employeeId" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EmployeeCalculation /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/outlet-allocations" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><OutletAllocations /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/report" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><PayrollReport /></FeatureGate></Layout></ProtectedRoute>
           } />
 
           {/* Fingerprint Import — admin + manager */}

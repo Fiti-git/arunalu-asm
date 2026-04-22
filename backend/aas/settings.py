@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'calculation',
     'fingerprint',
     'licensing',
+    'notifications',
 ]
 
 # ------------------------------------------------------------------------------
