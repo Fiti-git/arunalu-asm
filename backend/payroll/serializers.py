@@ -13,12 +13,12 @@ class PayrollCompanyConfigSerializer(serializers.ModelSerializer):
         fields = [
             "id", "company_name",
             "employer_epf_number", "employer_etf_number",
-            "epf_zone_code", "data_submission_number",
+            "epf_zone_code", "data_submission_number", "last_epf_export_ym",
             "company_bank_name", "company_bank_code",
             "company_bank_branch_code", "company_bank_account_no",
             "updated_at",
         ]
-        read_only_fields = ["id", "updated_at"]
+        read_only_fields = ["id", "updated_at", "last_epf_export_ym"]
 
 
 class EmployeeFinancialRowSerializer(serializers.Serializer):

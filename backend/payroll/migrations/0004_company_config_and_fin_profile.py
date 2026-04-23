@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='PayrollCompanyConfig',
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False)),
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('company_name', models.CharField(blank=True, default='', max_length=200)),
                 ('employer_epf_number', models.CharField(blank=True, default='', max_length=20)),
                 ('employer_etf_number', models.CharField(blank=True, default='', max_length=20)),
@@ -32,7 +32,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='EmployeeFinancialProfile',
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False)),
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('surname', models.CharField(blank=True, default='', max_length=100)),
                 ('initials', models.CharField(blank=True, default='', max_length=30)),
                 ('epf_member_status', models.CharField(

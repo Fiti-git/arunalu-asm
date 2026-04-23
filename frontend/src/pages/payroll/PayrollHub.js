@@ -57,12 +57,13 @@ export default function PayrollHub() {
 
   useEffect(() => { fetchList(); }, [fetchList]);
 
-  const downloadExport = async (kind) => {
+  const downloadExport = async (kind, { includeDrafts = false } = {}) => {
     const month = periodStart.slice(0, 7); // YYYY-MM
     setError('');
     try {
       const params = { month };
       if (outletId !== 'all') params.outlet_id = outletId;
+      if (includeDrafts) params.include_drafts = 1;
       const res = await api.get(`/payroll/export/${kind}/`, {
         params, responseType: 'blob',
       });
@@ -79,7 +80,18 @@ export default function PayrollHub() {
       a.href = url; a.download = filename; document.body.appendChild(a); a.click();
       a.remove(); URL.revokeObjectURL(url);
     } catch (err) {
-      const msg = err.response?.data?.error || `Failed to download ${kind} file.`;
+      // Error responses come back as Blob because responseType='blob' — parse if JSON
+      const body = err.response?.data;
+      let msg = `Failed to download ${kind} file.`;
+      if (body instanceof Blob) {
+        try {
+          const text = await body.text();
+          try { msg = JSON.parse(text).error || text; }
+          catch { msg = text || msg; }
+        } catch { /* keep default */ }
+      } else if (body?.error) {
+        msg = body.error;
+      }
       setError(msg);
     }
   };

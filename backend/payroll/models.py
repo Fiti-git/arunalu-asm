@@ -223,8 +223,12 @@ class PayrollCompanyConfig(models.Model):
     employer_epf_number = models.CharField(max_length=20, blank=True, default="")
     employer_etf_number = models.CharField(max_length=20, blank=True, default="")
     epf_zone_code = models.CharField(max_length=5, blank=True, default="A")
-    # Increments each time EPF export is generated (field 13 in EPF file)
+    # Field 13 in the EPF file. Incremented only when a new month is exported
+    # (re-exports of the same month reuse the same number, matching EPF policy).
     data_submission_number = models.PositiveIntegerField(default=1)
+    # YYYYMM of the last EPF export that incremented the submission number.
+    # Blank = no export yet.
+    last_epf_export_ym = models.CharField(max_length=6, blank=True, default="")
 
     # Company disbursement bank account
     company_bank_name = models.CharField(max_length=100, blank=True, default="")

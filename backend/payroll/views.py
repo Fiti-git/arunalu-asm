@@ -968,15 +968,23 @@ def _parse_month(month_str):
     return date(y, m, 1), date(y, m, last), y, m
 
 
-def _locked_payrolls_for_month(month_str, outlet_id=None):
+def _locked_payrolls_for_month(month_str, outlet_id=None, include_drafts=False):
+    """Fetch payrolls for a given YYYY-MM. Defaults to Locked-only so a half-
+    finished draft can't leak into an EPF/ETF/bank submission."""
     sd, ed, _, _ = _parse_month(month_str)
     qs = (Payroll.objects
           .filter(period_start=sd, period_end=ed)
           .select_related("employee", "employee__financial_profile",
                           "employee__primary_outlet"))
+    if not include_drafts:
+        qs = qs.filter(status=Payroll.STATUS_LOCKED)
     if outlet_id:
         qs = qs.filter(employee__outlets__id=outlet_id).distinct()
     return qs, sd, ed
+
+
+def _truthy(v):
+    return str(v or "").strip().lower() in ("1", "true", "yes")
 
 
 def _xlsx_response(wb, filename):
@@ -1001,15 +1009,30 @@ def export_epf(request):
     month = request.GET.get("month")
     if not month:
         return Response({"error": "month=YYYY-MM is required."}, status=400)
+    include_drafts = _truthy(request.GET.get("include_drafts"))
     try:
         payrolls, sd, ed = _locked_payrolls_for_month(
-            month, outlet_id=_int_or_none(request.GET.get("outlet_id"))
+            month,
+            outlet_id=_int_or_none(request.GET.get("outlet_id")),
+            include_drafts=include_drafts,
         )
     except (ValueError, IndexError):
         return Response({"error": "Invalid month format."}, status=400)
 
+    payrolls = list(payrolls)
+    if not payrolls:
+        return Response(
+            {"error": "No payrolls for this month." + (
+                "" if include_drafts else " Only Locked payrolls export by default; add ?include_drafts=1 to include Draft.")},
+            status=400,
+        )
+
     cfg = PayrollCompanyConfig.get_solo()
     ym = sd.strftime("%Y%m")
+    # If this YM was already exported, reuse the same submission number
+    # (re-export / correction). Otherwise advance to the next number.
+    if cfg.last_epf_export_ym != ym:
+        cfg.data_submission_number = (cfg.data_submission_number or 0) + 1 if cfg.last_epf_export_ym else (cfg.data_submission_number or 1)
 
     from openpyxl import Workbook
     wb = Workbook()
@@ -1046,8 +1069,8 @@ def export_epf(request):
             e.epf_grade or "",
         ])
 
-    cfg.data_submission_number = (cfg.data_submission_number or 0) + 1
-    cfg.save(update_fields=["data_submission_number", "updated_at"])
+    cfg.last_epf_export_ym = ym
+    cfg.save(update_fields=["data_submission_number", "last_epf_export_ym", "updated_at"])
 
     return _xlsx_response(wb, f"EPF_{ym}.xlsx")
 
@@ -1060,12 +1083,22 @@ def export_etf(request):
     month = request.GET.get("month")
     if not month:
         return Response({"error": "month=YYYY-MM is required."}, status=400)
+    include_drafts = _truthy(request.GET.get("include_drafts"))
     try:
         payrolls, sd, ed = _locked_payrolls_for_month(
-            month, outlet_id=_int_or_none(request.GET.get("outlet_id"))
+            month,
+            outlet_id=_int_or_none(request.GET.get("outlet_id")),
+            include_drafts=include_drafts,
         )
     except (ValueError, IndexError):
         return Response({"error": "Invalid month format."}, status=400)
+    payrolls = list(payrolls)
+    if not payrolls:
+        return Response(
+            {"error": "No payrolls for this month." + (
+                "" if include_drafts else " Only Locked payrolls export by default; add ?include_drafts=1 to include Draft.")},
+            status=400,
+        )
     ym = sd.strftime("%Y%m")
 
     from openpyxl import Workbook
@@ -1097,12 +1130,22 @@ def export_bank(request):
     month = request.GET.get("month")
     if not month:
         return Response({"error": "month=YYYY-MM is required."}, status=400)
+    include_drafts = _truthy(request.GET.get("include_drafts"))
     try:
         payrolls, sd, ed = _locked_payrolls_for_month(
-            month, outlet_id=_int_or_none(request.GET.get("outlet_id"))
+            month,
+            outlet_id=_int_or_none(request.GET.get("outlet_id")),
+            include_drafts=include_drafts,
         )
     except (ValueError, IndexError):
         return Response({"error": "Invalid month format."}, status=400)
+    payrolls = list(payrolls)
+    if not payrolls:
+        return Response(
+            {"error": "No payrolls for this month." + (
+                "" if include_drafts else " Only Locked payrolls export by default; add ?include_drafts=1 to include Draft.")},
+            status=400,
+        )
     ym = sd.strftime("%Y-%m")
     narration_tmpl = f"Salary {ym}"
 
