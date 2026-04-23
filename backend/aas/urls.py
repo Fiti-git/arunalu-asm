@@ -173,6 +173,7 @@ urlpatterns = [
     # PAYROLL CALCULATION
     # -----------------
     path('calculation/', include('calculation.urls')),
+    path('payroll/', include('payroll.urls')),
 
     # -----------------
     # FINGERPRINT IMPORT

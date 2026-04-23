@@ -623,12 +623,17 @@ def _parse_month(month_str):
 
 
 def _vouchers_for_month(month_str, outlet_id=None):
-    """Return locked vouchers whose period overlaps the month."""
+    """Return locked Payroll records whose period overlaps the month.
+
+    Uses the new payroll.Payroll table (replaced PaymentVoucher).
+    """
+    from payroll.models import Payroll
+
     sd, ed = _parse_month(month_str)
     if sd is None:
         return None, None, None
 
-    qs = (PaymentVoucher.objects
+    qs = (Payroll.objects
           .filter(status="Locked", period_start__lte=ed, period_end__gte=sd)
           .select_related("employee", "employee__primary_outlet")
           .prefetch_related("employee__outlets", "employee__outlet_allocations__outlet"))

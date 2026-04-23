@@ -54,6 +54,11 @@ const PayrollHub = lazy(() => import('./pages/payroll/PayrollHub'));
 const EmployeeCalculation = lazy(() => import('./pages/payroll/EmployeeCalculation'));
 const OutletAllocations = lazy(() => import('./pages/payroll/OutletAllocations'));
 const PayrollReport = lazy(() => import('./pages/payroll/PayrollReport'));
+const AllowanceTypes = lazy(() => import('./pages/payroll/AllowanceTypes'));
+const BonusTiers = lazy(() => import('./pages/payroll/BonusTiers'));
+const WorkSchedules = lazy(() => import('./pages/payroll/WorkSchedules'));
+const ApitSlabs = lazy(() => import('./pages/payroll/ApitSlabs'));
+const GratuityReport = lazy(() => import('./pages/payroll/GratuityReport'));
 
 // Fingerprint Import
 const FingerprintHub = lazy(() => import('./pages/fingerprint/FingerprintHub'));
@@ -304,6 +309,21 @@ function App() {
           } />
           <Route path="/admin/payroll/report" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><PayrollReport /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/allowance-types" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><AllowanceTypes /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/bonus-tiers" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><BonusTiers /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/work-schedules" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><WorkSchedules /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/apit-slabs" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><ApitSlabs /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/gratuity" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><GratuityReport /></FeatureGate></Layout></ProtectedRoute>
           } />
 
           {/* Fingerprint Import — admin + manager */}

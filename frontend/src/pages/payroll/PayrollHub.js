@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, TextField, CircularProgress, Alert, Avatar, Chip, Button,
-  IconButton, Tooltip, FormControl, InputLabel, Select, MenuItem,
+  IconButton, Tooltip, FormControl, InputLabel, Select, MenuItem, LinearProgress,
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -23,11 +23,7 @@ const endOfMonth = () => {
 const getInitials = (name = '') =>
   name.trim().split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
 
-const statusChipColor = (s) => {
-  if (s === 'Locked') return 'success';
-  if (s === 'Draft') return 'warning';
-  return 'default';
-};
+const statusColor = (s) => (s === 'Locked' ? 'success' : s === 'Draft' ? 'warning' : 'default');
 
 export default function PayrollHub() {
   const navigate = useNavigate();
@@ -50,7 +46,7 @@ export default function PayrollHub() {
     try {
       const params = { period_start: periodStart, period_end: periodEnd };
       if (outletId !== 'all') params.outlet_id = outletId;
-      const res = await api.get('/calculation/employees/', { params });
+      const res = await api.get('/payroll/employees/', { params });
       setRows(res.data || []);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load employees.');
@@ -82,21 +78,32 @@ export default function PayrollHub() {
       ),
     },
     { field: 'primary_outlet_name', headerName: 'Outlet', flex: 0.9, minWidth: 150 },
-    { field: 'basic_salary', headerName: 'Basic', flex: 0.6, minWidth: 110, align: 'right', headerAlign: 'right',
+    { field: 'basic_salary', headerName: 'Basic', flex: 0.5, minWidth: 100, align: 'right', headerAlign: 'right',
       renderCell: ({ value }) => Number(value || 0).toLocaleString() },
     {
-      field: 'voucher_status', headerName: 'This Period', flex: 0.7, minWidth: 130,
-      renderCell: ({ row }) => row.voucher_id ? (
-        <Chip label={row.voucher_status} size="small" color={statusChipColor(row.voucher_status)} sx={{ fontWeight: 600 }} />
+      field: 'payroll_score', headerName: 'Att. Score', flex: 0.7, minWidth: 130,
+      renderCell: ({ value }) => value == null ? '—' : (
+        <Box sx={{ width: '100%', py: 0.5 }}>
+          <Typography variant="caption">{Number(value).toFixed(0)}%</Typography>
+          <LinearProgress variant="determinate" value={Math.min(100, Number(value))}
+            color={value >= 90 ? 'success' : value >= 75 ? 'warning' : 'error'}
+            sx={{ height: 6, borderRadius: 1 }} />
+        </Box>
+      ),
+    },
+    {
+      field: 'payroll_status', headerName: 'This Period', flex: 0.6, minWidth: 130,
+      renderCell: ({ row }) => row.payroll_id ? (
+        <Chip label={row.payroll_status} size="small" color={statusColor(row.payroll_status)} sx={{ fontWeight: 600 }} />
       ) : <Typography variant="caption" color="text.disabled">Not generated</Typography>,
     },
-    { field: 'voucher_net_pay', headerName: 'Net Pay', flex: 0.7, minWidth: 130, align: 'right', headerAlign: 'right',
+    { field: 'payroll_net_pay', headerName: 'Net Pay', flex: 0.7, minWidth: 130, align: 'right', headerAlign: 'right',
       renderCell: ({ value }) => value != null ? Number(value).toLocaleString() : '—' },
     {
       field: 'actions', headerName: 'Action', flex: 0.6, minWidth: 140, sortable: false, filterable: false,
       renderCell: ({ row }) => (
         <Button size="small" variant="outlined" startIcon={<CalculateOutlinedIcon />} onClick={() => openEmployee(row)}>
-          Calculate
+          {row.payroll_id ? 'Open' : 'Calculate'}
         </Button>
       ),
     },
@@ -106,7 +113,7 @@ export default function PayrollHub() {
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
       <PageHeader
         title="Payroll"
-        subtitle="Generate payment vouchers for the current period. Drafts editable; locked vouchers are read-only."
+        subtitle="Monthly payroll per employee. Uses attendance, leave, holidays and the employee's work schedule to compute gross dynamically."
         actions={
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField label="Period From" type="date" size="small" value={periodStart}
@@ -144,6 +151,7 @@ export default function PayrollHub() {
           pageSizeOptions={[25, 50, 100]}
           initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
           onRowDoubleClick={(p) => openEmployee(p.row)}
+          getRowHeight={() => 'auto'}
         />
       </Box>
     </Box>

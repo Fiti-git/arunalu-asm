@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'users',
     'mobile_api',
     'calculation',
+    'payroll',
     'fingerprint',
     'licensing',
     'notifications',

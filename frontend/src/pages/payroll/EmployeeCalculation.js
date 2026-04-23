@@ -1,523 +1,462 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, TextField, Button, CircularProgress, Alert, Avatar, Chip,
-  IconButton, Tooltip, Divider, Grid, Paper, Snackbar,
+  IconButton, Tooltip, Divider, Paper, Snackbar, Table, TableBody, TableCell,
+  TableHead, TableRow, MenuItem, Stack, LinearProgress,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
+import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
+import SaveIcon from '@mui/icons-material/Save';
+import AddIcon from '@mui/icons-material/AddCircleOutline';
+import DeleteIcon from '@mui/icons-material/DeleteOutline';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import DownloadIcon from '@mui/icons-material/Download';
 import api from 'utils/api';
 import { PageHeader } from 'components/ui';
-import { pickAvatarColor } from 'theme/tokens';
-import { getUserRole } from 'utils/auth';
 
-const BASE_URL = process.env.REACT_APP_API_URL || '';
-const firstOfMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-};
-const endOfMonth = () => {
-  const d = new Date();
-  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-  return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
-};
-const getInitials = (name = '') =>
-  name.trim().split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
-const fmt = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-function MoneyField({ label, value, onChange, disabled, helper }) {
-  return (
-    <TextField
-      label={label} size="small" fullWidth type="number"
-      value={value ?? ''} onChange={(e) => onChange(e.target.value)}
-      disabled={disabled} helperText={helper}
-      inputProps={{ step: '0.01', min: 0, style: { textAlign: 'right' } }}
-    />
-  );
-}
+const fmt = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function EmployeeCalculation() {
   const { employeeId } = useParams();
+  const [search] = useSearchParams();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const isAdmin = (getUserRole() || '').toLowerCase() === 'admin';
 
-  const [periodStart, setPeriodStart] = useState(params.get('start') || firstOfMonth());
-  const [periodEnd, setPeriodEnd] = useState(params.get('end') || endOfMonth());
+  const periodStart = search.get('start');
+  const periodEnd = search.get('end');
 
   const [preview, setPreview] = useState(null);
-  const [salary, setSalary] = useState(null);
-  const [voucher, setVoucher] = useState(null);
+  const [payroll, setPayroll] = useState(null);
+  const [allowanceTypes, setAllowanceTypes] = useState([]);
+  const [allowances, setAllowances] = useState([]); // [{allowance_type, label, amount}]
+  const [deductions, setDeductions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [toast, setToast] = useState({ open: false, severity: 'success', message: '' });
+  const [toast, setToast] = useState('');
 
-  // Editable form fields (populated from voucher if exists, else preview)
-  const [perDay, setPerDay] = useState('');
-  const [perHourOt, setPerHourOt] = useState('');
-  const [expectedHours, setExpectedHours] = useState('');
-  const [daysPresent, setDaysPresent] = useState('');
-  const [daysLate, setDaysLate] = useState('');
-  const [daysHalf, setDaysHalf] = useState('');
-  const [daysLeave, setDaysLeave] = useState('');
-  const [daysAbsent, setDaysAbsent] = useState('');
-  const [holidayWorkDays, setHolidayWorkDays] = useState('');
-  const [otHours, setOtHours] = useState('');
-  const [regularPay, setRegularPay] = useState('');
-  const [otPay, setOtPay] = useState('');
-  const [holidayPay, setHolidayPay] = useState('');
-  const [leavePay, setLeavePay] = useState('');
-  const [basicForEpf, setBasicForEpf] = useState('');
-  const [epfEmployeePct, setEpfEmployeePct] = useState('');
-  const [epfCompanyPct, setEpfCompanyPct] = useState('');
-  const [etfCompanyPct, setEtfCompanyPct] = useState('');
-  const [allowances, setAllowances] = useState([]);
-  const [deductions, setDeductions] = useState([]);
-  const [notes, setNotes] = useState('');
+  const locked = payroll?.status === 'Locked';
 
-  const locked = voucher?.status === 'Locked';
-
-  const loadAll = useCallback(async () => {
+  // Load preview + possible existing payroll + allowance catalog
+  const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      // Preview (always fresh from attendance) + salary profile
-      const [prevRes, salRes] = await Promise.all([
-        api.get(`/calculation/preview/${employeeId}/`, { params: { start_date: periodStart, end_date: periodEnd } }),
-        api.get(`/calculation/salary/${employeeId}/`),
+      const [previewRes, listRes, catalogRes] = await Promise.all([
+        api.get(`/payroll/preview/${employeeId}/`, { params: { period_start: periodStart, period_end: periodEnd } }),
+        api.get('/payroll/payrolls/', { params: { employee_id: employeeId } }),
+        api.get('/payroll/allowance-types/', { params: { active_only: 1 } }),
       ]);
-      setPreview(prevRes.data);
-      setSalary(salRes.data);
+      setPreview(previewRes.data);
+      setAllowanceTypes(catalogRes.data || []);
 
-      // Existing voucher for this exact period
-      const vRes = await api.get('/calculation/vouchers/', {
-        params: { employee_id: employeeId, status: 'all' },
-      });
-      const match = (vRes.data || []).find(
-        (v) => v.period_start === periodStart && v.period_end === periodEnd
-      );
-      setVoucher(match || null);
-
-      if (match) {
-        applyVoucherToForm(match);
+      const existing = (listRes.data || []).find(p =>
+        p.period_start === periodStart && p.period_end === periodEnd);
+      if (existing) {
+        setPayroll(existing);
+        setAllowances(existing.allowances.map(a => ({
+          allowance_type: a.allowance_type, label: a.label, amount: a.amount,
+        })));
+        setDeductions(existing.deductions.map(d => ({ label: d.label, amount: d.amount })));
       } else {
-        applyPreviewToForm(prevRes.data, salRes.data);
+        setPayroll(null);
+        // Auto-seed suggested bonus
+        if (previewRes.data?.suggested_bonus?.amount > 0) {
+          setAllowances([{
+            allowance_type: null,
+            label: previewRes.data.suggested_bonus.tier_label || 'Attendance Bonus',
+            amount: previewRes.data.suggested_bonus.amount,
+          }]);
+        } else { setAllowances([]); }
+        setDeductions([]);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load.');
     } finally { setLoading(false); }
-  }, [employeeId, periodStart, periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [employeeId, periodStart, periodEnd]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { load(); }, [load]);
 
-  const applyPreviewToForm = (prev, sal) => {
-    const s = prev.summary;
-    const emp = prev.employee;
-    setPerDay(s.per_day_rate);
-    setPerHourOt(s.per_hour_ot_rate);
-    setExpectedHours(s.expected_hours_per_day);
-    setDaysPresent(s.days_present);
-    setDaysLate(s.days_late);
-    setDaysHalf(s.days_half);
-    setDaysLeave(s.days_leave);
-    setDaysAbsent(s.days_absent);
-    setHolidayWorkDays(s.holiday_work_days);
-    setOtHours(s.ot_hours);
-    setRegularPay(s.regular_pay);
-    setOtPay(s.ot_pay);
-    setHolidayPay(s.holiday_pay);
-    setLeavePay(s.leave_pay);
-    setBasicForEpf(emp.basic_salary);
-    setEpfEmployeePct(emp.epf_emp_per);
-    setEpfCompanyPct(emp.epf_com_per);
-    setEtfCompanyPct(emp.etf_com_per);
-    setAllowances([]);
-    setDeductions([]);
-    setNotes('');
+  const snap = preview?.snapshot;
+
+  // Totals
+  const allowanceTotal = allowances.reduce((a, x) => a + Number(x.amount || 0), 0);
+  const deductionTotal = deductions.reduce((a, x) => a + Number(x.amount || 0), 0);
+
+  const baseForEpf = Number(preview?.employee?.basic_salary || 0);
+  const epfEmp = baseForEpf * 0.08;
+  const epfCom = baseForEpf * 0.12;
+  const etf = baseForEpf * 0.03;
+
+  const gross = (snap?.regular_pay || 0) + (snap?.ot_pay || 0)
+              + (snap?.holiday_pay || 0) + (snap?.leave_pay || 0)
+              + allowanceTotal;
+  const taxAmount = Number(payroll?.tax_amount || 0);
+  const taxLabel = payroll?.tax_slab_label || '';
+  const net = gross - deductionTotal - epfEmp - taxAmount;
+
+  // Mutators
+  const addAllowance = () => setAllowances(a => [...a, { allowance_type: null, label: '', amount: 0 }]);
+  const removeAllowance = (i) => setAllowances(a => a.filter((_, idx) => idx !== i));
+  const updateAllowance = (i, patch) => setAllowances(a =>
+    a.map((row, idx) => idx === i ? { ...row, ...patch } : row));
+  const pickAllowanceType = (i, atId) => {
+    const at = allowanceTypes.find(t => t.id === atId);
+    if (!at) { updateAllowance(i, { allowance_type: null }); return; }
+    let amt = at.calc_mode === 'PERCENT'
+      ? (baseForEpf * Number(at.default_amount) / 100)
+      : Number(at.default_amount);
+    if (Number(at.max_cap_amount) > 0 && amt > Number(at.max_cap_amount)) amt = Number(at.max_cap_amount);
+    updateAllowance(i, { allowance_type: at.id, label: at.name, amount: Number(amt.toFixed(2)) });
   };
 
-  const applyVoucherToForm = (v) => {
-    setPerDay(v.per_day_rate_used);
-    setPerHourOt(v.per_hour_ot_rate_used);
-    setExpectedHours(v.expected_hours_per_day);
-    setDaysPresent(v.days_present);
-    setDaysLate(v.days_late);
-    setDaysHalf(v.days_half);
-    setDaysLeave(v.days_leave);
-    setDaysAbsent(v.days_absent);
-    setHolidayWorkDays(v.holiday_work_days);
-    setOtHours(v.ot_hours);
-    setRegularPay(v.regular_pay);
-    setOtPay(v.ot_pay);
-    setHolidayPay(v.holiday_pay);
-    setLeavePay(v.leave_pay);
-    setBasicForEpf(v.basic_for_epf);
-    setEpfEmployeePct(v.epf_employee_pct);
-    setEpfCompanyPct(v.epf_company_pct);
-    setEtfCompanyPct(v.etf_company_pct);
-    setAllowances((v.allowances || []).map((a) => ({ ...a, tmpId: Math.random() })));
-    setDeductions((v.deductions || []).map((d) => ({ ...d, tmpId: Math.random() })));
-    setNotes(v.notes || '');
+  const addDeduction = () => setDeductions(d => [...d, { label: '', amount: 0 }]);
+  const removeDeduction = (i) => setDeductions(d => d.filter((_, idx) => idx !== i));
+  const updateDeduction = (i, patch) => setDeductions(d =>
+    d.map((row, idx) => idx === i ? { ...row, ...patch } : row));
+
+  // Validate caps client-side before sending
+  const validateCaps = () => {
+    for (const a of allowances) {
+      if (!a.allowance_type) continue;
+      const at = allowanceTypes.find(t => t.id === a.allowance_type);
+      if (at?.max_cap_amount > 0 && Number(a.amount) > Number(at.max_cap_amount)) {
+        return `"${at.name}" exceeds max cap ${fmt(at.max_cap_amount)}.`;
+      }
+    }
+    return null;
   };
 
-  // Live totals (mirrors backend _recompute_totals)
-  const totals = useMemo(() => {
-    const reg = Number(regularPay || 0);
-    const ot = Number(otPay || 0);
-    const hol = Number(holidayPay || 0);
-    const lv = Number(leavePay || 0);
-    const alw = allowances.reduce((s, r) => s + Number(r.amount || 0), 0);
-    const ded = deductions.reduce((s, r) => s + Number(r.amount || 0), 0);
-    const gross = reg + ot + hol + lv + alw;
-    const base = Number(basicForEpf || 0);
-    const epfEmp = base * Number(epfEmployeePct || 0) / 100;
-    const epfCom = base * Number(epfCompanyPct || 0) / 100;
-    const etfCom = base * Number(etfCompanyPct || 0) / 100;
-    const net = gross - ded - epfEmp;
-    return { reg, ot, hol, lv, alw, ded, gross, epfEmp, epfCom, etfCom, net };
-  }, [regularPay, otPay, holidayPay, leavePay, allowances, deductions, basicForEpf, epfEmployeePct, epfCompanyPct, etfCompanyPct]);
-
-  // Actions
-  const addAllowance = () => setAllowances((p) => [...p, { tmpId: Math.random(), label: '', amount: 0 }]);
-  const editAllowance = (i, f, v) => setAllowances((p) => p.map((r, idx) => idx === i ? { ...r, [f]: v } : r));
-  const removeAllowance = (i) => setAllowances((p) => p.filter((_, idx) => idx !== i));
-  const addDeduction = () => setDeductions((p) => [...p, { tmpId: Math.random(), label: '', amount: 0 }]);
-  const editDeduction = (i, f, v) => setDeductions((p) => p.map((r, idx) => idx === i ? { ...r, [f]: v } : r));
-  const removeDeduction = (i) => setDeductions((p) => p.filter((_, idx) => idx !== i));
-
-  const buildPayload = () => ({
-    per_day_rate_used: perDay,
-    per_hour_ot_rate_used: perHourOt,
-    expected_hours_per_day: expectedHours,
-    days_present: daysPresent,
-    days_late: daysLate,
-    days_half: daysHalf,
-    days_leave: daysLeave,
-    days_absent: daysAbsent,
-    holiday_work_days: holidayWorkDays,
-    ot_hours: otHours,
-    regular_pay: regularPay,
-    ot_pay: otPay,
-    holiday_pay: holidayPay,
-    leave_pay: leavePay,
-    basic_for_epf: basicForEpf,
-    epf_employee_pct: epfEmployeePct,
-    epf_company_pct: epfCompanyPct,
-    etf_company_pct: etfCompanyPct,
-    notes,
-    allowances: allowances.map((a) => ({ label: a.label || 'Allowance', amount: Number(a.amount || 0) })),
-    deductions: deductions.map((d) => ({ label: d.label || 'Deduction', amount: Number(d.amount || 0) })),
-  });
-
-  const saveDraft = async () => {
+  const createPayroll = async () => {
     setSaving(true); setError('');
     try {
-      let id = voucher?.id;
-      if (!id) {
-        // Create voucher first
-        const res = await api.post('/calculation/vouchers/', {
-          employee_id: employeeId, period_start: periodStart, period_end: periodEnd,
-        });
-        id = res.data.id;
-      }
-      const r = await api.patch(`/calculation/vouchers/${id}/`, buildPayload());
-      setVoucher(r.data);
-      applyVoucherToForm(r.data);
-      setToast({ open: true, severity: 'success', message: 'Draft saved.' });
+      const res = await api.post('/payroll/payrolls/', {
+        employee_id: employeeId, period_start: periodStart, period_end: periodEnd,
+      });
+      setPayroll(res.data);
+      setAllowances(res.data.allowances.map(a => ({
+        allowance_type: a.allowance_type, label: a.label, amount: a.amount,
+      })));
+      setDeductions(res.data.deductions.map(d => ({ label: d.label, amount: d.amount })));
+      setToast('Draft payroll generated.');
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save draft.');
+      setError(err.response?.data?.error || 'Failed to create.');
+    } finally { setSaving(false); }
+  };
+
+  const saveDraft = async () => {
+    const capErr = validateCaps();
+    if (capErr) { setError(capErr); return; }
+    if (!payroll) return;
+    setSaving(true); setError('');
+    try {
+      const res = await api.patch(`/payroll/payrolls/${payroll.id}/`, {
+        allowances, deductions,
+      });
+      setPayroll(res.data);
+      setToast('Saved.');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Save failed.');
     } finally { setSaving(false); }
   };
 
   const lock = async () => {
-    if (!voucher) { setError('Save a draft first.'); return; }
-    if (!window.confirm('Lock this voucher? It becomes read-only. Only admins can unlock later.')) return;
-    setSaving(true); setError('');
+    if (!window.confirm('Lock this payroll? Allowances/deductions will be frozen.')) return;
+    await saveDraft();
     try {
-      const r = await api.post(`/calculation/vouchers/${voucher.id}/lock/`);
-      setVoucher(r.data);
-      applyVoucherToForm(r.data);
-      setToast({ open: true, severity: 'success', message: 'Voucher locked.' });
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to lock.');
-    } finally { setSaving(false); }
+      const res = await api.post(`/payroll/payrolls/${payroll.id}/lock/`);
+      setPayroll(res.data);
+      setToast('Locked.');
+    } catch { setError('Lock failed.'); }
+  };
+
+  const downloadPayslip = async () => {
+    try {
+      const res = await api.get(`/payroll/payrolls/${payroll.id}/payslip/`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payslip_${emp.empcode || emp.employee_id}_${periodStart}_${periodEnd}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { setError('Failed to download payslip.'); }
   };
 
   const unlock = async () => {
-    if (!isAdmin) return;
-    if (!window.confirm('Unlock this voucher?')) return;
-    setSaving(true); setError('');
     try {
-      const r = await api.post(`/calculation/vouchers/${voucher.id}/unlock/`);
-      setVoucher(r.data);
-      applyVoucherToForm(r.data);
-      setToast({ open: true, severity: 'info', message: 'Voucher unlocked.' });
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to unlock.');
-    } finally { setSaving(false); }
+      const res = await api.post(`/payroll/payrolls/${payroll.id}/unlock/`);
+      setPayroll(res.data);
+      setToast('Unlocked.');
+    } catch (err) { setError(err.response?.data?.error || 'Unlock failed.'); }
   };
 
-  const refreshFromAttendance = () => {
-    if (preview && salary && !locked) {
-      applyPreviewToForm(preview, salary);
-      setToast({ open: true, severity: 'info', message: 'Reloaded numbers from attendance.' });
-    }
-  };
+  if (loading) return (
+    <Box sx={{ p: 6, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+  );
+  if (!preview) return <Box sx={{ p: 4 }}><Alert severity="error">{error || 'Failed to load.'}</Alert></Box>;
 
-  const emp = preview?.employee;
+  const emp = preview.employee;
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <IconButton onClick={() => navigate('/admin/payroll')}><ArrowBackIcon /></IconButton>
-        <Typography variant="body2" color="text.secondary">Payroll / Employee Calculation</Typography>
-      </Box>
-
       <PageHeader
-        title="Payment Voucher"
-        subtitle={voucher ? `Voucher #${voucher.id} · ${voucher.status}` : 'Draft — not yet saved'}
+        title="Payroll Calculation"
+        subtitle={`${emp.fullname} • ${periodStart} .. ${periodEnd}`}
         actions={
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-            <TextField label="Period From" type="date" size="small" value={periodStart}
-              onChange={(e) => setPeriodStart(e.target.value)} disabled={locked}
-              slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 160 }} />
-            <TextField label="Period To" type="date" size="small" value={periodEnd}
-              onChange={(e) => setPeriodEnd(e.target.value)} disabled={locked}
-              slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 160 }} />
-            <Tooltip title="Reload attendance numbers (overwrites unsaved edits)">
-              <span>
-                <Button variant="outlined" size="small" onClick={refreshFromAttendance}
-                  startIcon={<RestartAltIcon />} disabled={locked || loading}>
-                  Recompute
-                </Button>
-              </span>
-            </Tooltip>
-            {locked ? (
-              isAdmin && (
-                <Button variant="contained" color="warning" size="small" onClick={unlock}
-                  disabled={saving} startIcon={<LockOpenOutlinedIcon />}>
-                  Unlock
-                </Button>
-              )
-            ) : (
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/admin/payroll')}>Back</Button>
+            {!payroll && (
+              <Button variant="contained" onClick={createPayroll} disabled={saving}>
+                {saving ? <CircularProgress size={18} /> : 'Generate Draft'}
+              </Button>
+            )}
+            {payroll && !locked && (
               <>
-                <Button variant="outlined" size="small" onClick={saveDraft}
-                  disabled={saving} startIcon={saving ? <CircularProgress size={14} /> : <SaveOutlinedIcon />}>
+                <Button variant="outlined" startIcon={<SaveIcon />} onClick={saveDraft} disabled={saving}>
                   {saving ? 'Saving…' : 'Save Draft'}
                 </Button>
-                <Button variant="contained" size="small" onClick={lock}
-                  disabled={saving || !voucher} startIcon={<LockOutlinedIcon />}>
-                  Generate &amp; Lock
+                <Button variant="contained" color="success" startIcon={<LockOutlinedIcon />} onClick={lock} disabled={saving}>
+                  Lock
                 </Button>
               </>
+            )}
+            {locked && (
+              <Button variant="outlined" color="warning" startIcon={<LockOpenOutlinedIcon />} onClick={unlock}>
+                Unlock
+              </Button>
+            )}
+            {payroll && (
+              <Button variant="contained" color="info" startIcon={<DownloadIcon />} onClick={downloadPayslip}>
+                Payslip PDF
+              </Button>
             )}
           </Box>
         }
       />
 
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+      {locked && <Alert severity="info">This payroll is <b>Locked</b> — unlock to edit.</Alert>}
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress />
+      {/* Attendance / score summary */}
+      <Paper sx={{ p: 2.5, borderRadius: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+          <Avatar sx={{ width: 48, height: 48 }}>{emp.fullname?.[0]}</Avatar>
+          <Box>
+            <Typography variant="h6" fontWeight={700}>{emp.fullname}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {emp.empcode} • Basic Rs. {fmt(emp.basic_salary)} • Per-day Rs. {fmt(snap?.per_day_rate)}
+            </Typography>
+          </Box>
         </Box>
-      ) : emp && (
-        <>
-          {/* Employee header */}
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-              <Avatar
-                src={emp.reference_photo ? `${BASE_URL}${emp.reference_photo}` : undefined}
-                sx={{ width: 64, height: 64, bgcolor: pickAvatarColor(emp.fullname), fontWeight: 700, fontSize: '1.3rem' }}
-              >
-                {getInitials(emp.fullname)}
-              </Avatar>
-              <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="h5" fontWeight={700} noWrap>{emp.fullname}</Typography>
-                <Typography variant="caption" color="text.secondary" display="block">
-                  {emp.empcode || `#${emp.employee_id}`}{emp.idnumber ? ` · NIC ${emp.idnumber}` : ''}{emp.phone_number ? ` · ${emp.phone_number}` : ''}
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 0.5, mt: 0.8, flexWrap: 'wrap' }}>
-                  {emp.primary_outlet_name && (
-                    <Chip size="small" color="primary" label={`Primary: ${emp.primary_outlet_name}`} />
-                  )}
-                  {emp.outlets.filter((o) => o.id !== emp.primary_outlet_id).map((o) => (
-                    <Chip key={o.id} size="small" variant="outlined" label={o.name} />
-                  ))}
-                </Box>
-              </Box>
-              <Box sx={{ textAlign: 'right' }}>
-                <Typography variant="caption" color="text.secondary">Basic (master record)</Typography>
-                <Typography variant="h6" fontWeight={700}>{fmt(emp.basic_salary)}</Typography>
-                <Typography variant="caption" color="text.disabled">
-                  EPF {emp.epf_emp_per}% / Co {emp.epf_com_per}% · ETF {emp.etf_com_per}%
-                </Typography>
-              </Box>
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(6, 1fr)' }, gap: 2 }}>
+          <Metric label="Scheduled Hrs" value={fmt(snap?.scheduled_hours)} />
+          <Metric label="Worked Hrs" value={fmt(snap?.worked_hours)} />
+          <Metric label="OT Hrs" value={fmt(snap?.ot_hours)} />
+          <Metric label="Holiday Hrs" value={fmt(snap?.holiday_hours)} />
+          <Metric label="Leave Days" value={snap?.days_leave} />
+          <Metric label="Absent Days" value={snap?.days_absent} accent={Number(snap?.days_absent) > 0 ? 'error' : undefined} />
+        </Box>
+
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="caption" color="text.secondary">Attendance Score</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box sx={{ flex: 1 }}>
+              <LinearProgress variant="determinate"
+                value={Math.min(100, Number(snap?.attendance_score || 0))}
+                color={Number(snap?.attendance_score) >= 90 ? 'success'
+                  : Number(snap?.attendance_score) >= 75 ? 'warning' : 'error'}
+                sx={{ height: 10, borderRadius: 1 }} />
             </Box>
-          </Paper>
-
-          {/* Rates */}
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
-            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Rates</Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={4}><MoneyField label="Per-day salary" value={perDay} onChange={setPerDay} disabled={locked} /></Grid>
-              <Grid item xs={12} sm={4}><MoneyField label="Per-hour OT rate" value={perHourOt} onChange={setPerHourOt} disabled={locked} /></Grid>
-              <Grid item xs={12} sm={4}><MoneyField label="Expected hours/day" value={expectedHours} onChange={setExpectedHours} disabled={locked} /></Grid>
-            </Grid>
-          </Paper>
-
-          {/* Attendance counts + pay breakdown */}
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
-            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Attendance · Pay</Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={6} sm={3}><MoneyField label="Present" value={daysPresent} onChange={setDaysPresent} disabled={locked} /></Grid>
-              <Grid item xs={6} sm={3}><MoneyField label="Late" value={daysLate} onChange={setDaysLate} disabled={locked} /></Grid>
-              <Grid item xs={6} sm={3}><MoneyField label="Half Day" value={daysHalf} onChange={setDaysHalf} disabled={locked} /></Grid>
-              <Grid item xs={6} sm={3}><MoneyField label="Leave" value={daysLeave} onChange={setDaysLeave} disabled={locked} /></Grid>
-              <Grid item xs={6} sm={3}><MoneyField label="Absent" value={daysAbsent} onChange={setDaysAbsent} disabled={locked} /></Grid>
-              <Grid item xs={6} sm={3}><MoneyField label="Holiday worked" value={holidayWorkDays} onChange={setHolidayWorkDays} disabled={locked} /></Grid>
-              <Grid item xs={6} sm={3}><MoneyField label="OT hours" value={otHours} onChange={setOtHours} disabled={locked} /></Grid>
-            </Grid>
-            <Divider sx={{ my: 2 }} />
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={3}><MoneyField label="Regular Pay" value={regularPay} onChange={setRegularPay} disabled={locked} /></Grid>
-              <Grid item xs={12} sm={3}><MoneyField label="OT Pay" value={otPay} onChange={setOtPay} disabled={locked} /></Grid>
-              <Grid item xs={12} sm={3}><MoneyField label="Holiday Pay" value={holidayPay} onChange={setHolidayPay} disabled={locked} /></Grid>
-              <Grid item xs={12} sm={3}><MoneyField label="Leave Pay" value={leavePay} onChange={setLeavePay} disabled={locked} /></Grid>
-            </Grid>
-          </Paper>
-
-          {/* Allowances */}
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <Typography variant="overline" color="text.secondary">Allowances</Typography>
-              {!locked && (
-                <Button size="small" startIcon={<AddIcon />} onClick={addAllowance} sx={{ ml: 'auto' }}>
-                  Add Allowance
-                </Button>
-              )}
-            </Box>
-            {allowances.length === 0 && <Typography variant="caption" color="text.disabled">No allowances added.</Typography>}
-            {allowances.map((a, i) => (
-              <Box key={a.id || a.tmpId} sx={{ display: 'flex', gap: 1.5, mb: 1, alignItems: 'center' }}>
-                <TextField size="small" label="Label" value={a.label}
-                  onChange={(e) => editAllowance(i, 'label', e.target.value)} disabled={locked} sx={{ flex: 1 }} />
-                <TextField size="small" label="Amount" type="number" value={a.amount}
-                  onChange={(e) => editAllowance(i, 'amount', e.target.value)} disabled={locked}
-                  inputProps={{ step: '0.01', min: 0, style: { textAlign: 'right' } }} sx={{ width: 180 }} />
-                {!locked && (
-                  <IconButton color="error" onClick={() => removeAllowance(i)}>
-                    <DeleteOutlineIcon />
-                  </IconButton>
-                )}
-              </Box>
-            ))}
-          </Paper>
-
-          {/* Deductions */}
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <Typography variant="overline" color="text.secondary">Deductions</Typography>
-              {!locked && (
-                <Button size="small" startIcon={<AddIcon />} onClick={addDeduction} sx={{ ml: 'auto' }}>
-                  Add Deduction
-                </Button>
-              )}
-            </Box>
-            {deductions.length === 0 && <Typography variant="caption" color="text.disabled">No deductions added.</Typography>}
-            {deductions.map((d, i) => (
-              <Box key={d.id || d.tmpId} sx={{ display: 'flex', gap: 1.5, mb: 1, alignItems: 'center' }}>
-                <TextField size="small" label="Label" value={d.label}
-                  onChange={(e) => editDeduction(i, 'label', e.target.value)} disabled={locked} sx={{ flex: 1 }} />
-                <TextField size="small" label="Amount" type="number" value={d.amount}
-                  onChange={(e) => editDeduction(i, 'amount', e.target.value)} disabled={locked}
-                  inputProps={{ step: '0.01', min: 0, style: { textAlign: 'right' } }} sx={{ width: 180 }} />
-                {!locked && (
-                  <IconButton color="error" onClick={() => removeDeduction(i)}>
-                    <DeleteOutlineIcon />
-                  </IconButton>
-                )}
-              </Box>
-            ))}
-          </Paper>
-
-          {/* EPF / ETF */}
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
-            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 1 }}>EPF / ETF</Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={3}><MoneyField label="Basic for EPF" value={basicForEpf} onChange={setBasicForEpf} disabled={locked} /></Grid>
-              <Grid item xs={6} sm={3}><MoneyField label="EPF Employee %" value={epfEmployeePct} onChange={setEpfEmployeePct} disabled={locked} /></Grid>
-              <Grid item xs={6} sm={3}><MoneyField label="EPF Company %" value={epfCompanyPct} onChange={setEpfCompanyPct} disabled={locked} /></Grid>
-              <Grid item xs={12} sm={3}><MoneyField label="ETF Company %" value={etfCompanyPct} onChange={setEtfCompanyPct} disabled={locked} /></Grid>
-            </Grid>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, mt: 2 }}>
-              <Box sx={{ p: 1.2, borderRadius: 1.5, bgcolor: 'grey.50' }}>
-                <Typography variant="caption" color="text.secondary">EPF deducted from salary</Typography>
-                <Typography variant="h6" fontWeight={700}>{fmt(totals.epfEmp)}</Typography>
-              </Box>
-              <Box sx={{ p: 1.2, borderRadius: 1.5, bgcolor: 'grey.50' }}>
-                <Typography variant="caption" color="text.secondary">EPF company contribution</Typography>
-                <Typography variant="h6" fontWeight={700}>{fmt(totals.epfCom)}</Typography>
-              </Box>
-              <Box sx={{ p: 1.2, borderRadius: 1.5, bgcolor: 'grey.50' }}>
-                <Typography variant="caption" color="text.secondary">ETF company contribution</Typography>
-                <Typography variant="h6" fontWeight={700}>{fmt(totals.etfCom)}</Typography>
-              </Box>
-            </Box>
-          </Paper>
-
-          {/* Totals panel */}
-          <Paper sx={{ p: 2.5, borderRadius: 2.5, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
-            <Typography variant="overline" sx={{ opacity: 0.8 }}>Payment Summary</Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 1.5, mt: 1 }}>
-              <Box><Typography variant="caption">Regular</Typography><Typography fontWeight={700}>{fmt(totals.reg)}</Typography></Box>
-              <Box><Typography variant="caption">OT</Typography><Typography fontWeight={700}>{fmt(totals.ot)}</Typography></Box>
-              <Box><Typography variant="caption">Holiday</Typography><Typography fontWeight={700}>{fmt(totals.hol)}</Typography></Box>
-              <Box><Typography variant="caption">Leave</Typography><Typography fontWeight={700}>{fmt(totals.lv)}</Typography></Box>
-              <Box><Typography variant="caption">Allowances</Typography><Typography fontWeight={700}>+{fmt(totals.alw)}</Typography></Box>
-              <Box><Typography variant="caption">Gross</Typography><Typography fontWeight={700}>{fmt(totals.gross)}</Typography></Box>
-              <Box><Typography variant="caption">Deductions</Typography><Typography fontWeight={700}>-{fmt(totals.ded)}</Typography></Box>
-              <Box><Typography variant="caption">EPF (employee)</Typography><Typography fontWeight={700}>-{fmt(totals.epfEmp)}</Typography></Box>
-            </Box>
-            <Divider sx={{ my: 1.5, bgcolor: 'rgba(255,255,255,0.3)' }} />
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-              <Typography variant="overline" sx={{ opacity: 0.85 }}>Net Pay</Typography>
-              <Typography variant="h4" fontWeight={800} sx={{ ml: 'auto' }}>{fmt(totals.net)}</Typography>
-            </Box>
-          </Paper>
-
-          {/* Notes */}
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2.5 }}>
-            <TextField
-              label="Notes" fullWidth multiline minRows={2}
-              value={notes} onChange={(e) => setNotes(e.target.value)}
-              disabled={locked}
-            />
-          </Paper>
-
-          {voucher?.locked_by_name && (
-            <Alert severity="info" icon={<LockOutlinedIcon fontSize="inherit" />}>
-              Locked by <strong>{voucher.locked_by_name}</strong> on {voucher.locked_at ? new Date(voucher.locked_at).toLocaleString() : ''}.
-            </Alert>
+            <Typography variant="h6" fontWeight={700}>{Number(snap?.attendance_score || 0).toFixed(0)}%</Typography>
+          </Box>
+          {preview?.suggested_bonus?.amount > 0 && (
+            <Typography variant="caption" color="success.main">
+              Suggested bonus: <b>{preview.suggested_bonus.tier_label}</b> — Rs. {fmt(preview.suggested_bonus.amount)}
+            </Typography>
           )}
-        </>
-      )}
+        </Box>
+      </Paper>
 
-      <Snackbar
-        open={toast.open}
-        autoHideDuration={4000}
-        onClose={() => setToast((t) => ({ ...t, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert severity={toast.severity} onClose={() => setToast((t) => ({ ...t, open: false }))}>
-          {toast.message}
-        </Alert>
-      </Snackbar>
+      {/* Daily breakdown */}
+      <Paper sx={{ p: 2.5, borderRadius: 2.5 }}>
+        <Typography variant="subtitle1" fontWeight={700} gutterBottom>Daily Breakdown</Typography>
+        <Box sx={{ maxHeight: 360, overflow: 'auto' }}>
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell>Date</TableCell>
+                <TableCell>Day</TableCell>
+                <TableCell align="right">Scheduled</TableCell>
+                <TableCell align="right">Worked</TableCell>
+                <TableCell align="right">OT</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Note</TableCell>
+                <TableCell align="right">Pay</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {(snap?.daily_breakdown || []).map((row) => {
+                const isHolidayWorked = row.note?.startsWith('Worked on holiday');
+                return (
+                  <TableRow key={row.date} sx={{
+                    bgcolor: isHolidayWorked ? 'warning.50'
+                      : row.holiday && !isHolidayWorked ? 'info.50'
+                      : row.status === 'Absent' ? 'error.50' : undefined,
+                  }}>
+                    <TableCell>{row.date}</TableCell>
+                    <TableCell>{row.weekday}</TableCell>
+                    <TableCell align="right">{row.scheduled_hours}</TableCell>
+                    <TableCell align="right">{row.worked_hours}</TableCell>
+                    <TableCell align="right">{row.ot_hours}</TableCell>
+                    <TableCell>
+                      {row.status && <Chip size="small" label={row.status}
+                        color={row.status === 'Absent' ? 'error'
+                          : row.status === 'On Leave' ? 'info'
+                          : row.status === 'Half Day' ? 'warning'
+                          : row.status === 'Late' ? 'warning'
+                          : row.status === 'Present' ? 'success' : 'default'} />}
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption">{row.note}</Typography>
+                      {row.holiday && <Chip size="small" label={row.holiday} color="info" sx={{ ml: 0.5 }} />}
+                    </TableCell>
+                    <TableCell align="right">{fmt(row.pay)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Box>
+      </Paper>
+
+      {/* Allowances */}
+      <Paper sx={{ p: 2.5, borderRadius: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+          <Typography variant="subtitle1" fontWeight={700}>Allowances</Typography>
+          {!locked && (
+            <Button size="small" startIcon={<AddIcon />} onClick={addAllowance}>Add</Button>
+          )}
+        </Box>
+        <Stack spacing={1}>
+          {allowances.length === 0 && (
+            <Typography variant="caption" color="text.secondary">No allowances.</Typography>
+          )}
+          {allowances.map((a, i) => {
+            const at = allowanceTypes.find(t => t.id === a.allowance_type);
+            const cap = at?.max_cap_amount > 0 ? Number(at.max_cap_amount) : null;
+            const overCap = cap && Number(a.amount) > cap;
+            return (
+              <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <TextField select size="small" label="Type" sx={{ width: 180 }}
+                  value={a.allowance_type || ''}
+                  onChange={(e) => pickAllowanceType(i, Number(e.target.value))}
+                  disabled={locked}>
+                  <MenuItem value="">— Custom —</MenuItem>
+                  {allowanceTypes.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
+                </TextField>
+                <TextField size="small" label="Label" value={a.label} sx={{ flex: 1 }}
+                  onChange={(e) => updateAllowance(i, { label: e.target.value })}
+                  disabled={locked} />
+                <TextField size="small" label="Amount" type="number" value={a.amount} sx={{ width: 140 }}
+                  error={overCap}
+                  helperText={overCap ? `Cap: ${fmt(cap)}` : (cap ? `Max: ${fmt(cap)}` : '')}
+                  onChange={(e) => updateAllowance(i, { amount: e.target.value })}
+                  disabled={locked} />
+                {!locked && (
+                  <IconButton size="small" color="error" onClick={() => removeAllowance(i)}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                )}
+              </Box>
+            );
+          })}
+        </Stack>
+      </Paper>
+
+      {/* Deductions */}
+      <Paper sx={{ p: 2.5, borderRadius: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+          <Typography variant="subtitle1" fontWeight={700}>Deductions</Typography>
+          {!locked && (
+            <Button size="small" startIcon={<AddIcon />} onClick={addDeduction}>Add</Button>
+          )}
+        </Box>
+        <Stack spacing={1}>
+          {deductions.length === 0 && (
+            <Typography variant="caption" color="text.secondary">No deductions.</Typography>
+          )}
+          {deductions.map((d, i) => (
+            <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <TextField size="small" label="Label" value={d.label} sx={{ flex: 1 }}
+                onChange={(e) => updateDeduction(i, { label: e.target.value })}
+                disabled={locked} />
+              <TextField size="small" label="Amount" type="number" value={d.amount} sx={{ width: 140 }}
+                onChange={(e) => updateDeduction(i, { amount: e.target.value })}
+                disabled={locked} />
+              {!locked && (
+                <IconButton size="small" color="error" onClick={() => removeDeduction(i)}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              )}
+            </Box>
+          ))}
+        </Stack>
+      </Paper>
+
+      {/* Totals */}
+      <Paper sx={{ p: 2.5, borderRadius: 2.5, bgcolor: 'grey.50' }}>
+        <Typography variant="subtitle1" fontWeight={700} gutterBottom>Summary</Typography>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1.5 }}>
+          <Line label="Regular Pay" value={fmt(snap?.regular_pay)} />
+          <Line label="OT Pay" value={fmt(snap?.ot_pay)} />
+          <Line label="Holiday Pay" value={fmt(snap?.holiday_pay)} />
+          <Line label="Leave Pay" value={fmt(snap?.leave_pay)} />
+          <Line label="Allowances" value={fmt(allowanceTotal)} />
+          <Line label="Deductions" value={`− ${fmt(deductionTotal)}`} negative />
+          <Line label="EPF (Employee 8%)" value={`− ${fmt(epfEmp)}`} negative />
+          {taxAmount > 0 && (
+            <Line label={`APIT${taxLabel ? ` (${taxLabel})` : ''}`} value={`− ${fmt(taxAmount)}`} negative />
+          )}
+          <Line label="EPF (Company 12%)" value={fmt(epfCom)} muted />
+          <Line label="ETF (Company 3%)" value={fmt(etf)} muted />
+        </Box>
+        <Divider sx={{ my: 2 }} />
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1.5 }}>
+          <Line label="Gross" value={fmt(gross)} big />
+          <Line label="Net Pay" value={fmt(net)} big highlight />
+        </Box>
+      </Paper>
+
+      <Snackbar open={!!toast} autoHideDuration={2500} onClose={() => setToast('')}
+        message={toast} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} />
+    </Box>
+  );
+}
+
+function Metric({ label, value, accent }) {
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+      <Typography variant="h6" fontWeight={700} color={accent}>{value ?? '—'}</Typography>
+    </Box>
+  );
+}
+
+function Line({ label, value, big, highlight, negative, muted }) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+      <Typography variant={big ? 'body1' : 'body2'} fontWeight={big ? 700 : 500}
+        color={muted ? 'text.secondary' : 'text.primary'}>
+        {label}
+      </Typography>
+      <Typography variant={big ? 'h6' : 'body2'}
+        fontWeight={big ? 700 : 500}
+        color={negative ? 'error.main' : highlight ? 'success.main' : muted ? 'text.secondary' : 'text.primary'}>
+        {value}
+      </Typography>
     </Box>
   );
 }
