@@ -6,6 +6,8 @@ import {
 import { DataGrid } from '@mui/x-data-grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined';
+import DownloadIcon from '@mui/icons-material/FileDownloadOutlined';
+import ButtonGroup from '@mui/material/ButtonGroup';
 import { useNavigate } from 'react-router-dom';
 import api from 'utils/api';
 import { PageHeader } from 'components/ui';
@@ -54,6 +56,33 @@ export default function PayrollHub() {
   }, [outletId, periodStart, periodEnd]);
 
   useEffect(() => { fetchList(); }, [fetchList]);
+
+  const downloadExport = async (kind) => {
+    const month = periodStart.slice(0, 7); // YYYY-MM
+    setError('');
+    try {
+      const params = { month };
+      if (outletId !== 'all') params.outlet_id = outletId;
+      const res = await api.get(`/payroll/export/${kind}/`, {
+        params, responseType: 'blob',
+      });
+      const missing = res.headers['x-missing-bank-details'];
+      if (kind === 'bank' && missing) {
+        setError(`Bank details missing for: ${missing}. The file was still generated — fix these in Employee Bank Details.`);
+      }
+      const cd = res.headers['content-disposition'] || '';
+      const m = /filename="?([^";]+)"?/.exec(cd);
+      const filename = m ? m[1] : `${kind}_${month}.xlsx`;
+      const blob = new Blob([res.data], { type: res.headers['content-type'] });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+      a.remove(); URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err.response?.data?.error || `Failed to download ${kind} file.`;
+      setError(msg);
+    }
+  };
 
   const openEmployee = (row) => {
     const qs = `?start=${periodStart}&end=${periodEnd}`;
@@ -136,6 +165,11 @@ export default function PayrollHub() {
                 </IconButton>
               </span>
             </Tooltip>
+            <ButtonGroup size="small" variant="outlined" color="primary">
+              <Button startIcon={<DownloadIcon />} onClick={() => downloadExport('epf')}>EPF</Button>
+              <Button startIcon={<DownloadIcon />} onClick={() => downloadExport('etf')}>ETF</Button>
+              <Button startIcon={<DownloadIcon />} onClick={() => downloadExport('bank')}>Bank</Button>
+            </ButtonGroup>
           </Box>
         }
       />

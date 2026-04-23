@@ -20,6 +20,8 @@ urlpatterns = [
     path("payrolls/<int:pk>/", views.payroll_detail),
     path("payrolls/<int:pk>/lock/", views.payroll_lock),
     path("payrolls/<int:pk>/unlock/", views.payroll_unlock),
+    path("payrolls/<int:pk>/audit/", views.payroll_audit_log),
+    path("audit/", views.payroll_audit_log),
     path("employees/", views.payroll_employee_list),
 
     # APIT / PAYE slabs
@@ -31,4 +33,16 @@ urlpatterns = [
 
     # Payslip PDF
     path("payrolls/<int:pk>/payslip/", views.payslip_pdf),
+
+    # Company config (singleton)
+    path("company-config/", views.company_config),
+
+    # Employee financial profile (Employee + FinancialProfile grid)
+    path("financial-profiles/", views.financial_profile_list),
+    path("financial-profiles/bulk/", views.financial_profile_bulk_save),
+
+    # Statutory & bank exports
+    path("export/epf/", views.export_epf),
+    path("export/etf/", views.export_etf),
+    path("export/bank/", views.export_bank),
 ]

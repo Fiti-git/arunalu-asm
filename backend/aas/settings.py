@@ -24,7 +24,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # SECURITY
 # ------------------------------------------------------------------------------
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key")
-DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'False'
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 #ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 ALLOWED_HOSTS = ['*']  # ✅ allows all hosts (use with caution in production)
@@ -114,7 +114,7 @@ LOGIN_URL = '/login/'
 # INTERNATIONALIZATION
 # ------------------------------------------------------------------------------
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'Asia/Kolkata'
+TIME_ZONE = 'Asia/Colombo'
 USE_I18N = True
 USE_TZ = True
 

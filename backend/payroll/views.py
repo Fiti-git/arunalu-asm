@@ -1,7 +1,10 @@
+import logging
 from decimal import Decimal
 from datetime import datetime, date
 
-from django.db import transaction
+from django.db import models, transaction
+
+logger = logging.getLogger(__name__)
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
@@ -13,22 +16,31 @@ from main.models import Employee
 from .models import (
     AllowanceType, AttendanceBonusTier, WorkSchedule,
     Payroll, PayrollAllowance, PayrollDeduction, APITSlab,
+    PayrollAuditLog, PayrollCompanyConfig, EmployeeFinancialProfile,
 )
 from .serializers import (
     AllowanceTypeSerializer, AttendanceBonusTierSerializer, WorkScheduleSerializer,
-    PayrollSerializer, APITSlabSerializer,
+    PayrollSerializer, APITSlabSerializer, PayrollAuditLogSerializer,
+    PayrollCompanyConfigSerializer, EmployeeFinancialRowSerializer,
 )
 from . import engine
 
 
 # ─── Access control ────────────────────────────────────────────────────────
 
+PAYROLL_GROUPS = ("Admin", "Acc")
+PAYROLL_FEATURE_CODE = "payroll"
+
+
 def _is_payroll_user(user):
     if not user or not user.is_authenticated:
         return False
     if user.is_staff or user.is_superuser:
         return True
-    return user.groups.filter(name__in=["Admin", "Acc", "acc", "ACC"]).exists()
+    q = models.Q()
+    for name in PAYROLL_GROUPS:
+        q |= models.Q(name__iexact=name)
+    return user.groups.filter(q).exists()
 
 
 def _is_admin_user(user):
@@ -39,10 +51,41 @@ def _is_admin_user(user):
     return user.groups.filter(name__iexact="Admin").exists()
 
 
+def _license_feature_ok(request):
+    """Return True if the payroll feature is enabled in the current license.
+    When no license is bound (request.license is None), allow — the
+    LicenseMiddleware treats that as 'active' and we don't want to block dev.
+    """
+    license_data = getattr(request, "license", None)
+    if license_data is None:
+        return True
+    features = license_data.get("features", []) or []
+    return PAYROLL_FEATURE_CODE in features
+
+
 def _gate(request):
+    if not _license_feature_ok(request):
+        return Response(
+            {"error": "Payroll feature is not enabled on this license.",
+             "feature": PAYROLL_FEATURE_CODE},
+            status=403,
+        )
     if not _is_payroll_user(request.user):
         return Response({"error": "You don't have access to payroll."}, status=403)
     return None
+
+
+def _audit(payroll, user, action, details=None):
+    """Record a payroll audit-log row. Never raises."""
+    try:
+        PayrollAuditLog.objects.create(
+            payroll=payroll,
+            user=user if (user and user.is_authenticated) else None,
+            action=action,
+            details=details or {},
+        )
+    except Exception:
+        logger.exception("Failed to write payroll audit log")
 
 
 def _parse_date(raw):
@@ -322,6 +365,10 @@ def payroll_list_create(request):
         )
 
     engine.recompute_totals(p)
+    _audit(p, request.user, "create", {
+        "period_start": str(sd), "period_end": str(ed),
+        "gross_pay": str(p.gross_pay), "net_pay": str(p.net_pay),
+    })
     return Response(PayrollSerializer(p).data, status=201)
 
 
@@ -343,6 +390,10 @@ def payroll_detail(request, pk):
         return Response({"error": "Locked payroll cannot be edited/deleted. Unlock first."}, status=400)
 
     if request.method == "DELETE":
+        _audit(p, request.user, "delete", {
+            "period_start": str(p.period_start), "period_end": str(p.period_end),
+            "net_pay": str(p.net_pay),
+        })
         p.delete()
         return Response({"message": "Deleted."})
 
@@ -387,6 +438,11 @@ def payroll_detail(request, pk):
                 )
         engine.recompute_totals(p)
 
+    _audit(p, request.user, "edit", {
+        "allowance_total": str(p.allowance_total),
+        "deduction_total": str(p.deduction_total),
+        "gross_pay": str(p.gross_pay), "net_pay": str(p.net_pay),
+    })
     return Response(PayrollSerializer(p).data)
 
 
@@ -403,6 +459,7 @@ def payroll_lock(request, pk):
     p.locked_by = request.user
     p.locked_at = timezone.now()
     p.save()
+    _audit(p, request.user, "lock", {"net_pay": str(p.net_pay)})
     return Response(PayrollSerializer(p).data)
 
 
@@ -418,7 +475,27 @@ def payroll_unlock(request, pk):
     p.locked_by = None
     p.locked_at = None
     p.save()
+    _audit(p, request.user, "unlock", {})
     return Response(PayrollSerializer(p).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def payroll_audit_log(request, pk=None):
+    """Audit-trail list. Admin-only. Optional ?payroll=<id> filter, else returns
+    the latest 200 entries across all payrolls. `pk` in URL wins if provided."""
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    qs = PayrollAuditLog.objects.select_related("user", "payroll").order_by("-created_at")
+    pid = pk or request.GET.get("payroll")
+    if pid:
+        try:
+            qs = qs.filter(payroll_id=int(pid))
+        except (TypeError, ValueError):
+            return Response({"error": "Invalid payroll id."}, status=400)
+    else:
+        qs = qs[:200]
+    return Response(PayrollAuditLogSerializer(qs, many=True).data)
 
 
 @api_view(["GET"])
@@ -708,4 +785,353 @@ def payslip_pdf(request, pk):
     filename = f"payslip_{p.employee.empcode or p.employee_id}_{p.period_start}_{p.period_end}.pdf"
     resp = HttpResponse(buf.getvalue(), content_type="application/pdf")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Company config (singleton)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def company_config(request):
+    gate = _gate(request)
+    if gate: return gate
+    cfg = PayrollCompanyConfig.get_solo()
+    if request.method == "GET":
+        return Response(PayrollCompanyConfigSerializer(cfg).data)
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    ser = PayrollCompanyConfigSerializer(cfg, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Employee financial-profile grid (Employee + FinancialProfile merged)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _derive_initials_surname(fullname):
+    parts = [p for p in (fullname or "").split() if p]
+    if not parts:
+        return "", ""
+    surname = parts[-1]
+    initials = " ".join(p[0] for p in parts[:-1])
+    return initials, surname
+
+
+def _row_for_employee(e):
+    fp = getattr(e, "financial_profile", None)
+    if fp is None:
+        init, sur = _derive_initials_surname(e.fullname)
+        fp_vals = {
+            "surname": sur, "initials": init,
+            "epf_member_status": EmployeeFinancialProfile.MEMBER_STATUS_EXISTING,
+            "etf_member_no": "", "bank_name": "", "bank_code": "",
+            "bank_branch_code": "", "bank_account_no": "",
+        }
+    else:
+        fp_vals = {
+            "surname": fp.surname, "initials": fp.initials,
+            "epf_member_status": fp.epf_member_status,
+            "etf_member_no": fp.etf_member_no,
+            "bank_name": fp.bank_name, "bank_code": fp.bank_code,
+            "bank_branch_code": fp.bank_branch_code,
+            "bank_account_no": fp.bank_account_no,
+        }
+    return {
+        "employee_id": e.employee_id,
+        "empcode": e.empcode or "",
+        "fullname": e.fullname,
+        "idnumber": e.idnumber or "",
+        "basic_salary": float(e.basic_salary) if e.basic_salary is not None else 0,
+        "epf_number": e.epf_number or "",
+        "epf_grade": e.epf_grade or "",
+        "epf_cal_date": e.epf_cal_date.isoformat() if e.epf_cal_date else None,
+        "epf_emp_per": float(e.epf_emp_per) if e.epf_emp_per is not None else 8.0,
+        "epf_com_per": float(e.epf_com_per) if e.epf_com_per is not None else 12.0,
+        "etf_com_per": float(e.etf_com_per) if e.etf_com_per is not None else 3.0,
+        "primary_outlet_name": e.primary_outlet.name if e.primary_outlet_id else None,
+        **fp_vals,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def financial_profile_list(request):
+    """Merged Employee + FinancialProfile rows for the grid screens."""
+    gate = _gate(request)
+    if gate: return gate
+    qs = (Employee.objects.filter(is_active=True)
+          .select_related("primary_outlet", "financial_profile")
+          .order_by("fullname"))
+    outlet_id = request.GET.get("outlet_id")
+    if outlet_id:
+        try:
+            qs = qs.filter(outlets__id=int(outlet_id)).distinct()
+        except (TypeError, ValueError):
+            return Response({"error": "Invalid outlet_id"}, status=400)
+    rows = [_row_for_employee(e) for e in qs]
+    return Response(rows)
+
+
+EMPLOYEE_EDITABLE_FIELDS = {
+    "empcode", "fullname", "idnumber", "basic_salary",
+    "epf_number", "epf_grade", "epf_cal_date",
+    "epf_emp_per", "epf_com_per", "etf_com_per",
+}
+PROFILE_EDITABLE_FIELDS = {
+    "surname", "initials", "epf_member_status", "etf_member_no",
+    "bank_name", "bank_code", "bank_branch_code", "bank_account_no",
+}
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def financial_profile_bulk_save(request):
+    """Payload: { rows: [ { employee_id, ...fields } , ... ] }
+    Admin only. Updates Employee and FinancialProfile atomically per row.
+    Returns: { updated: N, errors: [ {employee_id, error} ] }
+    """
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    payload = request.data if isinstance(request.data, dict) else {}
+    rows = payload.get("rows") or []
+    if not isinstance(rows, list) or not rows:
+        return Response({"error": "rows[] required."}, status=400)
+
+    updated = 0
+    errors = []
+    with transaction.atomic():
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            eid = raw.get("employee_id")
+            try:
+                eid = int(eid)
+            except (TypeError, ValueError):
+                errors.append({"employee_id": eid, "error": "Invalid id"})
+                continue
+            try:
+                e = Employee.objects.select_for_update().get(pk=eid)
+            except Employee.DoesNotExist:
+                errors.append({"employee_id": eid, "error": "Not found"})
+                continue
+
+            emp_dirty = False
+            for f in EMPLOYEE_EDITABLE_FIELDS:
+                if f in raw:
+                    val = raw[f]
+                    if val == "":
+                        val = None if f in {"idnumber", "epf_number", "epf_grade",
+                                            "epf_cal_date", "basic_salary"} else ""
+                    setattr(e, f, val)
+                    emp_dirty = True
+            if emp_dirty:
+                e.save()
+
+            fp, _created = EmployeeFinancialProfile.objects.get_or_create(employee=e)
+            fp_dirty = False
+            for f in PROFILE_EDITABLE_FIELDS:
+                if f in raw:
+                    val = raw[f] if raw[f] is not None else ""
+                    setattr(fp, f, val)
+                    fp_dirty = True
+            if not fp.surname and not fp.initials:
+                fp.initials, fp.surname = _derive_initials_surname(e.fullname)
+                fp_dirty = True
+            if fp_dirty:
+                fp.save()
+            updated += 1
+
+    return Response({"updated": updated, "errors": errors})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Exports: EPF / ETF / Bank (xlsx)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _int_or_none(v):
+    try:
+        return int(v) if v not in (None, "", "all") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_month(month_str):
+    y, m = month_str.split("-")[:2]
+    y, m = int(y), int(m)
+    from calendar import monthrange
+    last = monthrange(y, m)[1]
+    return date(y, m, 1), date(y, m, last), y, m
+
+
+def _locked_payrolls_for_month(month_str, outlet_id=None):
+    sd, ed, _, _ = _parse_month(month_str)
+    qs = (Payroll.objects
+          .filter(period_start=sd, period_end=ed)
+          .select_related("employee", "employee__financial_profile",
+                          "employee__primary_outlet"))
+    if outlet_id:
+        qs = qs.filter(employee__outlets__id=outlet_id).distinct()
+    return qs, sd, ed
+
+
+def _xlsx_response(wb, filename):
+    import io
+    from django.http import HttpResponse
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def export_epf(request):
+    gate = _gate(request)
+    if gate: return gate
+    month = request.GET.get("month")
+    if not month:
+        return Response({"error": "month=YYYY-MM is required."}, status=400)
+    try:
+        payrolls, sd, ed = _locked_payrolls_for_month(
+            month, outlet_id=_int_or_none(request.GET.get("outlet_id"))
+        )
+    except (ValueError, IndexError):
+        return Response({"error": "Invalid month format."}, status=400)
+
+    cfg = PayrollCompanyConfig.get_solo()
+    ym = sd.strftime("%Y%m")
+
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "EPF"
+    ws.append([
+        "NIC/Passport number", "Last Name", "Initials", "Member AC number",
+        "Employer's Contribution Amount (Rs.)", "Member's Contribution Amount (Rs.)",
+        "Total Contribution Amount (Rs.)", "Total Earnings (Rs.)",
+        "Member Status", "Zone code", "Employer Number",
+        "Contribution Year Month", "Data Submission Number",
+        "No.of days worked",
+        "Occupation Classification Grade(As per the classification of censes  & statistic Dept) ",
+    ])
+    for p in payrolls:
+        e = p.employee
+        fp = getattr(e, "financial_profile", None)
+        init, sur = (fp.initials, fp.surname) if fp else _derive_initials_surname(e.fullname)
+        days = float(p.days_present) + float(p.days_half) * 0.5 + float(p.days_late)
+        ws.append([
+            e.idnumber or "",
+            sur, init,
+            e.epf_number or "",
+            float(p.epf_company_contribution or 0),
+            float(p.epf_employee_deduction or 0),
+            float(p.epf_company_contribution or 0) + float(p.epf_employee_deduction or 0),
+            float(p.basic_for_epf or 0),
+            (fp.epf_member_status if fp else "E"),
+            cfg.epf_zone_code or "A",
+            cfg.employer_epf_number or "",
+            ym,
+            cfg.data_submission_number,
+            round(days, 2),
+            e.epf_grade or "",
+        ])
+
+    cfg.data_submission_number = (cfg.data_submission_number or 0) + 1
+    cfg.save(update_fields=["data_submission_number", "updated_at"])
+
+    return _xlsx_response(wb, f"EPF_{ym}.xlsx")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def export_etf(request):
+    gate = _gate(request)
+    if gate: return gate
+    month = request.GET.get("month")
+    if not month:
+        return Response({"error": "month=YYYY-MM is required."}, status=400)
+    try:
+        payrolls, sd, ed = _locked_payrolls_for_month(
+            month, outlet_id=_int_or_none(request.GET.get("outlet_id"))
+        )
+    except (ValueError, IndexError):
+        return Response({"error": "Invalid month format."}, status=400)
+    ym = sd.strftime("%Y%m")
+
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "ETF"
+    ws.append([
+        "Member Number", "Initials of the name", "Surename only", "NIC Number",
+        "Contribution period From", "Contribution period To",
+        "Total Contributions in Cents",
+    ])
+    for p in payrolls:
+        e = p.employee
+        fp = getattr(e, "financial_profile", None)
+        init, sur = (fp.initials, fp.surname) if fp else _derive_initials_surname(e.fullname)
+        etf_no = (fp.etf_member_no if fp and fp.etf_member_no else (e.epf_number or ""))
+        cents = int(round(float(p.etf_company_contribution or 0) * 100))
+        ws.append([etf_no, init, sur, e.idnumber or "", ym, ym, cents])
+
+    return _xlsx_response(wb, f"ETF_{ym}.xlsx")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def export_bank(request):
+    """People's Bank CIB payroll file (6 columns)."""
+    gate = _gate(request)
+    if gate: return gate
+    month = request.GET.get("month")
+    if not month:
+        return Response({"error": "month=YYYY-MM is required."}, status=400)
+    try:
+        payrolls, sd, ed = _locked_payrolls_for_month(
+            month, outlet_id=_int_or_none(request.GET.get("outlet_id"))
+        )
+    except (ValueError, IndexError):
+        return Response({"error": "Invalid month format."}, status=400)
+    ym = sd.strftime("%Y-%m")
+    narration_tmpl = f"Salary {ym}"
+
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Bank"
+    ws.append([
+        "Beneficiary A/C", "Bank Code", "Branch Code", "Amount",
+        "Beneficiary Name", "Narration",
+    ])
+    missing = []
+    for p in payrolls:
+        e = p.employee
+        fp = getattr(e, "financial_profile", None)
+        acc = (fp.bank_account_no if fp else "") or ""
+        bcode = (fp.bank_code if fp else "") or ""
+        branch = (fp.bank_branch_code if fp else "") or ""
+        if not acc or not bcode or not branch:
+            missing.append(e.fullname or f"#{e.employee_id}")
+        ws.append([
+            acc, bcode, branch,
+            round(float(p.net_pay or 0), 2),
+            e.fullname or "",
+            narration_tmpl,
+        ])
+
+    filename = f"PeoplesBank_Salary_{sd.strftime('%Y%m')}.xlsx"
+    resp = _xlsx_response(wb, filename)
+    if missing:
+        resp["X-Missing-Bank-Details"] = ", ".join(missing[:20])
     return resp

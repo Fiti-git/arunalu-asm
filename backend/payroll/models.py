@@ -213,3 +213,105 @@ class APITSlab(models.Model):
     def __str__(self):
         hi = self.max_monthly if self.max_monthly is not None else "∞"
         return f"{self.min_monthly}–{hi} @ {self.rate_pct}%"
+
+
+class PayrollCompanyConfig(models.Model):
+    """Singleton — company-level constants needed for EPF/ETF/Bank exports."""
+    company_name = models.CharField(max_length=200, blank=True, default="")
+
+    # EPF / ETF employer identity
+    employer_epf_number = models.CharField(max_length=20, blank=True, default="")
+    employer_etf_number = models.CharField(max_length=20, blank=True, default="")
+    epf_zone_code = models.CharField(max_length=5, blank=True, default="A")
+    # Increments each time EPF export is generated (field 13 in EPF file)
+    data_submission_number = models.PositiveIntegerField(default=1)
+
+    # Company disbursement bank account
+    company_bank_name = models.CharField(max_length=100, blank=True, default="")
+    company_bank_code = models.CharField(max_length=10, blank=True, default="")
+    company_bank_branch_code = models.CharField(max_length=10, blank=True, default="")
+    company_bank_account_no = models.CharField(max_length=30, blank=True, default="")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Payroll Company Config"
+        verbose_name_plural = "Payroll Company Config"
+
+    def __str__(self):
+        return self.company_name or "Payroll Company Config"
+
+    @classmethod
+    def get_solo(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj
+
+
+class EmployeeFinancialProfile(models.Model):
+    """Per-employee payroll/compliance data that isn't on the core Employee row."""
+    MEMBER_STATUS_EXISTING = "E"
+    MEMBER_STATUS_NEW = "N"
+    MEMBER_STATUS_CHOICES = [
+        (MEMBER_STATUS_EXISTING, "Existing"),
+        (MEMBER_STATUS_NEW, "New"),
+    ]
+
+    employee = models.OneToOneField(
+        Employee, on_delete=models.CASCADE, related_name="financial_profile",
+    )
+
+    # Name parts — EPF/ETF need these split. Default: derived from fullname on save.
+    surname = models.CharField(max_length=100, blank=True, default="")
+    initials = models.CharField(max_length=30, blank=True, default="")
+
+    # EPF
+    epf_member_status = models.CharField(
+        max_length=1, choices=MEMBER_STATUS_CHOICES,
+        default=MEMBER_STATUS_EXISTING,
+    )
+    # ETF — usually same as EPF member number; explicit field lets it differ
+    etf_member_no = models.CharField(max_length=20, blank=True, default="")
+
+    # Bank (for salary disbursement)
+    bank_name = models.CharField(max_length=100, blank=True, default="")
+    bank_code = models.CharField(max_length=10, blank=True, default="")
+    bank_branch_code = models.CharField(max_length=10, blank=True, default="")
+    bank_account_no = models.CharField(max_length=30, blank=True, default="")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"FinProfile({self.employee_id})"
+
+
+class PayrollAuditLog(models.Model):
+    """Append-only trail of payroll mutations: create/edit/lock/unlock/delete."""
+    ACTION_CHOICES = [
+        ("create", "Create"),
+        ("edit", "Edit"),
+        ("lock", "Lock"),
+        ("unlock", "Unlock"),
+        ("delete", "Delete"),
+    ]
+
+    payroll = models.ForeignKey(
+        Payroll, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="audit_logs",
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="payroll_audit_actions",
+    )
+    action = models.CharField(max_length=16, choices=ACTION_CHOICES)
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        uid = self.user_id or "?"
+        pid = self.payroll_id or "deleted"
+        return f"audit[{self.action}] payroll={pid} user={uid} at {self.created_at}"

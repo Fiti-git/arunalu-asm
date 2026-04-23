@@ -3,7 +3,60 @@ from rest_framework import serializers
 from .models import (
     AllowanceType, AttendanceBonusTier, WorkSchedule,
     Payroll, PayrollAllowance, PayrollDeduction, APITSlab,
+    PayrollAuditLog, PayrollCompanyConfig, EmployeeFinancialProfile,
 )
+
+
+class PayrollCompanyConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PayrollCompanyConfig
+        fields = [
+            "id", "company_name",
+            "employer_epf_number", "employer_etf_number",
+            "epf_zone_code", "data_submission_number",
+            "company_bank_name", "company_bank_code",
+            "company_bank_branch_code", "company_bank_account_no",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "updated_at"]
+
+
+class EmployeeFinancialRowSerializer(serializers.Serializer):
+    """Flat row combining Employee + FinancialProfile for the grid screens."""
+    # Employee (core, editable)
+    employee_id = serializers.IntegerField(read_only=True)
+    empcode = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    fullname = serializers.CharField(required=False, allow_blank=True)
+    idnumber = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    basic_salary = serializers.FloatField(required=False, allow_null=True)
+    epf_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    epf_grade = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    epf_cal_date = serializers.DateField(required=False, allow_null=True)
+    epf_emp_per = serializers.FloatField(required=False, allow_null=True)
+    epf_com_per = serializers.FloatField(required=False, allow_null=True)
+    etf_com_per = serializers.FloatField(required=False, allow_null=True)
+    primary_outlet_name = serializers.CharField(read_only=True, allow_null=True)
+
+    # FinancialProfile
+    surname = serializers.CharField(required=False, allow_blank=True)
+    initials = serializers.CharField(required=False, allow_blank=True)
+    epf_member_status = serializers.ChoiceField(
+        choices=EmployeeFinancialProfile.MEMBER_STATUS_CHOICES, required=False,
+    )
+    etf_member_no = serializers.CharField(required=False, allow_blank=True)
+    bank_name = serializers.CharField(required=False, allow_blank=True)
+    bank_code = serializers.CharField(required=False, allow_blank=True)
+    bank_branch_code = serializers.CharField(required=False, allow_blank=True)
+    bank_account_no = serializers.CharField(required=False, allow_blank=True)
+
+
+class PayrollAuditLogSerializer(serializers.ModelSerializer):
+    user_username = serializers.CharField(source="user.username", read_only=True, default=None)
+
+    class Meta:
+        model = PayrollAuditLog
+        fields = ["id", "payroll", "user", "user_username", "action", "details", "created_at"]
+        read_only_fields = fields
 
 
 class APITSlabSerializer(serializers.ModelSerializer):

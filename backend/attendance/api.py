@@ -20,13 +20,44 @@ from notifications.sms import send_sms
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Upload validation
+# ---------------------------------------------------------------------------
+ALLOWED_PHOTO_MIME = {"image/jpeg", "image/jpg", "image/png"}
+MAX_PHOTO_BYTES = 8 * 1024 * 1024  # 8 MiB
+
+
+def _validate_photo(f):
+    """Return an error-string if the uploaded photo is rejected, else None."""
+    if not f:
+        return "Photo is required."
+    try:
+        size = f.size
+    except AttributeError:
+        size = None
+    if size is not None and size > MAX_PHOTO_BYTES:
+        return f"Photo too large (max {MAX_PHOTO_BYTES // (1024 * 1024)}MiB)."
+    ctype = (getattr(f, "content_type", "") or "").lower()
+    if ctype and ctype not in ALLOWED_PHOTO_MIME:
+        return "Photo must be a JPEG or PNG image."
+    return None
+
+
+def _rekognition_available():
+    return bool(
+        getattr(settings, "AWS_ACCESS_KEY_ID", None)
+        and getattr(settings, "AWS_SECRET_ACCESS_KEY", None)
+        and getattr(settings, "AWS_REKOGNITION_REGION", None)
+    )
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def punch_in(request):
     try:
         try:
             employee = request.user.employee
-        except:
+        except (Employee.DoesNotExist, AttributeError):
             return Response(
                 {"error": "Employee profile not found for this user"},
                 status=status.HTTP_403_FORBIDDEN
@@ -35,9 +66,10 @@ def punch_in(request):
 
         if not all(field in data for field in ['check_in_lat', 'check_in_long']):
             return Response({"error": "Missing required location fields"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if 'photo_check_in' not in request.FILES:
-            return Response({"error": "Photo is required for punch-in"}, status=status.HTTP_400_BAD_REQUEST)
+
+        photo_err = _validate_photo(request.FILES.get('photo_check_in'))
+        if photo_err:
+            return Response({"error": photo_err}, status=status.HTTP_400_BAD_REQUEST)
 
         open_attendance = Attendance.objects.filter(
             employee=employee,
@@ -76,34 +108,49 @@ def punch_in(request):
             response_message = "Punch-in recorded. Your photo has been submitted for verification."
 
         elif employee.reference_photo:
-            # CORRECTED: Use the new field name
             employee.punchin_selfie = photo_file
             employee.save()
-            
-            try:
-                employee.reference_photo.open('rb')
-                employee.punchin_selfie.open('rb')
-                source_bytes = employee.reference_photo.read()
-                target_bytes = employee.punchin_selfie.read()
-                employee.reference_photo.close()
-                employee.punchin_selfie.close()
-                
-                result = compare_faces(
-                    source_bytes=source_bytes,
-                    target_bytes=target_bytes,
-                    aws_access_key=settings.AWS_ACCESS_KEY_ID,
-                    aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
-                    aws_region=settings.AWS_REKOGNITION_REGION
-                )
 
-                if result.get('FaceMatches'):
-                    verified_status = 'Verified'
-                else:
-                    return Response({"error": "Face recognition failed. Please try again."}, status=status.HTTP_400_BAD_REQUEST)
-            
-            except Exception as e:
-                logger.error(f"Face comparison error for employee {employee.employee_id}: {str(e)}")
-                return Response({"error": "Could not process image. Ensure your face is clearly visible."}, status=status.HTTP_400_BAD_REQUEST)
+            if not _rekognition_available():
+                # AWS not configured: accept punch but flag for manual review
+                verified_status = 'Pending'
+                response_message = (
+                    "Punch-in recorded. Face verification service is unavailable; "
+                    "your record will be reviewed manually."
+                )
+            else:
+                try:
+                    employee.reference_photo.open('rb')
+                    employee.punchin_selfie.open('rb')
+                    source_bytes = employee.reference_photo.read()
+                    target_bytes = employee.punchin_selfie.read()
+                    employee.reference_photo.close()
+                    employee.punchin_selfie.close()
+
+                    result = compare_faces(
+                        source_bytes=source_bytes,
+                        target_bytes=target_bytes,
+                        aws_access_key=settings.AWS_ACCESS_KEY_ID,
+                        aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
+                        aws_region=settings.AWS_REKOGNITION_REGION
+                    )
+
+                    if result.get('FaceMatches'):
+                        verified_status = 'Verified'
+                    else:
+                        return Response({"error": "Face recognition failed. Please try again."}, status=status.HTTP_400_BAD_REQUEST)
+
+                except (OSError, ValueError) as e:
+                    logger.error(f"Face image read error for employee {employee.employee_id}: {e}")
+                    return Response({"error": "Could not process image. Ensure your face is clearly visible."}, status=status.HTTP_400_BAD_REQUEST)
+                except Exception as e:
+                    # Rekognition/network outage — degrade gracefully
+                    logger.exception(f"Rekognition unavailable for employee {employee.employee_id}: {e}")
+                    verified_status = 'Pending'
+                    response_message = (
+                        "Punch-in recorded. Face verification service is unavailable; "
+                        "your record will be reviewed manually."
+                    )
 
         # Check if the employee has an approved leave on the punch-in date
         leave_record = EmpLeave.objects.filter(
@@ -146,7 +193,7 @@ def punch_out(request):
     try:
         try:
             employee = request.user.employee
-        except:
+        except (Employee.DoesNotExist, AttributeError):
             return Response(
                 {"error": "Employee profile not found for this user"},
                 status=status.HTTP_403_FORBIDDEN
@@ -157,12 +204,12 @@ def punch_out(request):
         # 1. Validate location fields
         if not all(field in data for field in ['check_out_lat', 'check_out_long']):
             return Response({"error": "Missing required location fields"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # 2. Validate photo
-        if 'photo_check_out' not in request.FILES:
-            return Response({"error": "Photo is required for punch-out"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 2. Validate photo (size + MIME)
         photo_file = request.FILES.get('photo_check_out')
+        photo_err = _validate_photo(photo_file)
+        if photo_err:
+            return Response({"error": photo_err}, status=status.HTTP_400_BAD_REQUEST)
 
         # 3. Check active attendance
         attendance = Attendance.objects.filter(
@@ -195,29 +242,44 @@ def punch_out(request):
             )
 
         # 7. Face recognition BEFORE saving selfie
-        try:
-            employee.reference_photo.open('rb')
-            source_bytes = employee.reference_photo.read()
-            employee.reference_photo.close()
+        punchout_verification = "Verified"
+        if not _rekognition_available():
+            # AWS not configured — accept but mark for manual review
+            punchout_verification = "Pending"
+        else:
+            try:
+                employee.reference_photo.open('rb')
+                source_bytes = employee.reference_photo.read()
+                employee.reference_photo.close()
 
-            target_bytes = photo_file.read()  # Read directly without saving first
+                target_bytes = photo_file.read()  # Read directly without saving first
 
-            result = compare_faces(
-                source_bytes=source_bytes,
-                target_bytes=target_bytes,
-                aws_access_key=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
-                aws_region=settings.AWS_REKOGNITION_REGION
-            )
+                result = compare_faces(
+                    source_bytes=source_bytes,
+                    target_bytes=target_bytes,
+                    aws_access_key=settings.AWS_ACCESS_KEY_ID,
+                    aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
+                    aws_region=settings.AWS_REKOGNITION_REGION
+                )
 
-            if not result.get('FaceMatches'):
-                return Response({"error": "Face recognition failed. Please try again."}, status=401)
+                if not result.get('FaceMatches'):
+                    return Response({"error": "Face recognition failed. Please try again."}, status=401)
 
-        except Exception as e:
-            logger.error(f"Face comparison error during punch-out for employee {employee.employee_id}: {str(e)}")
-            return Response({"error": "Could not process image. Ensure your face is clearly visible."}, status=400)
+            except (OSError, ValueError) as e:
+                logger.error(f"Face image read error during punch-out for employee {employee.employee_id}: {e}")
+                return Response({"error": "Could not process image. Ensure your face is clearly visible."}, status=400)
+            except Exception as e:
+                # Rekognition/network outage — degrade gracefully
+                logger.exception(f"Rekognition unavailable during punch-out for employee {employee.employee_id}: {e}")
+                punchout_verification = "Pending"
+            finally:
+                # Ensure the uploaded stream can still be saved to storage
+                try:
+                    photo_file.seek(0)
+                except (AttributeError, OSError):
+                    pass
 
-        # 8. Only save selfie AFTER verification passes
+        # 8. Only save selfie AFTER verification passes (or was skipped/degraded)
         employee.punchout_selfie = photo_file
         employee.save()
 
@@ -225,7 +287,7 @@ def punch_out(request):
         attendance.check_out_time = timezone.now()
         attendance.check_out_lat = check_out_lat
         attendance.check_out_long = check_out_long
-        attendance.punchout_verification = "Verified"
+        attendance.punchout_verification = punchout_verification
         attendance.save()
 
         return Response({
@@ -449,7 +511,11 @@ class LeaveRequestAPIView(APIView):
 
     def post(self, request):
         user = request.user
-        employee = user.employee  # assuming one-to-one relation
+        try:
+            employee = user.employee
+        except (Employee.DoesNotExist, AttributeError):
+            return Response({'error': 'Employee profile not found for this user.'},
+                            status=status.HTTP_403_FORBIDDEN)
 
         leave_type_id = request.data.get('leave_type')
         leave_dates = request.data.get('leave_dates')
@@ -463,20 +529,38 @@ class LeaveRequestAPIView(APIView):
         except LeaveType.DoesNotExist:
             return Response({'error': 'Invalid leave_type.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        created = []
+        today = timezone.localdate()
+        max_future = today + timedelta(days=180)
+
+        # Parse & validate all dates first so we don't create partial rows
+        parsed = []
         for date_str in leave_dates:
             try:
-                leave_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                obj = EmpLeave.objects.create(
-                    employee=employee,
-                    leave_date=leave_date,
-                    leave_type=leave_type,
-                    remarks=remarks,
-                    status='pending'
-                )
-                created.append(obj.leave_refno)
+                ld = datetime.strptime(date_str, "%Y-%m-%d").date()
             except ValueError:
                 return Response({'error': f'Invalid date format: {date_str}'}, status=status.HTTP_400_BAD_REQUEST)
+            if ld < today:
+                return Response(
+                    {'error': f'Leave date {ld} is in the past. Retroactive leaves must be entered by an admin.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if ld > max_future:
+                return Response(
+                    {'error': f'Leave date {ld} is more than 180 days in the future.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            parsed.append(ld)
+
+        created = []
+        for leave_date in parsed:
+            obj = EmpLeave.objects.create(
+                employee=employee,
+                leave_date=leave_date,
+                leave_type=leave_type,
+                remarks=remarks,
+                status='pending'
+            )
+            created.append(obj.leave_refno)
 
         return Response({'message': 'Leave requests submitted.', 'created_ids': created}, status=status.HTTP_201_CREATED)
     

@@ -57,6 +57,9 @@ const PayrollReport = lazy(() => import('./pages/payroll/PayrollReport'));
 const AllowanceTypes = lazy(() => import('./pages/payroll/AllowanceTypes'));
 const BonusTiers = lazy(() => import('./pages/payroll/BonusTiers'));
 const WorkSchedules = lazy(() => import('./pages/payroll/WorkSchedules'));
+const EmployeeSalaryCompliance = lazy(() => import('./pages/payroll/EmployeeSalaryCompliance'));
+const EmployeeBankDetails = lazy(() => import('./pages/payroll/EmployeeBankDetails'));
+const PayrollCompanyConfig = lazy(() => import('./pages/payroll/PayrollCompanyConfig'));
 const ApitSlabs = lazy(() => import('./pages/payroll/ApitSlabs'));
 const GratuityReport = lazy(() => import('./pages/payroll/GratuityReport'));
 
@@ -324,6 +327,15 @@ function App() {
           } />
           <Route path="/admin/payroll/gratuity" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><GratuityReport /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/employee-salary" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EmployeeSalaryCompliance /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/employee-bank" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EmployeeBankDetails /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/company-config" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><PayrollCompanyConfig /></FeatureGate></Layout></ProtectedRoute>
           } />
 
           {/* Fingerprint Import — admin + manager */}
