@@ -308,8 +308,11 @@ from rest_framework.response import Response
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_my_attendance(request):
+    from main.active_periods import filter_qs_by_active_periods
     employee = request.user.employee
-    attendance = Attendance.objects.filter(employee=employee).order_by('-date')
+    attendance = filter_qs_by_active_periods(
+        Attendance.objects.filter(employee=employee), employee_field='employee', date_field='date'
+    ).order_by('-date')
     
     data = [{
         'date': att.date,
@@ -331,8 +334,11 @@ def get_outlet_attendance(request):
     if not request.user.groups.filter(name="Manager").exists(): 
         return Response({"message": "You are not authorized to view this information."}, status=403)
     
+    from main.active_periods import filter_qs_by_active_periods
     outlet_staff = Employee.objects.filter(outlets__in=employee.outlets.all()).distinct()
-    attendance = Attendance.objects.filter(employee__in=outlet_staff).order_by('-date')
+    attendance = filter_qs_by_active_periods(
+        Attendance.objects.filter(employee__in=outlet_staff), employee_field='employee', date_field='date'
+    ).order_by('-date')
 
     data = [{
         'employee': att.employee.fullname,
@@ -350,7 +356,10 @@ def get_outlet_attendance(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
 def get_all_attendance(request):
-    attendance = Attendance.objects.all().order_by('-date')
+    from main.active_periods import filter_qs_by_active_periods
+    attendance = filter_qs_by_active_periods(
+        Attendance.objects.all(), employee_field='employee', date_field='date'
+    ).order_by('-date')
 
     data = [{
         'employee': att.employee.fullname,
@@ -769,10 +778,13 @@ def generate_report(request):
 
     report = []
 
-    # Loop through each day and employee
+    # Loop through each day and employee — skip days when employee was inactive
+    from main.active_periods import is_active_on
     current_date = start_date
     while current_date <= end_date:
         for employee in employees:
+            if not is_active_on(employee, current_date):
+                continue
             attendance = Attendance.objects.filter(employee=employee, date=current_date).first()
             leave = None if attendance else EmpLeave.objects.filter(
                 employee=employee, leave_date=current_date, leave_status="Approved"
@@ -1309,6 +1321,8 @@ def v2_attendance_list(request):
     if employee_id:
         queryset = queryset.filter(employee_id=employee_id)
 
+    from main.active_periods import filter_qs_by_active_periods
+    queryset = filter_qs_by_active_periods(queryset, employee_field='employee', date_field='date')
     queryset = queryset.distinct().order_by('-date', 'employee')
     total = queryset.count()
 
@@ -1802,6 +1816,9 @@ def v3_attendance_list(request):
         qs = qs.filter(date__lte=end_date)
     if status_filter and status_filter != 'all':
         qs = qs.filter(status=status_filter)
+
+    from main.active_periods import filter_qs_by_active_periods
+    qs = filter_qs_by_active_periods(qs, employee_field='employee', date_field='date')
 
     qs = qs.order_by('-date', '-check_in_time')
 

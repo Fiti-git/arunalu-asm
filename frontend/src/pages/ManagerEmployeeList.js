@@ -3,7 +3,7 @@ import {
   Box, Avatar, Typography, MenuItem, Select, FormControl, InputLabel,
   Chip, TextField, InputAdornment, CircularProgress, Drawer, IconButton,
   Divider, Button, Alert, Dialog, DialogContent, DialogActions, Tooltip,
-  Snackbar,
+  Snackbar, FormControlLabel, Switch,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
@@ -38,14 +38,22 @@ function EmployeeCard({ emp, onOpen }) {
       onClick={() => onOpen(emp)}
       sx={{
         bgcolor: 'background.paper',
-        border: 1, borderColor: 'divider', borderRadius: 3,
+        border: 1, borderColor: emp.is_active ? 'divider' : 'error.light', borderRadius: 3,
         overflow: 'hidden',
+        position: 'relative',
+        opacity: emp.is_active ? 1 : 0.75,
         display: 'flex', flexDirection: 'column',
         cursor: 'pointer',
         transition: 'box-shadow 0.18s, transform 0.18s',
         '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' },
       }}
     >
+      {!emp.is_active && (
+        <Chip
+          label="Inactive" size="small" color="error" variant="outlined"
+          sx={{ position: 'absolute', top: 8, right: 8, fontWeight: 700, zIndex: 1, bgcolor: 'background.paper' }}
+        />
+      )}
       <Box sx={{
         height: 64, position: 'relative',
         bgcolor: 'primary.main',
@@ -125,6 +133,7 @@ export default function ManagerEmployeeList() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
 
   const [drawer, setDrawer] = useState({ open: false, emp: null });
   const [drawerError, setDrawerError] = useState('');
@@ -172,15 +181,16 @@ export default function ManagerEmployeeList() {
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
   const filteredEmployees = useMemo(() => {
-    if (!search.trim()) return employees;
+    let list = showInactive ? employees : employees.filter((e) => e.is_active);
+    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return employees.filter((e) =>
+    return list.filter((e) =>
       (e.fullname || '').toLowerCase().includes(q) ||
       (e.empcode || '').toLowerCase().includes(q) ||
       (e.idnumber || '').toLowerCase().includes(q) ||
       (`${e.first_name || ''} ${e.last_name || ''}`).toLowerCase().includes(q)
     );
-  }, [employees, search]);
+  }, [employees, search, showInactive]);
 
   const openDrawer = (emp) => {
     setDrawer({ open: true, emp });
@@ -246,16 +256,22 @@ export default function ManagerEmployeeList() {
           ? `${filteredEmployees.length} employee${filteredEmployees.length === 1 ? '' : 's'} at ${selectedOutletName}`
           : 'Pick an outlet to begin'}
         actions={
-          <TextField
-            size="small"
-            placeholder="Search employees…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            InputProps={{
-              startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
-            }}
-            sx={{ minWidth: 260 }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <TextField
+              size="small"
+              placeholder="Search employees…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              InputProps={{
+                startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+              }}
+              sx={{ minWidth: 260 }}
+            />
+            <FormControlLabel
+              control={<Switch size="small" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />}
+              label={<Typography variant="body2">Show inactive</Typography>}
+            />
+          </Box>
         }
       />
 

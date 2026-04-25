@@ -99,7 +99,10 @@ def _compute_summary(employee, sd, ed, salary):
 
     daily_lines = []
 
+    from main.active_periods import is_active_on
     for d in _days_in_range(sd, ed):
+        if not is_active_on(employee, d):
+            continue
         a = att.get(d)
         lv = leaves.get(d)
         hol = holidays.get(d)

@@ -56,8 +56,9 @@ class DashboardOverviewAPIView(APIView):
     """
     def get(self, request):
         try:
-            query = """
-            WITH emp_summary AS (
+            query = f"""
+            WITH {ACTIVE_PERIODS_CTE},
+            emp_summary AS (
               SELECT
                 COUNT(*) AS total_emp,
                 COUNT(*) FILTER (WHERE is_active = TRUE) AS active_emp,
@@ -72,12 +73,20 @@ class DashboardOverviewAPIView(APIView):
               FROM public.main_attendance a
               WHERE a.date = CURRENT_DATE
                 AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = a.employee_id
+                              AND a.date >= ap.start_d
+                              AND (ap.end_d IS NULL OR a.date <= ap.end_d))
             ),
             leave_today AS (
               SELECT COUNT(DISTINCT l.employee_id) AS on_leave
               FROM public.main_empleave l
               WHERE l.leave_date = CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = l.employee_id
+                              AND l.leave_date >= ap.start_d
+                              AND (ap.end_d IS NULL OR l.leave_date <= ap.end_d))
             ),
             pending_leaves AS (
               SELECT COUNT(*) AS pending_leave_req
@@ -121,8 +130,9 @@ class LeavePresenceTrendAPIView(APIView):
                 return Response({"detail": "days must be between 1 and 30"}, status=status.HTTP_400_BAD_REQUEST)
 
             # We will use INTERVAL placeholders - pass days as string to avoid SQL injection via formatting
-            query = """
-            WITH active_emp AS (
+            query = f"""
+            WITH {ACTIVE_PERIODS_CTE},
+            active_emp AS (
               SELECT employee_id FROM public.main_employee WHERE is_active = TRUE
             ),
             dates AS (
@@ -131,17 +141,23 @@ class LeavePresenceTrendAPIView(APIView):
             present_summary AS (
               SELECT a.date::date AS date, COUNT(DISTINCT a.employee_id) AS present_count
               FROM public.main_attendance a
-              INNER JOIN active_emp e ON e.employee_id = a.employee_id
               WHERE a.date BETWEEN CURRENT_DATE - INTERVAL '%s days'::interval + INTERVAL '1 day' AND CURRENT_DATE
                 AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = a.employee_id
+                              AND a.date >= ap.start_d
+                              AND (ap.end_d IS NULL OR a.date <= ap.end_d))
               GROUP BY a.date::date
             ),
             leave_summary AS (
               SELECT l.leave_date::date AS date, COUNT(DISTINCT l.employee_id) AS leave_count
               FROM public.main_empleave l
-              INNER JOIN active_emp e ON e.employee_id = l.employee_id
               WHERE l.leave_date BETWEEN CURRENT_DATE - INTERVAL '%s days'::interval + INTERVAL '1 day' AND CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = l.employee_id
+                              AND l.leave_date >= ap.start_d
+                              AND (ap.end_d IS NULL OR l.leave_date <= ap.end_d))
               GROUP BY l.leave_date::date
             ),
             total_emp AS (
@@ -175,8 +191,8 @@ class OutletSummaryAPIView(APIView):
     """
     def get(self, request):
         try:
-            query = """
-            WITH
+            query = f"""
+            WITH {ACTIVE_PERIODS_CTE},
             emp_outlet AS (
               SELECT eo.outlet_id, e.employee_id
               FROM public.main_employee_outlets eo
@@ -188,12 +204,20 @@ class OutletSummaryAPIView(APIView):
               FROM public.main_attendance a
               WHERE a.date = CURRENT_DATE
                 AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = a.employee_id
+                              AND a.date >= ap.start_d
+                              AND (ap.end_d IS NULL OR a.date <= ap.end_d))
             ),
             on_leave AS (
               SELECT DISTINCT l.employee_id
               FROM public.main_empleave l
               WHERE l.leave_date = CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = l.employee_id
+                              AND l.leave_date >= ap.start_d
+                              AND (ap.end_d IS NULL OR l.leave_date <= ap.end_d))
             )
             SELECT
               o.id AS outlet_id,
@@ -226,8 +250,8 @@ class EmployeeAttendanceSummaryAPIView(APIView):
     """
     def get(self, request):
         try:
-            query = """
-            WITH
+            query = f"""
+            WITH {ACTIVE_PERIODS_CTE},
             emp_outlet AS (
               SELECT e.employee_id,
                      u.first_name AS fullname,
@@ -248,6 +272,10 @@ class EmployeeAttendanceSummaryAPIView(APIView):
               WHERE a.date >= date_trunc('month', CURRENT_DATE)
                 AND a.date <= CURRENT_DATE
                 AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = a.employee_id
+                              AND a.date >= ap.start_d
+                              AND (ap.end_d IS NULL OR a.date <= ap.end_d))
               GROUP BY a.employee_id
             ),
             leave_days AS (
@@ -256,6 +284,10 @@ class EmployeeAttendanceSummaryAPIView(APIView):
               WHERE l.leave_date >= date_trunc('month', CURRENT_DATE)
                 AND l.leave_date <= CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = l.employee_id
+                              AND l.leave_date >= ap.start_d
+                              AND (ap.end_d IS NULL OR l.leave_date <= ap.end_d))
               GROUP BY l.employee_id
             ),
             working_days AS (SELECT COUNT(*) AS total_days FROM date_range)
@@ -299,8 +331,9 @@ class DashboardOverviewByOutletAPIView(APIView):
                 # fallback to global overview
                 return DashboardOverviewAPIView().get(request)
 
-            query = """
-            WITH filtered_employees AS (
+            query = f"""
+            WITH {ACTIVE_PERIODS_CTE},
+            filtered_employees AS (
               SELECT e.employee_id, e.is_active
               FROM public.main_employee e
               INNER JOIN public.main_employee_outlets eo ON eo.employee_id = e.employee_id
@@ -319,6 +352,10 @@ class DashboardOverviewByOutletAPIView(APIView):
               INNER JOIN filtered_employees fe ON fe.employee_id = a.employee_id
               WHERE a.date = CURRENT_DATE
                 AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = a.employee_id
+                              AND a.date >= ap.start_d
+                              AND (ap.end_d IS NULL OR a.date <= ap.end_d))
             ),
             leave_today AS (
               SELECT COUNT(DISTINCT l.employee_id) AS on_leave
@@ -326,6 +363,10 @@ class DashboardOverviewByOutletAPIView(APIView):
               INNER JOIN filtered_employees fe ON fe.employee_id = l.employee_id
               WHERE l.leave_date = CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = l.employee_id
+                              AND l.leave_date >= ap.start_d
+                              AND (ap.end_d IS NULL OR l.leave_date <= ap.end_d))
             ),
             pending_leaves AS (
               SELECT COUNT(*) AS pending_leave_req
@@ -374,8 +415,9 @@ class LeavePresenceTrendByOutletAPIView(APIView):
             if outlet_id in ('all', '', None):
                 return LeavePresenceTrendAPIView().get(request)
 
-            query = """
-            WITH active_emp AS (
+            query = f"""
+            WITH {ACTIVE_PERIODS_CTE},
+            active_emp AS (
               SELECT DISTINCT e.employee_id
               FROM public.main_employee e
               INNER JOIN public.main_employee_outlets eo ON eo.employee_id = e.employee_id
@@ -390,6 +432,10 @@ class LeavePresenceTrendByOutletAPIView(APIView):
               INNER JOIN active_emp e ON e.employee_id = a.employee_id
               WHERE a.date BETWEEN CURRENT_DATE - INTERVAL '%s days'::interval + INTERVAL '1 day' AND CURRENT_DATE
                 AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = a.employee_id
+                              AND a.date >= ap.start_d
+                              AND (ap.end_d IS NULL OR a.date <= ap.end_d))
               GROUP BY a.date::date
             ),
             leave_summary AS (
@@ -398,6 +444,10 @@ class LeavePresenceTrendByOutletAPIView(APIView):
               INNER JOIN active_emp e ON e.employee_id = l.employee_id
               WHERE l.leave_date BETWEEN CURRENT_DATE - INTERVAL '%s days'::interval + INTERVAL '1 day' AND CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = l.employee_id
+                              AND l.leave_date >= ap.start_d
+                              AND (ap.end_d IS NULL OR l.leave_date <= ap.end_d))
               GROUP BY l.leave_date::date
             ),
             total_emp AS (
@@ -435,8 +485,8 @@ class EmployeeAttendanceSummaryByOutletAPIView(APIView):
             if outlet_id in ('all', '', None):
                 return EmployeeAttendanceSummaryAPIView().get(request)
 
-            query = """
-            WITH
+            query = f"""
+            WITH {ACTIVE_PERIODS_CTE},
             emp_outlet AS (
               SELECT e.employee_id,
                      u.first_name AS fullname,
@@ -458,6 +508,10 @@ class EmployeeAttendanceSummaryByOutletAPIView(APIView):
               WHERE a.date >= date_trunc('month', CURRENT_DATE)
                 AND a.date <= CURRENT_DATE
                 AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = a.employee_id
+                              AND a.date >= ap.start_d
+                              AND (ap.end_d IS NULL OR a.date <= ap.end_d))
               GROUP BY a.employee_id
             ),
             leave_days AS (
@@ -467,6 +521,10 @@ class EmployeeAttendanceSummaryByOutletAPIView(APIView):
               WHERE l.leave_date >= date_trunc('month', CURRENT_DATE)
                 AND l.leave_date <= CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND EXISTS (SELECT 1 FROM active_periods ap
+                            WHERE ap.employee_id = l.employee_id
+                              AND l.leave_date >= ap.start_d
+                              AND (ap.end_d IS NULL OR l.leave_date <= ap.end_d))
               GROUP BY l.employee_id
             ),
             working_days AS (SELECT COUNT(*) AS total_days FROM date_range)
@@ -504,8 +562,9 @@ class EmployeeReportAPIView(APIView):
             end_date_str = request.query_params.get("end_date")
             start_date, end_date = parse_dates_or_default(start_date_str, end_date_str)
 
-            query = """
-            WITH emp_outlets AS (
+            query = f"""
+            WITH {ACTIVE_PERIODS_CTE},
+            emp_outlets AS (
                 SELECT
                     e.employee_id,
                     STRING_AGG(o.name, ', ') AS outlet_names,
@@ -534,6 +593,10 @@ class EmployeeReportAPIView(APIView):
                 FROM public.main_attendance a
                 WHERE a.date BETWEEN %s AND %s
                   AND a.employee_id = %s
+                  AND EXISTS (SELECT 1 FROM active_periods ap
+                              WHERE ap.employee_id = a.employee_id
+                                AND a.date >= ap.start_d
+                                AND (ap.end_d IS NULL OR a.date <= ap.end_d))
                 GROUP BY a.employee_id, a.date
             ),
             leaves AS (
@@ -550,6 +613,10 @@ class EmployeeReportAPIView(APIView):
                 WHERE LOWER(l.status) = 'approved'
                   AND l.leave_date BETWEEN %s AND %s
                   AND l.employee_id = %s
+                  AND EXISTS (SELECT 1 FROM active_periods ap
+                              WHERE ap.employee_id = l.employee_id
+                                AND l.leave_date >= ap.start_d
+                                AND (ap.end_d IS NULL OR l.leave_date <= ap.end_d))
             )
             SELECT
                 eo.employee_id,
@@ -576,6 +643,10 @@ class EmployeeReportAPIView(APIView):
             LEFT JOIN attendance a ON a.employee_id = eo.employee_id AND d.day = a.work_date
             LEFT JOIN leaves lv ON lv.employee_id = eo.employee_id AND d.day = lv.leave_date
             LEFT JOIN auth_user u ON eo.user_id = u.id
+            WHERE EXISTS (SELECT 1 FROM active_periods ap
+                          WHERE ap.employee_id = eo.employee_id
+                            AND d.day >= ap.start_d
+                            AND (ap.end_d IS NULL OR d.day <= ap.end_d))
             ORDER BY d.day DESC;
             """
 
@@ -1119,7 +1190,8 @@ class OutletSummaryOverviewAPIView(APIView):
             params = [outlet_ids, sd, ed, sd, ed, sd, ed, len(outlet_ids)]
 
         query = f"""
-        WITH {scoped_emp_cte},
+        WITH {ACTIVE_PERIODS_CTE},
+        {scoped_emp_cte},
         emp_summary AS (
           SELECT
             (SELECT COUNT(*) FROM scoped_emp) AS total_emp,
@@ -1135,6 +1207,7 @@ class OutletSummaryOverviewAPIView(APIView):
           INNER JOIN scoped_emp e ON e.employee_id = a.employee_id
           WHERE a.date BETWEEN %s AND %s
             AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+            {_active_period_exists('a', 'date')}
         ),
         leave_days AS (
           SELECT COUNT(*) AS c
@@ -1142,6 +1215,7 @@ class OutletSummaryOverviewAPIView(APIView):
           INNER JOIN scoped_emp e ON e.employee_id = l.employee_id
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            {_active_period_exists('l', 'leave_date')}
         ),
         totals AS (
           SELECT (SELECT COUNT(*) FROM scoped_emp) * (SELECT COUNT(*) FROM dates) AS possible_emp_days
@@ -1207,7 +1281,8 @@ class OutletSummaryTrendAPIView(APIView):
         params = leading_params + [sd, ed, sd, ed, sd, ed]
 
         query = f"""
-        WITH active_emp AS (
+        WITH {ACTIVE_PERIODS_CTE},
+        active_emp AS (
           SELECT e.employee_id FROM public.main_employee e
           WHERE e.is_active = TRUE AND e.primary_outlet_id IS NOT NULL {primary_filter}
         ),
@@ -1220,6 +1295,7 @@ class OutletSummaryTrendAPIView(APIView):
           INNER JOIN active_emp ae ON ae.employee_id = a.employee_id
           WHERE a.date BETWEEN %s AND %s
             AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+            {_active_period_exists('a', 'date')}
           GROUP BY a.date::date
         ),
         leave_summary AS (
@@ -1228,6 +1304,7 @@ class OutletSummaryTrendAPIView(APIView):
           INNER JOIN active_emp ae ON ae.employee_id = l.employee_id
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            {_active_period_exists('l', 'leave_date')}
           GROUP BY l.leave_date::date
         ),
         total_emp AS (SELECT COUNT(*) AS c FROM active_emp)
@@ -1273,7 +1350,7 @@ class OutletSummaryOutletsAPIView(APIView):
             extra_params = [scope_outlet_ids]
 
         query = f"""
-        WITH
+        WITH {ACTIVE_PERIODS_CTE},
         date_range AS (
           SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
         ),
@@ -1289,6 +1366,7 @@ class OutletSummaryOutletsAPIView(APIView):
           INNER JOIN emp_outlet eo ON eo.employee_id = a.employee_id
           WHERE a.date BETWEEN %s AND %s
             AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+            {_active_period_exists('a', 'date')}
           GROUP BY eo.outlet_id
         ),
         leave_rows AS (
@@ -1297,6 +1375,7 @@ class OutletSummaryOutletsAPIView(APIView):
           INNER JOIN emp_outlet eo ON eo.employee_id = l.employee_id
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            {_active_period_exists('l', 'leave_date')}
           GROUP BY eo.outlet_id
         ),
         outlet_totals AS (
@@ -1360,8 +1439,8 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
         if not is_admin and outlet_id not in (scope_outlet_ids or []):
             return Response({"error": "You are not assigned to this outlet."}, status=403)
 
-        query = """
-        WITH
+        query = f"""
+        WITH {ACTIVE_PERIODS_CTE},
         date_range AS (
           SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
         ),
@@ -1376,6 +1455,7 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
           FROM public.main_attendance a
           WHERE a.date BETWEEN %s AND %s
             AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+            {_active_period_exists('a', 'date')}
           GROUP BY a.employee_id
         ),
         leave_days AS (
@@ -1383,6 +1463,7 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
           FROM public.main_empleave l
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            {_active_period_exists('l', 'leave_date')}
           GROUP BY l.employee_id
         )
         SELECT
@@ -1415,27 +1496,86 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
 # =============================================================================
 
 def _scoped_emp_sql(is_admin, outlet_ids):
-    """Return (sql_fragment, params) that yields a scoped_emp CTE."""
+    """Return (sql_fragment, params) that yields a scoped_emp CTE.
+
+    Includes both active and previously-active employees so reports can show
+    historical records from employees who were deactivated. Per-record filtering
+    by active period is applied via the ``active_periods`` CTE (see
+    ``_active_periods_cte_sql``) at the attendance/leave subquery level.
+    """
     if is_admin:
         return (
             "scoped_emp AS ("
             "  SELECT e.employee_id, e.fullname, e.empcode,"
-            "         o.id AS primary_outlet_id, o.name AS primary_outlet_name"
+            "         o.id AS primary_outlet_id, o.name AS primary_outlet_name,"
+            "         e.is_active, e.inactive_date"
             "  FROM public.main_employee e"
             "  LEFT JOIN public.main_outlet o ON o.id = e.primary_outlet_id"
-            "  WHERE e.is_active = TRUE AND e.primary_outlet_id IS NOT NULL"
+            "  WHERE e.primary_outlet_id IS NOT NULL"
             ")",
             [],
         )
     return (
         "scoped_emp AS ("
         "  SELECT e.employee_id, e.fullname, e.empcode,"
-        "         o.id AS primary_outlet_id, o.name AS primary_outlet_name"
+        "         o.id AS primary_outlet_id, o.name AS primary_outlet_name,"
+        "         e.is_active, e.inactive_date"
         "  FROM public.main_employee e"
         "  LEFT JOIN public.main_outlet o ON o.id = e.primary_outlet_id"
-        "  WHERE e.is_active = TRUE AND e.primary_outlet_id = ANY(%s)"
+        "  WHERE e.primary_outlet_id = ANY(%s)"
         ")",
         [outlet_ids],
+    )
+
+
+# Reusable CTE that yields one row per (employee_id, start_d, end_d) for each
+# period during which the employee was active. ``end_d IS NULL`` means open-ended
+# (currently active). Used to filter attendance / leave records to only those
+# falling within an employee's active period.
+ACTIVE_PERIODS_CTE = """
+active_log AS (
+  SELECT employee_id,
+         action,
+         action_at::date AS d,
+         LEAD(action_at::date) OVER (PARTITION BY employee_id ORDER BY action_at) AS next_d
+  FROM public.main_employeestatuslog
+),
+active_periods AS (
+  -- Initial period from EPOCH to the first DEACTIVATED log for each employee
+  SELECT DISTINCT ON (employee_id) employee_id,
+         '1900-01-01'::date AS start_d,
+         d AS end_d
+  FROM active_log
+  WHERE action = 'DEACTIVATED'
+  ORDER BY employee_id, d
+  UNION ALL
+  -- Each ACTIVATED → next event (DEACTIVATED end, or open if no later event)
+  SELECT employee_id, d AS start_d, next_d AS end_d
+  FROM active_log
+  WHERE action = 'ACTIVATED'
+  UNION ALL
+  -- Employees with no status logs at all: full open window (or up to inactive_date)
+  SELECT e.employee_id,
+         '1900-01-01'::date AS start_d,
+         CASE WHEN e.is_active THEN NULL::date
+              ELSE COALESCE(e.inactive_date, '1900-01-01'::date) END AS end_d
+  FROM public.main_employee e
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.main_employeestatuslog l WHERE l.employee_id = e.employee_id
+  )
+)
+"""
+
+
+# Snippet to AND into a WHERE clause filtering attendance-style rows
+# by an employee's active period. Assumes ``a`` is the alias for the row
+# with ``employee_id`` and a date column ``date_col`` (default ``date``).
+def _active_period_exists(alias='a', date_col='date'):
+    return (
+        f" AND EXISTS (SELECT 1 FROM active_periods ap "
+        f"WHERE ap.employee_id = {alias}.employee_id "
+        f"AND {alias}.{date_col} >= ap.start_d "
+        f"AND (ap.end_d IS NULL OR {alias}.{date_col} <= ap.end_d))"
     )
 
 
@@ -1467,20 +1607,24 @@ class MonthlySheetAPIView(APIView):
         )
         dates = [r['d'] for r in dates_rows]
 
-        # Attendance status per emp per day
+        # Attendance status per emp per day (only within each employee's active periods)
         att = run_sql(
-            "SELECT employee_id, to_char(date, 'YYYY-MM-DD') AS d, status "
-            "FROM public.main_attendance "
-            "WHERE employee_id = ANY(%s) AND date BETWEEN %s AND %s",
+            f"WITH {ACTIVE_PERIODS_CTE} "
+            "SELECT a.employee_id, to_char(a.date, 'YYYY-MM-DD') AS d, a.status "
+            "FROM public.main_attendance a "
+            "WHERE a.employee_id = ANY(%s) AND a.date BETWEEN %s AND %s"
+            + _active_period_exists('a', 'date'),
             [emp_ids, sd, ed],
         ) if emp_ids else []
 
-        # Approved leaves per emp per day
+        # Approved leaves per emp per day (only within each employee's active periods)
         leaves = run_sql(
-            "SELECT employee_id, to_char(leave_date, 'YYYY-MM-DD') AS d "
-            "FROM public.main_empleave "
-            "WHERE employee_id = ANY(%s) AND leave_date BETWEEN %s AND %s "
-            "  AND LOWER(status) = 'approved'",
+            f"WITH {ACTIVE_PERIODS_CTE} "
+            "SELECT l.employee_id, to_char(l.leave_date, 'YYYY-MM-DD') AS d "
+            "FROM public.main_empleave l "
+            "WHERE l.employee_id = ANY(%s) AND l.leave_date BETWEEN %s AND %s "
+            "  AND LOWER(l.status) = 'approved'"
+            + _active_period_exists('l', 'leave_date'),
             [emp_ids, sd, ed],
         ) if emp_ids else []
 
@@ -1535,7 +1679,8 @@ class LateComersAPIView(APIView):
         scoped_cte, scope_params = _scoped_emp_sql(is_admin, outlet_ids)
 
         query = f"""
-        WITH {scoped_cte},
+        WITH {ACTIVE_PERIODS_CTE},
+        {scoped_cte},
         att AS (
           SELECT a.employee_id,
                  COUNT(*) FILTER (WHERE LOWER(a.status) = 'late') AS late_days,
@@ -1543,6 +1688,7 @@ class LateComersAPIView(APIView):
           FROM public.main_attendance a
           INNER JOIN scoped_emp s ON s.employee_id = a.employee_id
           WHERE a.date BETWEEN %s AND %s
+            {_active_period_exists('a', 'date')}
           GROUP BY a.employee_id
         )
         SELECT s.employee_id, s.fullname, s.empcode,
@@ -1587,7 +1733,8 @@ class AbsenteeismAPIView(APIView):
         scoped_cte, scope_params = _scoped_emp_sql(is_admin, outlet_ids)
 
         query = f"""
-        WITH {scoped_cte},
+        WITH {ACTIVE_PERIODS_CTE},
+        {scoped_cte},
         date_range AS (SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d),
         days_count AS (SELECT COUNT(*) AS n FROM date_range),
         present AS (
@@ -1595,6 +1742,7 @@ class AbsenteeismAPIView(APIView):
           FROM public.main_attendance a
           WHERE a.date BETWEEN %s AND %s
             AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
+            {_active_period_exists('a', 'date')}
           GROUP BY a.employee_id
         ),
         leaves AS (
@@ -1602,6 +1750,7 @@ class AbsenteeismAPIView(APIView):
           FROM public.main_empleave l
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            {_active_period_exists('l', 'leave_date')}
           GROUP BY l.employee_id
         )
         SELECT s.employee_id, s.fullname, s.empcode,
@@ -1675,7 +1824,8 @@ class BlankDatesAPIView(APIView):
             extra_params.append(employee_id)
 
         query = f"""
-        WITH {scoped_cte},
+        WITH {ACTIVE_PERIODS_CTE},
+        {scoped_cte},
         date_range AS (
           SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
         ),
@@ -1686,6 +1836,12 @@ class BlankDatesAPIView(APIView):
           FROM scoped_emp s
           CROSS JOIN date_range dr
           WHERE 1 = 1 {extra_where}
+            AND EXISTS (
+              SELECT 1 FROM active_periods ap
+              WHERE ap.employee_id = s.employee_id
+                AND dr.d >= ap.start_d
+                AND (ap.end_d IS NULL OR dr.d <= ap.end_d)
+            )
         ),
         att AS (
           SELECT a.employee_id, a.date AS d
@@ -1747,7 +1903,8 @@ class OvertimeAPIView(APIView):
         scoped_cte, scope_params = _scoped_emp_sql(is_admin, outlet_ids)
 
         query = f"""
-        WITH {scoped_cte},
+        WITH {ACTIVE_PERIODS_CTE},
+        {scoped_cte},
         att AS (
           SELECT a.employee_id,
                  COALESCE(SUM(a.ot_hours), 0) AS ot_hours,
@@ -1756,6 +1913,7 @@ class OvertimeAPIView(APIView):
           FROM public.main_attendance a
           INNER JOIN scoped_emp s ON s.employee_id = a.employee_id
           WHERE a.date BETWEEN %s AND %s
+            {_active_period_exists('a', 'date')}
           GROUP BY a.employee_id
         )
         SELECT s.employee_id, s.fullname, s.empcode,
@@ -1805,6 +1963,9 @@ class LocationVerificationAPIView(APIView):
 
         if not is_admin:
             qs = qs.filter(employee__outlets__id__in=outlet_ids).distinct()
+
+        from main.active_periods import filter_qs_by_active_periods
+        qs = filter_qs_by_active_periods(qs, employee_field='employee', date_field='date')
 
         def nearest(lat, lon, outlets):
             try:

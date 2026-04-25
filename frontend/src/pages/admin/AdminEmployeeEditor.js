@@ -276,6 +276,23 @@ const buildColumns = (onEdit) => [
     ),
   },
   {
+    field: 'is_active',
+    headerName: 'Status',
+    flex: 0.6,
+    minWidth: 110,
+    align: 'center',
+    headerAlign: 'center',
+    renderCell: ({ row }) => (
+      <Chip
+        label={row.is_active ? 'Active' : 'Inactive'}
+        size="small"
+        color={row.is_active ? 'success' : 'error'}
+        variant={row.is_active ? 'filled' : 'outlined'}
+        sx={{ fontWeight: 600 }}
+      />
+    ),
+  },
+  {
     field: 'cal_epf',
     headerName: 'Calc EPF',
     flex: 0.6,
@@ -319,6 +336,7 @@ export default function AdminEmployeeEditor() {
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [includeInactive, setIncludeInactive] = useState(false);
   const searchTimeout = useRef(null);
 
   // Create wizard
@@ -342,11 +360,11 @@ export default function AdminEmployeeEditor() {
   const watchedEditOutlets = editForm.watch('outlets');
 
   // ─── Fetch ──────────────────────────────────────────────────────────────
-  const fetchEmployees = useCallback(async (page = 1, q = '') => {
+  const fetchEmployees = useCallback(async (page = 1, q = '', inactive = includeInactive) => {
     setLoading(true);
     try {
       const [empRes, outletRes] = await Promise.all([
-        api.get('/api/v2/employees/', { params: { page, page_size: 25, ...(q ? { search: q } : {}) } }),
+        api.get('/api/v2/employees/', { params: { page, page_size: 25, ...(q ? { search: q } : {}), ...(inactive ? { include_inactive: 'true' } : {}) } }),
         api.get('/api/outlets/'),
       ]);
       const outletsMap = outletRes.data.reduce((a, o) => ({ ...a, [o.id]: o.name }), {});
@@ -371,9 +389,9 @@ export default function AdminEmployeeEditor() {
   }, []);
 
   useEffect(() => {
-    fetchEmployees(currentPage, search);
+    fetchEmployees(currentPage, search, includeInactive);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- search is debounced via handleSearchChange; pagination must preserve current search value
-  }, [currentPage, fetchEmployees]);
+  }, [currentPage, includeInactive, fetchEmployees]);
 
   const handleSearchChange = (e) => {
     const val = e.target.value;
@@ -532,6 +550,17 @@ export default function AdminEmployeeEditor() {
               onChange={handleSearchChange}
               placeholder="Search employees…"
             />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={includeInactive}
+                  onChange={(e) => { setCurrentPage(1); setIncludeInactive(e.target.checked); }}
+                />
+              }
+              label={<Typography variant="body2">Show inactive</Typography>}
+              sx={{ mr: 0 }}
+            />
             <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
               Add Employee
             </Button>
@@ -553,6 +582,7 @@ export default function AdminEmployeeEditor() {
           rows={employees}
           columns={buildColumns(openEdit)}
           getRowId={(row) => row.employee_id}
+          getRowClassName={(params) => (params.row.is_active ? '' : 'row-inactive')}
           loading={loading}
           rowHeight={72}
           columnHeaderHeight={52}
@@ -574,6 +604,7 @@ export default function AdminEmployeeEditor() {
             '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': { outline: 'none' },
             '& .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within': { outline: 'none' },
             '& .MuiDataGrid-row': { alignItems: 'center' },
+            '& .MuiDataGrid-row.row-inactive': { bgcolor: 'rgba(244,67,54,0.04)', opacity: 0.75 },
           }}
           slots={{
             noRowsOverlay: () => (
@@ -1010,7 +1041,7 @@ export default function AdminEmployeeEditor() {
               employee={editEmployee}
               onChanged={(updated) => {
                 setEditEmployee((prev) => prev ? { ...prev, is_active: updated.is_active } : prev);
-                fetchEmployees(currentPage, search);
+                fetchEmployees(currentPage, search, includeInactive);
               }}
               dense
             />

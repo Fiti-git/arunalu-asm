@@ -936,7 +936,11 @@ class AllAttendanceRecordsView(generics.ListAPIView):
                 Q(employee__empcode__icontains=search_query)
             )
 
-        return queryset.distinct() if queryset is not None else Attendance.objects.none()
+        if queryset is None:
+            return Attendance.objects.none()
+        from main.active_periods import filter_qs_by_active_periods
+        queryset = filter_qs_by_active_periods(queryset, employee_field='employee', date_field='date')
+        return queryset.distinct()
 
 class ChangepswrdView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1012,8 +1016,14 @@ def _get_outlet_ids(data):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def v2_employee_list(request):
-    """Return paginated active employees including primary_outlet."""
-    employees = Employee.objects.filter(is_active=True).select_related('primary_outlet', 'user')
+    """Return paginated employees including primary_outlet.
+    By default returns only active employees. Pass ?include_inactive=true to include
+    deactivated employees (so they can be viewed and reactivated).
+    """
+    include_inactive = str(request.query_params.get('include_inactive', '')).lower() in ('1', 'true', 'yes')
+    employees = Employee.objects.select_related('primary_outlet', 'user')
+    if not include_inactive:
+        employees = employees.filter(is_active=True)
     search = (request.query_params.get('search') or '').strip()
     if search:
         employees = employees.filter(
