@@ -1540,14 +1540,17 @@ active_log AS (
          LEAD(action_at::date) OVER (PARTITION BY employee_id ORDER BY action_at) AS next_d
   FROM public.main_employeestatuslog
 ),
-active_periods AS (
+first_deactivation AS (
   -- Initial period from EPOCH to the first DEACTIVATED log for each employee
-  (SELECT DISTINCT ON (employee_id) employee_id,
-          '1900-01-01'::date AS start_d,
-          d AS end_d
-   FROM active_log
-   WHERE action = 'DEACTIVATED'
-   ORDER BY employee_id, d)
+  SELECT DISTINCT ON (employee_id) employee_id,
+         '1900-01-01'::date AS start_d,
+         d AS end_d
+  FROM active_log
+  WHERE action = 'DEACTIVATED'
+  ORDER BY employee_id, d
+),
+active_periods AS (
+  SELECT employee_id, start_d, end_d FROM first_deactivation
   UNION ALL
   -- Each ACTIVATED → next event (DEACTIVATED end, or open if no later event)
   SELECT employee_id, d AS start_d, next_d AS end_d
