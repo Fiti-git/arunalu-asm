@@ -3,6 +3,7 @@ import { Box, useMediaQuery } from "@mui/material";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import LicenseBanner from "./LicenseBanner";
+import ChatBot from "./ChatBot";
 import {
   SIDEBAR_WIDTH_OPEN,
   SIDEBAR_WIDTH_COLLAPSED,
@@ -69,6 +70,7 @@ function Layout({ children }) {
           {children}
         </Box>
       </Box>
+      <ChatBot />
     </Box>
   );
 }

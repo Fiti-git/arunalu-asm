@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'fingerprint',
     'licensing',
     'notifications',
+    'chatbot',
 ]
 
 # ------------------------------------------------------------------------------

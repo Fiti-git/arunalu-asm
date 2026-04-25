@@ -193,6 +193,11 @@ urlpatterns = [
     # MOBILE API
     # -----------------
     path('mobile/', include('mobile_api.urls')),
+
+    # -----------------
+    # CHATBOT (LLM assistant)
+    # -----------------
+    path('api/chatbot/', include('chatbot.urls')),
 ]
 
 if settings.DEBUG:
