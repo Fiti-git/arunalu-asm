@@ -28,6 +28,7 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import api from 'utils/api';
 import { PageHeader, SectionLabel, SearchInput } from 'components/ui';
 import { pickAvatarColor } from 'theme/tokens';
+import EmployeeStatusControl from 'components/EmployeeStatusControl';
 
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://123.231.60.24:1605';
 
@@ -999,6 +1000,22 @@ export default function AdminEmployeeEditor() {
             </Box>
           )}
         </Box>
+
+        {editEmployee && (
+          <Box sx={{ px: 3, py: 1.5, borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper', flexShrink: 0 }}>
+            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              User Status
+            </Typography>
+            <EmployeeStatusControl
+              employee={editEmployee}
+              onChanged={(updated) => {
+                setEditEmployee((prev) => prev ? { ...prev, is_active: updated.is_active } : prev);
+                fetchEmployees(currentPage, search);
+              }}
+              dense
+            />
+          </Box>
+        )}
 
         <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: 'divider', bgcolor: 'grey.50', flexShrink: 0, display: 'flex', gap: 1.5 }}>
           <Button onClick={() => setEditDrawerOpen(false)} variant="outlined" sx={{ flex: 1 }}>

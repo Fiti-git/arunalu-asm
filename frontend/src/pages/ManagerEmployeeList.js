@@ -21,6 +21,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import api from 'utils/api';
 import { PageHeader } from 'components/ui';
 import { pickAvatarColor } from 'theme/tokens';
+import EmployeeStatusControl from 'components/EmployeeStatusControl';
 
 const BASE_URL = process.env.REACT_APP_API_URL || '';
 
@@ -412,6 +413,23 @@ export default function ManagerEmployeeList() {
             </Box>
 
             <Divider />
+
+            <Box sx={{ px: 3, pt: 1.5, pb: 0.5 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                User Status
+              </Typography>
+              <EmployeeStatusControl
+                employee={drawerEmp}
+                onChanged={(updated) => {
+                  setDrawer((prev) => prev.emp ? { ...prev, emp: { ...prev.emp, is_active: updated.is_active } } : prev);
+                  setEmployees((list) => list.map((e) =>
+                    e.employee_id === updated.employee_id ? { ...e, is_active: updated.is_active } : e
+                  ));
+                  setToast({ open: true, severity: 'success', message: updated.is_active ? 'Employee activated.' : 'Employee deactivated.' });
+                }}
+                dense
+              />
+            </Box>
 
             <Box sx={{ px: 3, py: 2, display: 'flex', gap: 1.5, flexDirection: 'column' }}>
               <Tooltip title="Set a new password for this user">

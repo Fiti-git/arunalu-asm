@@ -56,13 +56,6 @@ function Sidebar({ sidebarOpen, onClose }) {
       group: "Management",
     },
     {
-      text: "User Status",
-      path: "/admin/employees/status",
-      roles: ["Admin"],
-      icon: <ToggleOnIcon />,
-      group: "Management",
-    },
-    {
       text: "Outlets",
       path: "/admin/outlets",
       roles: ["Admin"],
