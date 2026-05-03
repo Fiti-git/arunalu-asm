@@ -183,6 +183,14 @@ function Sidebar({ sidebarOpen, onClose }) {
       feature: "payroll",
     },
     {
+      text: "EPF / Bank Directory",
+      path: "/admin/payroll/epf-directory",
+      roles: ["Admin"],
+      icon: <ToggleOnIcon />,
+      group: "Payroll",
+      feature: "payroll",
+    },
+    {
       text: "Outlet Allocations",
       path: "/admin/payroll/outlet-allocations",
       roles: ["Admin"],
@@ -276,6 +284,13 @@ function Sidebar({ sidebarOpen, onClose }) {
       icon: <BackupIcon />,
       group: "System",
       feature: "database_backup",
+    },
+    {
+      text: "Audit Trail",
+      path: "/admin/audit-trail",
+      roles: ["Admin"],
+      icon: <FactCheckIcon />,
+      group: "System",
     },
   ];
 

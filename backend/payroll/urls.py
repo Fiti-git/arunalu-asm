@@ -45,4 +45,22 @@ urlpatterns = [
     path("export/epf/", views.export_epf),
     path("export/etf/", views.export_etf),
     path("export/bank/", views.export_bank),
+
+    # Per-agency payroll profiles
+    path("agency-profiles/", views.agency_profile_list),
+    path("agency-profiles/<int:pk>/", views.agency_profile_detail),
+
+    # Lookup directories
+    path("lookups/epf-zones/", views.epf_zone_list),
+    path("lookups/epf-zones/<int:pk>/", views.epf_zone_detail),
+    path("lookups/banks/", views.bank_list),
+    path("lookups/banks/<int:pk>/", views.bank_detail),
+    path("lookups/bank-branches/", views.bank_branch_list),
+    path("lookups/bank-branches/<int:pk>/", views.bank_branch_detail),
+
+    # Outlet EPF pattern + generator
+    path("outlet-epf-patterns/", views.outlet_epf_pattern_list),
+    path("outlet-epf-patterns/<int:pk>/", views.outlet_epf_pattern_detail),
+    path("outlet-epf-patterns/outlet/<int:outlet_id>/generate/", views.outlet_epf_generate),
+    path("employees/<int:employee_id>/generate-epf/", views.employee_epf_generate),
 ]

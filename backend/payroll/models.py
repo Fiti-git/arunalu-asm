@@ -2,7 +2,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 
-from main.models import Employee
+from main.models import Employee, Agency, Outlet
 
 
 # ─── Config tables (admin CRUD) ─────────────────────────────────────────────
@@ -319,3 +319,116 @@ class PayrollAuditLog(models.Model):
         uid = self.user_id or "?"
         pid = self.payroll_id or "deleted"
         return f"audit[{self.action}] payroll={pid} user={uid} at {self.created_at}"
+
+
+# ─── Lookup directories (admin CRUD) ────────────────────────────────────────
+
+class EpfZone(models.Model):
+    """Managed list of EPF zone codes (e.g. A, B, C)."""
+    code = models.CharField(max_length=5, unique=True)
+    name = models.CharField(max_length=80, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["code"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}" if self.name else self.code
+
+
+class Bank(models.Model):
+    code = models.CharField(max_length=10, unique=True)
+    name = models.CharField(max_length=120)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class BankBranch(models.Model):
+    bank = models.ForeignKey(Bank, on_delete=models.CASCADE, related_name="branches")
+    code = models.CharField(max_length=10)
+    name = models.CharField(max_length=120)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["bank__name", "name"]
+        unique_together = [("bank", "code")]
+
+    def __str__(self):
+        return f"{self.bank.code}-{self.code} {self.name}"
+
+
+# ─── Per-agency payroll profile (overrides org-wide config) ─────────────────
+
+class AgencyPayrollProfile(models.Model):
+    """Per-agency overrides for EPF/ETF identity and disbursement bank.
+
+    Resolution rule for exports: employee → primary_outlet → outlet.agency →
+    AgencyPayrollProfile if present, else fall back to PayrollCompanyConfig.
+    """
+    agency = models.OneToOneField(
+        Agency, on_delete=models.CASCADE, related_name="payroll_profile",
+    )
+    company_name = models.CharField(max_length=200, blank=True, default="")
+    employer_epf_number = models.CharField(max_length=20, blank=True, default="")
+    employer_etf_number = models.CharField(max_length=20, blank=True, default="")
+    epf_zone_code = models.CharField(max_length=5, blank=True, default="")
+    data_submission_number = models.PositiveIntegerField(default=1)
+    last_epf_export_ym = models.CharField(max_length=6, blank=True, default="")
+
+    company_bank_name = models.CharField(max_length=100, blank=True, default="")
+    company_bank_code = models.CharField(max_length=10, blank=True, default="")
+    company_bank_branch_code = models.CharField(max_length=10, blank=True, default="")
+    company_bank_account_no = models.CharField(max_length=30, blank=True, default="")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["agency__name"]
+
+    def __str__(self):
+        return f"AgencyPayrollProfile({self.agency_id})"
+
+
+# ─── Outlet-defined EPF member-number pattern ───────────────────────────────
+
+class OutletEpfPattern(models.Model):
+    """Outlet defines the EPF member-number pattern; employees mapped to that
+    outlet draw their member number from it via an incrementing sequence.
+
+    Generated number = f"{prefix}{seq:0{padding}d}{suffix}".
+    """
+    outlet = models.OneToOneField(
+        Outlet, on_delete=models.CASCADE, related_name="epf_pattern",
+    )
+    prefix = models.CharField(max_length=20, blank=True, default="")
+    suffix = models.CharField(max_length=20, blank=True, default="")
+    padding = models.PositiveSmallIntegerField(default=4)
+    next_seq = models.PositiveIntegerField(default=1)
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["outlet__name"]
+
+    def __str__(self):
+        return f"EpfPattern({self.outlet_id} {self.prefix}{'#' * self.padding}{self.suffix})"
+
+    def render(self, seq=None):
+        s = self.next_seq if seq is None else seq
+        return f"{self.prefix}{str(s).zfill(self.padding)}{self.suffix}"
+
+    def issue(self):
+        """Return the next number and advance the counter atomically."""
+        from django.db import transaction
+        with transaction.atomic():
+            locked = OutletEpfPattern.objects.select_for_update().get(pk=self.pk)
+            num = locked.render()
+            locked.next_seq = locked.next_seq + 1
+            locked.save(update_fields=["next_seq", "updated_at"])
+            self.next_seq = locked.next_seq
+        return num

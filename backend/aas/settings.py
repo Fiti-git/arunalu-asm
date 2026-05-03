@@ -171,6 +171,24 @@ AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 AWS_REKOGNITION_REGION = os.getenv('AWS_REKOGNITION_REGION')
 
+# ------------------------------------------------------------------------------
+# CHATBOT (Groq) + WhatsApp Cloud API bridge
+# ------------------------------------------------------------------------------
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
+GROQ_MODEL = os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile')
+
+# WhatsApp Business Cloud API (Meta).
+# Set these env vars to enable inbound WhatsApp → chatbot replies:
+#   WHATSAPP_VERIFY_TOKEN  — random secret used during Meta webhook handshake
+#   WHATSAPP_ACCESS_TOKEN  — long-lived app access token (Bearer)
+#   WHATSAPP_PHONE_NUMBER_ID — sending phone-number ID from Meta dashboard
+#   WHATSAPP_APP_SECRET    — used to validate X-Hub-Signature-256 (recommended)
+WHATSAPP_VERIFY_TOKEN = os.getenv('WHATSAPP_VERIFY_TOKEN', '')
+WHATSAPP_ACCESS_TOKEN = os.getenv('WHATSAPP_ACCESS_TOKEN', '')
+WHATSAPP_PHONE_NUMBER_ID = os.getenv('WHATSAPP_PHONE_NUMBER_ID', '')
+WHATSAPP_APP_SECRET = os.getenv('WHATSAPP_APP_SECRET', '')
+WHATSAPP_GRAPH_VERSION = os.getenv('WHATSAPP_GRAPH_VERSION', 'v20.0')
+
 
 TEMPLATES = [
     {

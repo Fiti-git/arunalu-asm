@@ -1486,3 +1486,142 @@ def v2_outlet_delete(request, outlet_id):
     return Response({'message': 'Outlet deactivated.'}, status=status.HTTP_200_OK)
 
 
+
+
+# ─── Combined audit trail (issue #18) ─────────────────────────────────────
+# Returns a unified, paginated, filterable feed pulling from:
+#   - PayrollAuditLog            (payroll create/edit/lock/unlock/delete)
+#   - EmployeeStatusLog          (employee deactivate/activate)
+#   - AttendanceModificationLog  (attendance edit requests + applied edits)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def audit_trail(request):
+    user = request.user
+    is_admin = user.is_staff or user.is_superuser or user.groups.filter(name__iexact='Admin').exists()
+    if not is_admin:
+        return Response({'error': 'Admin only.'}, status=status.HTTP_403_FORBIDDEN)
+
+    from .models import AttendanceModificationLog
+    try:
+        from payroll.models import PayrollAuditLog
+    except Exception:
+        PayrollAuditLog = None
+
+    sources = (request.query_params.get('sources') or 'payroll,employee,attendance').split(',')
+    user_filter = request.query_params.get('user') or ''
+    employee_filter = request.query_params.get('employee_id') or ''
+    action_filter = request.query_params.get('action') or ''
+    start_date = request.query_params.get('start_date') or ''
+    end_date = request.query_params.get('end_date') or ''
+
+    from datetime import datetime as _dt
+    def _parse(d):
+        if not d:
+            return None
+        try:
+            return _dt.fromisoformat(d).date()
+        except ValueError:
+            return None
+    sd, ed = _parse(start_date), _parse(end_date)
+
+    rows = []
+
+    if 'payroll' in sources and PayrollAuditLog is not None:
+        qs = PayrollAuditLog.objects.select_related('user', 'payroll', 'payroll__employee')
+        if user_filter:
+            qs = qs.filter(user__username__icontains=user_filter)
+        if action_filter:
+            qs = qs.filter(action__iexact=action_filter)
+        if sd:
+            qs = qs.filter(created_at__date__gte=sd)
+        if ed:
+            qs = qs.filter(created_at__date__lte=ed)
+        if employee_filter:
+            qs = qs.filter(payroll__employee_id=employee_filter)
+        for log in qs[:500]:
+            emp = getattr(log.payroll, 'employee', None) if log.payroll_id else None
+            rows.append({
+                'source': 'payroll',
+                'when': log.created_at.isoformat(),
+                'actor': log.user.username if log.user else None,
+                'action': log.action,
+                'subject': f"Payroll #{log.payroll_id or 'deleted'}" + (f" ({emp.fullname})" if emp else ''),
+                'employee_id': getattr(emp, 'employee_id', None),
+                'details': log.details or {},
+            })
+
+    if 'employee' in sources:
+        qs = EmployeeStatusLog.objects.select_related('employee', 'action_by')
+        if user_filter:
+            qs = qs.filter(action_by__username__icontains=user_filter)
+        if action_filter:
+            qs = qs.filter(action__iexact=action_filter)
+        if employee_filter:
+            qs = qs.filter(employee_id=employee_filter)
+        if sd:
+            qs = qs.filter(action_at__date__gte=sd)
+        if ed:
+            qs = qs.filter(action_at__date__lte=ed)
+        for log in qs[:500]:
+            rows.append({
+                'source': 'employee',
+                'when': log.action_at.isoformat(),
+                'actor': log.action_by.username if log.action_by else None,
+                'action': log.action,
+                'subject': f"Employee #{log.employee_id} ({log.employee.fullname if log.employee else '-'})",
+                'employee_id': log.employee_id,
+                'details': {'note': log.note or ''},
+            })
+
+    if 'attendance' in sources:
+        qs = AttendanceModificationLog.objects.select_related(
+            'attendance', 'attendance__employee', 'requested_by', 'reviewed_by'
+        )
+        if user_filter:
+            qs = qs.filter(
+                Q(requested_by__username__icontains=user_filter) |
+                Q(reviewed_by__username__icontains=user_filter)
+            )
+        if action_filter:
+            qs = qs.filter(status__iexact=action_filter)
+        if employee_filter:
+            qs = qs.filter(attendance__employee_id=employee_filter)
+        if sd:
+            qs = qs.filter(requested_at__date__gte=sd)
+        if ed:
+            qs = qs.filter(requested_at__date__lte=ed)
+        for log in qs[:500]:
+            emp = log.attendance.employee if log.attendance_id else None
+            rows.append({
+                'source': 'attendance',
+                'when': (log.reviewed_at or log.requested_at).isoformat(),
+                'actor': (log.reviewed_by.username if log.reviewed_by else
+                          (log.requested_by.username if log.requested_by else None)),
+                'action': log.status,
+                'subject': f"Attendance #{log.attendance_id} ({emp.fullname if emp else '-'})",
+                'employee_id': getattr(emp, 'employee_id', None),
+                'details': {
+                    'reason': log.reason or '',
+                    'review_note': log.review_note or '',
+                    'original': {
+                        'date': log.original_date.isoformat() if log.original_date else None,
+                        'check_in_time': log.original_check_in_time.isoformat() if log.original_check_in_time else None,
+                        'check_out_time': log.original_check_out_time.isoformat() if log.original_check_out_time else None,
+                        'status': log.original_status,
+                    },
+                    'proposed': {
+                        'date': log.new_date.isoformat() if log.new_date else None,
+                        'check_in_time': log.new_check_in_time.isoformat() if log.new_check_in_time else None,
+                        'check_out_time': log.new_check_out_time.isoformat() if log.new_check_out_time else None,
+                        'status': log.new_status,
+                    },
+                },
+            })
+
+    rows.sort(key=lambda r: r['when'], reverse=True)
+    page = max(int(request.query_params.get('page', 1)), 1)
+    page_size = min(max(int(request.query_params.get('page_size', 50)), 1), 200)
+    start = (page - 1) * page_size
+    paged = rows[start:start + page_size]
+    return Response({'count': len(rows), 'page': page, 'page_size': page_size, 'results': paged})

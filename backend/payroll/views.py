@@ -12,16 +12,19 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from main.models import Employee
+from main.models import Employee, Agency, Outlet
 from .models import (
     AllowanceType, AttendanceBonusTier, WorkSchedule,
     Payroll, PayrollAllowance, PayrollDeduction, APITSlab,
     PayrollAuditLog, PayrollCompanyConfig, EmployeeFinancialProfile,
+    EpfZone, Bank, BankBranch, AgencyPayrollProfile, OutletEpfPattern,
 )
 from .serializers import (
     AllowanceTypeSerializer, AttendanceBonusTierSerializer, WorkScheduleSerializer,
     PayrollSerializer, APITSlabSerializer, PayrollAuditLogSerializer,
     PayrollCompanyConfigSerializer, EmployeeFinancialRowSerializer,
+    EpfZoneSerializer, BankSerializer, BankBranchSerializer,
+    AgencyPayrollProfileSerializer, OutletEpfPatternSerializer,
 )
 from . import engine
 
@@ -807,6 +810,242 @@ def company_config(request):
     ser.is_valid(raise_exception=True)
     ser.save()
     return Response(ser.data)
+
+
+# ─── Per-agency payroll profiles ────────────────────────────────────────────
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def agency_profile_list(request):
+    gate = _gate(request)
+    if gate: return gate
+    if request.method == "GET":
+        # Synthesise rows for agencies that don't yet have a profile so the UI
+        # can list "everything" in one call.
+        existing = {p.agency_id: p for p in AgencyPayrollProfile.objects.select_related("agency").all()}
+        rows = []
+        for ag in Agency.objects.all().order_by("name"):
+            if ag.id in existing:
+                rows.append(AgencyPayrollProfileSerializer(existing[ag.id]).data)
+            else:
+                rows.append({
+                    "id": None, "agency": ag.id, "agency_name": ag.name,
+                    "company_name": "", "employer_epf_number": "",
+                    "employer_etf_number": "", "epf_zone_code": "",
+                    "data_submission_number": 1, "last_epf_export_ym": "",
+                    "company_bank_name": "", "company_bank_code": "",
+                    "company_bank_branch_code": "", "company_bank_account_no": "",
+                    "updated_at": None,
+                })
+        return Response(rows)
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    agency_id = request.data.get("agency")
+    if not agency_id:
+        return Response({"error": "agency required"}, status=400)
+    profile, _ = AgencyPayrollProfile.objects.get_or_create(agency_id=agency_id)
+    ser = AgencyPayrollProfileSerializer(profile, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data, status=201)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def agency_profile_detail(request, pk):
+    gate = _gate(request)
+    if gate: return gate
+    profile = get_object_or_404(AgencyPayrollProfile, pk=pk)
+    if request.method == "GET":
+        return Response(AgencyPayrollProfileSerializer(profile).data)
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    if request.method == "DELETE":
+        profile.delete()
+        return Response(status=204)
+    ser = AgencyPayrollProfileSerializer(profile, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data)
+
+
+# ─── Lookup directories (EPF zones, banks, branches) ───────────────────────
+
+def _lookup_collection(request, qs, ser_cls):
+    gate = _gate(request)
+    if gate: return gate
+    if request.method == "GET":
+        return Response(ser_cls(qs, many=True).data)
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    ser = ser_cls(data=request.data)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data, status=201)
+
+
+def _lookup_item(request, obj, ser_cls):
+    gate = _gate(request)
+    if gate: return gate
+    if request.method == "GET":
+        return Response(ser_cls(obj).data)
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    if request.method == "DELETE":
+        obj.delete()
+        return Response(status=204)
+    ser = ser_cls(obj, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def epf_zone_list(request):
+    return _lookup_collection(request, EpfZone.objects.all(), EpfZoneSerializer)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def epf_zone_detail(request, pk):
+    return _lookup_item(request, get_object_or_404(EpfZone, pk=pk), EpfZoneSerializer)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def bank_list(request):
+    return _lookup_collection(request, Bank.objects.all(), BankSerializer)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def bank_detail(request, pk):
+    return _lookup_item(request, get_object_or_404(Bank, pk=pk), BankSerializer)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def bank_branch_list(request):
+    qs = BankBranch.objects.select_related("bank").all()
+    bank_id = request.query_params.get("bank")
+    if bank_id:
+        qs = qs.filter(bank_id=bank_id)
+    return _lookup_collection(request, qs, BankBranchSerializer)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def bank_branch_detail(request, pk):
+    return _lookup_item(request, get_object_or_404(BankBranch, pk=pk), BankBranchSerializer)
+
+
+# ─── Outlet EPF pattern + member-number generator ──────────────────────────
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def outlet_epf_pattern_list(request):
+    """List one row per outlet, synthesising defaults for outlets without a
+    pattern so the directory UI can render everything in one call."""
+    gate = _gate(request)
+    if gate: return gate
+    if request.method == "GET":
+        existing = {p.outlet_id: p for p in OutletEpfPattern.objects.select_related("outlet").all()}
+        rows = []
+        for o in Outlet.objects.all().order_by("name"):
+            if o.id in existing:
+                rows.append(OutletEpfPatternSerializer(existing[o.id]).data)
+            else:
+                rows.append({
+                    "id": None, "outlet": o.id, "outlet_name": o.name,
+                    "prefix": "", "suffix": "", "padding": 4,
+                    "next_seq": 1, "is_active": True, "sample": "0001",
+                    "updated_at": None,
+                })
+        return Response(rows)
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    outlet_id = request.data.get("outlet")
+    if not outlet_id:
+        return Response({"error": "outlet required"}, status=400)
+    pattern, _ = OutletEpfPattern.objects.get_or_create(outlet_id=outlet_id)
+    ser = OutletEpfPatternSerializer(pattern, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data, status=201)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def outlet_epf_pattern_detail(request, pk):
+    gate = _gate(request)
+    if gate: return gate
+    obj = get_object_or_404(OutletEpfPattern, pk=pk)
+    if request.method == "GET":
+        return Response(OutletEpfPatternSerializer(obj).data)
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    if request.method == "DELETE":
+        obj.delete()
+        return Response(status=204)
+    ser = OutletEpfPatternSerializer(obj, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    ser.save()
+    return Response(ser.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def outlet_epf_generate(request, outlet_id):
+    """Bulk-issue EPF member numbers for employees in this outlet who don't
+    yet have one. Each number is drawn from the outlet's pattern and the
+    counter advances atomically. Returns the list of (employee_id, number).
+    Pass ?overwrite=1 to reissue numbers for everyone in scope.
+    """
+    gate = _gate(request)
+    if gate: return gate
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    pattern = OutletEpfPattern.objects.filter(outlet_id=outlet_id).first()
+    if not pattern or not pattern.is_active:
+        return Response({"error": "No active EPF pattern on this outlet."}, status=400)
+
+    overwrite = request.query_params.get("overwrite") in ("1", "true", "True")
+    only_ids = request.data.get("employee_ids") or None
+    qs = Employee.objects.filter(is_active=True, primary_outlet_id=outlet_id)
+    if only_ids:
+        qs = qs.filter(employee_id__in=only_ids)
+    if not overwrite:
+        qs = qs.filter(models.Q(epf_number__isnull=True) | models.Q(epf_number=""))
+
+    issued = []
+    with transaction.atomic():
+        for e in qs.select_for_update():
+            num = pattern.issue()
+            e.epf_number = num
+            e.save(update_fields=["epf_number"])
+            issued.append({"employee_id": e.employee_id, "epf_number": num})
+    return Response({"issued": issued, "count": len(issued)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def employee_epf_generate(request, employee_id):
+    """Issue a single EPF number for one employee using their outlet's pattern."""
+    gate = _gate(request)
+    if gate: return gate
+    if not _is_admin_user(request.user):
+        return Response({"error": "Admin only."}, status=403)
+    e = get_object_or_404(Employee, pk=employee_id)
+    if not e.primary_outlet_id:
+        return Response({"error": "Employee has no primary outlet."}, status=400)
+    pattern = OutletEpfPattern.objects.filter(outlet_id=e.primary_outlet_id, is_active=True).first()
+    if not pattern:
+        return Response({"error": "No active EPF pattern on this outlet."}, status=400)
+    num = pattern.issue()
+    e.epf_number = num
+    e.save(update_fields=["epf_number"])
+    return Response({"employee_id": e.employee_id, "epf_number": num})
 
 
 # ═══════════════════════════════════════════════════════════════════════════

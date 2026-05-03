@@ -390,11 +390,15 @@ def update_attendance(request):
                         status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        attendance = Attendance.objects.get(attendance_id=attendance_id)
+        attendance = Attendance.objects.select_related('employee').get(attendance_id=attendance_id)
     except Attendance.DoesNotExist:
         return Response({"error": "Attendance record not found."},
                         status=status.HTTP_404_NOT_FOUND)
-    
+
+    locked_response = enforce_lock(request, attendance.employee, attendance.date)
+    if locked_response:
+        return locked_response
+
     notes = attendance.verification_notes or {}
 
     # Update check-in time if provided
@@ -499,12 +503,16 @@ def get_attendance(request, id):
 @permission_classes([IsAuthenticated])
 def update_attendance_status(request, id):
     try:
-        attendance = Attendance.objects.get(attendance_id=id)
+        attendance = Attendance.objects.select_related('employee').get(attendance_id=id)
     except Attendance.DoesNotExist:
         return Response({"message": "Attendance record not found."}, status=404)
 
-    if not (request.user.groups.filter(name="Manager").exists()):
+    if not (request.user.groups.filter(name="Manager").exists() or _is_admin_user(request.user)):
         return Response({"message": "You are not authorized to update the status."}, status=403)
+
+    locked_response = enforce_lock(request, attendance.employee, attendance.date)
+    if locked_response:
+        return locked_response
 
     status = request.data.get('status')
     if status not in ['Present', 'Late', 'Absent']:
@@ -989,6 +997,15 @@ def bulk_add_attendance(request):
 
     # Process only the employees that were found
     for employee in existing_employees:
+        # Honor admin lock periods + 45-day rule per employee.
+        locked_response = enforce_lock(request, employee, attendance_date)
+        if locked_response is not None:
+            failed_updates.append({
+                "employee_id": employee.employee_id,
+                "error": locked_response.data.get("error", "Locked"),
+            })
+            continue
+
         # Check if the employee has an approved leave on the attendance date
         leave_exists = EmpLeave.objects.filter(
             employee=employee,
@@ -1195,6 +1212,14 @@ def bulk_add_leave_v2(request):
                     "reason": "Employee already punched in on this date.",
                 })
                 continue
+            locked_response = enforce_lock(request, emp, d)
+            if locked_response is not None:
+                skipped.append({
+                    "employee_id": emp.employee_id,
+                    "leave_date": str(d),
+                    "reason": locked_response.data.get("error", "Locked"),
+                })
+                continue
             try:
                 leave = EmpLeave.objects.create(
                     employee=emp,
@@ -1242,6 +1267,10 @@ def delete_leave(request, id):
         if not emp or target_outlet_id not in manager_outlet_ids:
             return Response({"error": "You are not authorized to delete this leave."}, status=status.HTTP_403_FORBIDDEN)
 
+    locked_response = enforce_lock(request, leave.employee, leave.leave_date)
+    if locked_response:
+        return locked_response
+
     leave.delete()
     return Response({"message": "Leave deleted."}, status=status.HTTP_200_OK)
 
@@ -1258,6 +1287,62 @@ def _is_locked(record_date):
     """Return True if the attendance date is >= LOCK_DAYS days ago."""
     cutoff = date.today() - timedelta(days=LOCK_DAYS)
     return record_date <= cutoff
+
+
+# ─── Cross-cutting lock-period enforcement ──────────────────────────────────
+# Used by every endpoint that mutates attendance / leave so admin-defined
+# AttendanceLockPeriod rows are honored consistently (issue #19).
+
+def _is_admin_user(user):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    return user.groups.filter(name__iexact='Admin').exists()
+
+
+def _date_admin_locked_for_outlets(outlet_ids, att_date):
+    if not att_date or not outlet_ids:
+        return False
+    return AttendanceLockPeriod.objects.filter(
+        outlet_id__in=outlet_ids, active=True,
+        start_date__lte=att_date, end_date__gte=att_date,
+    ).exists()
+
+
+def _date_admin_locked_for_employee(employee, att_date):
+    """True if any of the employee's outlets has an active lock period covering att_date."""
+    if not employee or not att_date:
+        return False
+    outlet_ids = list(employee.outlets.values_list('id', flat=True))
+    if employee.primary_outlet_id and employee.primary_outlet_id not in outlet_ids:
+        outlet_ids.append(employee.primary_outlet_id)
+    return _date_admin_locked_for_outlets(outlet_ids, att_date)
+
+
+def enforce_lock(request, employee, att_date):
+    """Return a 403 Response if the (employee, date) is locked; None otherwise.
+    Admins may bypass by passing ?override_lock=1.
+    Locks come from two sources: 45-day age rule, and AttendanceLockPeriod.
+    """
+    if not att_date:
+        return None
+    locked_age = _is_locked(att_date)
+    locked_period = _date_admin_locked_for_employee(employee, att_date)
+    if not (locked_age or locked_period):
+        return None
+    is_admin = _is_admin_user(request.user)
+    override = str(request.query_params.get('override_lock', '')).lower() in ('1', 'true', 'yes')
+    if is_admin and override:
+        return None
+    msg = (
+        'Date is inside an admin lock period.' if locked_period
+        else 'Record is past the 45-day lock window.'
+    )
+    return Response(
+        {'error': msg, 'locked_by_age': locked_age, 'locked_by_period': locked_period},
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 def _recalculate_attendance(attendance):
@@ -1453,6 +1538,10 @@ def v2_attendance_delete(request):
                 return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
         except Exception:
             return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+    locked_response = enforce_lock(request, attendance.employee, attendance.date)
+    if locked_response:
+        return locked_response
 
     attendance.delete()
     return Response({'message': 'Attendance record deleted successfully.'})
@@ -1913,6 +2002,13 @@ def v3_attendance_bulk_add(request):
             if key in existing_att:
                 skipped.append({"employee_id": emp.employee_id, "date": str(d), "reason": "Attendance already exists."})
                 continue
+            locked_response = enforce_lock(request, emp, d)
+            if locked_response is not None:
+                skipped.append({
+                    "employee_id": emp.employee_id, "date": str(d),
+                    "reason": locked_response.data.get("error", "Locked"),
+                })
+                continue
             if key in active_leaves:
                 skipped.append({"employee_id": emp.employee_id, "date": str(d), "reason": "Active leave exists on this date."})
                 continue
@@ -2155,6 +2251,10 @@ def v3_attendance_delete(request, id):
 
     if not _v3_can_access_outlet(request.user, att.employee.primary_outlet_id):
         return Response({"error": "You are not authorized to delete this record."}, status=403)
+
+    locked_response = enforce_lock(request, att.employee, att.date)
+    if locked_response:
+        return locked_response
 
     att.delete()
     return Response({"message": "Attendance record deleted."}, status=200)

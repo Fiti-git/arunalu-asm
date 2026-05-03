@@ -38,6 +38,7 @@ const AdminLeaveApproval = lazy(() => import('./pages/admin/assign/AdminLeaveApp
 const DeviceOutletAssignment = lazy(() => import('./pages/admin/assign/DeviceOutletAssignment'));
 const AttendanceEditRequests = lazy(() => import('./pages/admin/AttendanceEditRequests'));
 const UserStatusManager = lazy(() => import('./pages/admin/UserStatusManager'));
+const AuditTrail = lazy(() => import('./pages/admin/AuditTrail'));
 
 // Reports section
 const ReportsHub = lazy(() => import('./pages/reports/ReportsHub'));
@@ -61,6 +62,7 @@ const WorkSchedules = lazy(() => import('./pages/payroll/WorkSchedules'));
 const EmployeeSalaryCompliance = lazy(() => import('./pages/payroll/EmployeeSalaryCompliance'));
 const EmployeeBankDetails = lazy(() => import('./pages/payroll/EmployeeBankDetails'));
 const PayrollCompanyConfig = lazy(() => import('./pages/payroll/PayrollCompanyConfig'));
+const EpfDirectory = lazy(() => import('./pages/payroll/EpfDirectory'));
 const ApitSlabs = lazy(() => import('./pages/payroll/ApitSlabs'));
 const GratuityReport = lazy(() => import('./pages/payroll/GratuityReport'));
 
@@ -342,6 +344,12 @@ function App() {
           } />
           <Route path="/admin/payroll/company-config" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><PayrollCompanyConfig /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/epf-directory" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EpfDirectory /></FeatureGate></Layout></ProtectedRoute>
+          } />
+          <Route path="/admin/audit-trail" element={
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><AuditTrail /></Layout></ProtectedRoute>
           } />
 
           {/* Fingerprint Import — admin + manager */}

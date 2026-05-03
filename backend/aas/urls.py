@@ -198,6 +198,16 @@ urlpatterns = [
     # CHATBOT (LLM assistant)
     # -----------------
     path('api/chatbot/', include('chatbot.urls')),
+
+    # -----------------
+    # AUDIT TRAIL (combined feed: payroll + employee status + attendance mods)
+    # -----------------
+    path('api/audit-trail/', views.audit_trail, name='audit-trail'),
+
+    # -----------------
+    # WHATSAPP webhook (chatbot bridge)
+    # -----------------
+    path('api/whatsapp/webhook/', include('chatbot.whatsapp_urls')),
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

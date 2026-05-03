@@ -4,7 +4,61 @@ from .models import (
     AllowanceType, AttendanceBonusTier, WorkSchedule,
     Payroll, PayrollAllowance, PayrollDeduction, APITSlab,
     PayrollAuditLog, PayrollCompanyConfig, EmployeeFinancialProfile,
+    EpfZone, Bank, BankBranch, AgencyPayrollProfile, OutletEpfPattern,
 )
+
+
+class EpfZoneSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EpfZone
+        fields = ["id", "code", "name", "is_active"]
+
+
+class BankSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bank
+        fields = ["id", "code", "name", "is_active"]
+
+
+class BankBranchSerializer(serializers.ModelSerializer):
+    bank_name = serializers.CharField(source="bank.name", read_only=True)
+    bank_code = serializers.CharField(source="bank.code", read_only=True)
+
+    class Meta:
+        model = BankBranch
+        fields = ["id", "bank", "bank_code", "bank_name", "code", "name", "is_active"]
+
+
+class AgencyPayrollProfileSerializer(serializers.ModelSerializer):
+    agency_name = serializers.CharField(source="agency.name", read_only=True)
+
+    class Meta:
+        model = AgencyPayrollProfile
+        fields = [
+            "id", "agency", "agency_name", "company_name",
+            "employer_epf_number", "employer_etf_number",
+            "epf_zone_code", "data_submission_number", "last_epf_export_ym",
+            "company_bank_name", "company_bank_code",
+            "company_bank_branch_code", "company_bank_account_no",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "updated_at", "last_epf_export_ym"]
+
+
+class OutletEpfPatternSerializer(serializers.ModelSerializer):
+    outlet_name = serializers.CharField(source="outlet.name", read_only=True)
+    sample = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OutletEpfPattern
+        fields = [
+            "id", "outlet", "outlet_name", "prefix", "suffix",
+            "padding", "next_seq", "is_active", "sample", "updated_at",
+        ]
+        read_only_fields = ["id", "updated_at", "sample"]
+
+    def get_sample(self, obj):
+        return obj.render()
 
 
 class PayrollCompanyConfigSerializer(serializers.ModelSerializer):

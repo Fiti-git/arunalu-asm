@@ -12,12 +12,13 @@ import os
 import time
 
 import requests
+from django.conf import settings
 from django.contrib.auth.models import User
 
 from .tools import all_schemas, run_tool
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = getattr(settings, "GROQ_MODEL", None) or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 GROQ_TIMEOUT = 25
 MAX_TOOL_ROUNDS = 4
 
@@ -55,7 +56,7 @@ def ask(question: str, user: User, language: str = "auto") -> dict:
     Returns: {answer, tools_used, tokens, latency_ms, error}
     language: 'auto' | 'en' | 'si' | 'ta'
     """
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = getattr(settings, "GROQ_API_KEY", None) or os.getenv("GROQ_API_KEY")
     if not api_key:
         return {"answer": "", "tools_used": [], "tokens": 0,
                 "latency_ms": 0, "error": "GROQ_API_KEY not set"}
