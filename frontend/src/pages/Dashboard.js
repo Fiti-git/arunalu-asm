@@ -1,13 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Box, Typography, TextField, CircularProgress, Alert,
-  LinearProgress, Chip, Avatar, Divider, FormControl, InputLabel,
-  Select, MenuItem, IconButton, Tooltip,
+  IconButton, Tooltip,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  ResponsiveContainer, Legend,
 } from 'recharts';
 import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import StoreMallDirectoryOutlinedIcon from '@mui/icons-material/StoreMallDirectoryOutlined';
@@ -18,7 +16,6 @@ import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlin
 import RefreshIcon from '@mui/icons-material/Refresh';
 import api from 'utils/api';
 import { PageHeader, SectionLabel, StatCard } from 'components/ui';
-import { pickAvatarColor } from 'theme/tokens';
 
 const firstOfMonth = () => {
   const d = new Date();
@@ -28,24 +25,16 @@ const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const getInitials = (name = '') =>
-  name.trim().split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
-
 export default function ManagerDashboard() {
   const [startDate, setStartDate] = useState(firstOfMonth());
   const [endDate, setEndDate] = useState(today());
 
   const [overview, setOverview] = useState(null);
   const [trend, setTrend] = useState([]);
-  const [outlets, setOutlets] = useState([]);
-  const [selectedOutletId, setSelectedOutletId] = useState('');
+  const [outletCount, setOutletCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [employees, setEmployees] = useState([]);
-  const [drillLoading, setDrillLoading] = useState(false);
-
-  // Fetch overview + outlets on range change
   const fetchAll = useCallback(async () => {
     if (!startDate || !endDate) return;
     if (endDate < startDate) { setError('End date must be on or after start date.'); return; }
@@ -58,7 +47,7 @@ export default function ManagerDashboard() {
         api.get('/report/outlet-summary/trend/', { params }),
       ]);
       setOverview(ovRes.data);
-      setOutlets(outRes.data || []);
+      setOutletCount((outRes.data || []).length);
       setTrend(trRes.data || []);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load dashboard.');
@@ -69,86 +58,13 @@ export default function ManagerDashboard() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // Default selected outlet = first one (and only one if single-outlet manager)
-  useEffect(() => {
-    if (outlets.length > 0 && !selectedOutletId) {
-      setSelectedOutletId(outlets[0].outlet_id);
-    }
-  }, [outlets, selectedOutletId]);
-
-  // Drill-down: per-outlet employee table
-  useEffect(() => {
-    if (!selectedOutletId) return;
-    let cancelled = false;
-    setDrillLoading(true);
-    api.get(`/report/outlet-summary/outlets/${selectedOutletId}/employees/`, {
-      params: { start_date: startDate, end_date: endDate },
-    })
-      .then((res) => { if (!cancelled) setEmployees(res.data || []); })
-      .catch(() => { if (!cancelled) setEmployees([]); })
-      .finally(() => { if (!cancelled) setDrillLoading(false); });
-    return () => { cancelled = true; };
-  }, [selectedOutletId, startDate, endDate]);
-
-  const selectedOutlet = useMemo(
-    () => outlets.find((o) => o.outlet_id === selectedOutletId) || null,
-    [outlets, selectedOutletId],
-  );
-
-  const donutData = useMemo(() => {
-    if (!selectedOutlet) return [];
-    return [
-      { name: 'Present', value: Number(selectedOutlet.present_days || 0), color: '#16A34A' },
-      { name: 'On Leave', value: Number(selectedOutlet.leave_days || 0), color: '#F59E0B' },
-      { name: 'Absent', value: Number(selectedOutlet.absent_days || 0), color: '#DC2626' },
-    ].filter((d) => d.value > 0);
-  }, [selectedOutlet]);
-
-  const empColumns = [
-    {
-      field: 'fullname', headerName: 'Employee', flex: 1.2, minWidth: 200,
-      renderCell: ({ row }) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Avatar sx={{ width: 28, height: 28, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
-            {getInitials(row.fullname)}
-          </Avatar>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="body2" fontWeight={600} noWrap>{row.fullname}</Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {row.empcode || `#${row.employee_id}`}
-            </Typography>
-          </Box>
-        </Box>
-      ),
-    },
-    { field: 'present_days', headerName: 'Present', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center' },
-    { field: 'leave_days', headerName: 'Leave', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center' },
-    { field: 'absent_days', headerName: 'Absent', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center' },
-    {
-      field: 'present_rate', headerName: 'Rate', flex: 0.8, minWidth: 130,
-      renderCell: ({ value }) => (
-        <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <LinearProgress variant="determinate" value={Math.min(Number(value || 0), 100)}
-            sx={{
-              flex: 1, height: 6, borderRadius: 3, bgcolor: 'grey.100',
-              '& .MuiLinearProgress-bar': {
-                bgcolor: Number(value) >= 80 ? 'success.main' : Number(value) >= 60 ? 'warning.main' : 'error.main',
-                borderRadius: 3,
-              },
-            }} />
-          <Typography variant="caption" fontWeight={700} sx={{ width: 40, textAlign: 'right' }}>{value}%</Typography>
-        </Box>
-      ),
-    },
-  ];
-
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
       <PageHeader
         title="Manager Dashboard"
         subtitle={
-          outlets.length > 1
-            ? `${outlets.length} outlets · attendance health for the selected range`
+          outletCount > 1
+            ? `${outletCount} outlets · attendance health for the selected range`
             : 'Your outlet attendance for the selected range'
         }
         actions={
@@ -225,98 +141,6 @@ export default function ManagerDashboard() {
         )}
       </Box>
 
-      {/* Outlet selector + detail */}
-      {outlets.length > 0 && (
-        <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5, p: 2.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-            <SectionLabel>{outlets.length === 1 ? 'Outlet Detail' : 'Outlet Detail'}</SectionLabel>
-            <Box sx={{ ml: 'auto' }}>
-              <FormControl size="small" sx={{ minWidth: 220 }}>
-                <InputLabel>Outlet</InputLabel>
-                <Select label="Outlet" value={selectedOutletId || ''}
-                  onChange={(e) => setSelectedOutletId(e.target.value)}>
-                  {outlets.map((o) => (
-                    <MenuItem key={o.outlet_id} value={o.outlet_id}>{o.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
-          </Box>
-
-          {selectedOutlet && (
-            <>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' }, gap: 1.5, mb: 2.5 }}>
-                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
-                  <Typography variant="caption" sx={{ opacity: 0.9 }}>Rate</Typography>
-                  <Typography variant="h5" fontWeight={800}>{selectedOutlet.present_rate}%</Typography>
-                </Box>
-                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-                  <Typography variant="caption" color="text.secondary">Employees</Typography>
-                  <Typography variant="h5" fontWeight={800}>{selectedOutlet.total_emp}</Typography>
-                </Box>
-                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-                  <Typography variant="caption" color="text.secondary">Present · Leave · Absent</Typography>
-                  <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5 }}>
-                    <Chip size="small" label={selectedOutlet.present_days} color="success" sx={{ fontWeight: 700 }} />
-                    <Chip size="small" label={selectedOutlet.leave_days} color="warning" sx={{ fontWeight: 700 }} />
-                    <Chip size="small" label={selectedOutlet.absent_days} color="error" sx={{ fontWeight: 700 }} />
-                  </Box>
-                </Box>
-                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'grey.50' }}>
-                  <Typography variant="caption" color="text.secondary">Manager</Typography>
-                  <Typography variant="body2" fontWeight={600} noWrap>{selectedOutlet.manager_name || '—'}</Typography>
-                  <Typography variant="caption" color="text.secondary" noWrap>{selectedOutlet.address || ''}</Typography>
-                </Box>
-              </Box>
-
-              <Divider sx={{ mb: 2 }} />
-
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '280px 1fr' }, gap: 2, mb: 2 }}>
-                <Box sx={{ height: 200 }}>
-                  <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                    Breakdown
-                  </Typography>
-                  {donutData.length === 0 ? (
-                    <Typography variant="caption" color="text.secondary">No data for this range.</Typography>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={donutData} dataKey="value" innerRadius={45} outerRadius={70} paddingAngle={2}>
-                          {donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                        </Pie>
-                        <RTooltip />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  )}
-                </Box>
-
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                    Employees ({employees.length})
-                  </Typography>
-                  <Box sx={{ height: 340 }}>
-                    {drillLoading ? (
-                      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                        <CircularProgress size={24} />
-                      </Box>
-                    ) : (
-                      <DataGrid
-                        rows={employees}
-                        columns={empColumns}
-                        getRowId={(r) => r.employee_id}
-                        disableRowSelectionOnClick
-                        pageSizeOptions={[10, 25, 50]}
-                        initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-                      />
-                    )}
-                  </Box>
-                </Box>
-              </Box>
-            </>
-          )}
-        </Box>
-      )}
     </Box>
   );
 }

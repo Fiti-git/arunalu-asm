@@ -1,5 +1,7 @@
 import React, { useMemo } from "react";
 import { DataGrid } from "@mui/x-data-grid";
+import { Box, Button } from "@mui/material";
+import DownloadIcon from "@mui/icons-material/Download";
 
 // Helper function to format ISO datetime string to HH:MM time (for check-in/out)
 const formatTime = (dateTimeStr) => {
@@ -102,8 +104,13 @@ export default function EmployeeAttendanceTable({ data }) {
 
     const allRows = reports.flatMap((empData, empIndex) => {
       const employeeId = empData.employee_details?.employee_id || "";
-      const userFirstName = `${empData.employee_details?.fullname || ""} ${empData.employee_details?.user_first_name || ""}`;
-      const empCode = empData.employee_details?.fullname || "";
+      const username = empData.employee_details?.username || "";
+      const fullname = empData.employee_details?.fullname || "";
+      const firstName = empData.employee_details?.user_first_name || "";
+      // EMP Code column = auth user's username
+      const empCode = username || empData.employee_details?.fullname || "";
+      // User Name column = username + existing data (fullname + first_name)
+      const userFirstName = [username, fullname, firstName].filter(Boolean).join(" · ");
 
       const dailyRows = (empData.daily_report || []).map((day, index) => {
         const checkIn = formatTime(day.check_in_time);
@@ -178,8 +185,44 @@ export default function EmployeeAttendanceTable({ data }) {
     { field: "attendanceTypeName", headerName: "L. Name", width: 150 },
   ];
 
+  const handleDownloadCsv = () => {
+    const headers = columns.map((c) => c.headerName);
+    const fields = columns.map((c) => c.field);
+    const esc = (v) => {
+      if (v == null) return "";
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [headers.map(esc).join(",")];
+    rows.forEach((r) => {
+      lines.push(fields.map((f) => esc(r[f])).join(","));
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance_detail_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div style={{ height: 600, width: "100%", marginTop: 16 }}>
+    <div style={{ width: "100%", marginTop: 16 }}>
+      <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+        <Button
+          variant="contained"
+          color="primary"
+          size="small"
+          startIcon={<DownloadIcon />}
+          disabled={rows.length === 0}
+          onClick={handleDownloadCsv}
+        >
+          Download CSV
+        </Button>
+      </Box>
+      <div style={{ height: 600, width: "100%" }}>
       <DataGrid
         showToolbar
         rows={rows}
@@ -224,6 +267,7 @@ export default function EmployeeAttendanceTable({ data }) {
           },
         })}
       />
+      </div>
     </div>
   );
 }

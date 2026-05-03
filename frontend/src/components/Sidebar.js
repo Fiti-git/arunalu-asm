@@ -209,6 +209,13 @@ function Sidebar({ sidebarOpen, onClose }) {
 
     // MANAGER - MANAGEMENT
     {
+      text: "Outlet Detail",
+      path: "/manager/outlet-detail",
+      roles: ["Manager"],
+      icon: <AssessmentOutlinedIcon />,
+      group: "Management",
+    },
+    {
       text: "Employees",
       path: "/manager/employees",
       roles: ["Manager"],

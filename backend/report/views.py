@@ -623,6 +623,7 @@ class EmployeeReportAPIView(APIView):
                 eo.user_id,
                 eo.fullname,
                 u.first_name AS user_first_name,
+                u.username AS username,
                 eo.inactive_date,
                 eo.outlet_names,
                 eo.outlet_ids,
@@ -659,7 +660,7 @@ class EmployeeReportAPIView(APIView):
 
             rows = run_sql(query, params)
             if not rows:
-                emp_q = "SELECT employee_id, user_id, fullname, inactive_date FROM public.main_employee WHERE employee_id = %s"
+                emp_q = "SELECT e.employee_id, e.user_id, e.fullname, e.inactive_date, u.username, u.first_name AS user_first_name FROM public.main_employee e LEFT JOIN public.auth_user u ON u.id = e.user_id WHERE e.employee_id = %s"
                 emp_rows = run_sql(emp_q, [employee_id])
                 if not emp_rows:
                     return Response({"detail": "No employee found"}, status=status.HTTP_404_NOT_FOUND)
@@ -671,6 +672,7 @@ class EmployeeReportAPIView(APIView):
                 "employee_id": first.get("employee_id"),
                 "user_id": first.get("user_id"),
                 "user_first_name": first.get("user_first_name"),
+                "username": first.get("username"),
                 "fullname": first.get("fullname"),
                 "inactive_date": first.get("inactive_date"),
                 "outlet_names": first.get("outlet_names"),
@@ -1446,33 +1448,51 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
         ),
         days_count AS (SELECT COUNT(*) AS n FROM date_range),
         emp_outlet AS (
-          SELECT e.employee_id, e.fullname, e.empcode
+          SELECT e.employee_id, e.fullname, e.empcode, u.username
           FROM public.main_employee e
+          LEFT JOIN public.auth_user u ON u.id = e.user_id
           WHERE e.is_active = TRUE AND e.primary_outlet_id = %s
         ),
-        present_days AS (
-          SELECT a.employee_id, COUNT(DISTINCT a.date) AS c
+        present_dates AS (
+          SELECT a.employee_id, a.date AS d
           FROM public.main_attendance a
           WHERE a.date BETWEEN %s AND %s
             AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
             {_active_period_exists('a', 'date')}
-          GROUP BY a.employee_id
+          GROUP BY a.employee_id, a.date
         ),
-        leave_days AS (
-          SELECT l.employee_id, COUNT(DISTINCT l.leave_date) AS c
+        present_days AS (
+          SELECT employee_id, COUNT(*) AS c FROM present_dates GROUP BY employee_id
+        ),
+        leave_dates AS (
+          SELECT l.employee_id, l.leave_date AS d
           FROM public.main_empleave l
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
             {_active_period_exists('l', 'leave_date')}
-          GROUP BY l.employee_id
+          GROUP BY l.employee_id, l.leave_date
+        ),
+        leave_days AS (
+          SELECT employee_id, COUNT(*) AS c FROM leave_dates GROUP BY employee_id
+        ),
+        absent_dates AS (
+          SELECT eo.employee_id,
+                 ARRAY_AGG(dr.d ORDER BY dr.d) FILTER (
+                   WHERE NOT EXISTS (SELECT 1 FROM present_dates p WHERE p.employee_id = eo.employee_id AND p.d = dr.d)
+                     AND NOT EXISTS (SELECT 1 FROM leave_dates lv WHERE lv.employee_id = eo.employee_id AND lv.d = dr.d)
+                 ) AS dates
+          FROM emp_outlet eo CROSS JOIN date_range dr
+          GROUP BY eo.employee_id
         )
         SELECT
           eo.employee_id,
           eo.fullname,
           eo.empcode,
+          eo.username,
           COALESCE(pd.c, 0) AS present_days,
           COALESCE(ld.c, 0) AS leave_days,
           GREATEST((SELECT n FROM days_count) - COALESCE(pd.c, 0) - COALESCE(ld.c, 0), 0) AS absent_days,
+          COALESCE(ad.dates, ARRAY[]::date[]) AS absent_dates,
           (SELECT n FROM days_count) AS total_days,
           CASE WHEN (SELECT n FROM days_count) > 0
             THEN ROUND(COALESCE(pd.c, 0)::numeric * 100 / (SELECT n FROM days_count), 1)
@@ -1480,6 +1500,7 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
         FROM emp_outlet eo
         LEFT JOIN present_days pd ON pd.employee_id = eo.employee_id
         LEFT JOIN leave_days ld ON ld.employee_id = eo.employee_id
+        LEFT JOIN absent_dates ad ON ad.employee_id = eo.employee_id
         ORDER BY eo.fullname;
         """
         try:
