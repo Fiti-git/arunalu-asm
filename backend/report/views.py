@@ -1916,7 +1916,7 @@ class BlankDatesAPIView(APIView):
         ORDER BY ed.fullname, ed.d;
         """
 
-        params = scope_params + extra_params + [sd, ed, sd, ed, sd, ed, sd, ed]
+        params = scope_params + [sd, ed] + extra_params + [sd, ed, sd, ed, sd, ed]
 
         try:
             rows = run_sql(query, params)
