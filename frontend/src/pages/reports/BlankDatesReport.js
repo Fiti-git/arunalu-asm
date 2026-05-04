@@ -271,9 +271,9 @@ export default function BlankDatesReport() {
         const d = new Date(value);
         const label = isNaN(d.getTime()) ? value : d.toLocaleDateString();
         return (
-          <Box>
+          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.2 }}>
             <Typography variant="body2" fontWeight={600}>{label}</Typography>
-            <Typography variant="caption" color="text.secondary">{row.weekday}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>{row.weekday}</Typography>
           </Box>
         );
       },
@@ -373,8 +373,13 @@ export default function BlankDatesReport() {
           columns={columns}
           loading={loading}
           disableRowSelectionOnClick
+          rowHeight={64}
           pageSizeOptions={[25, 50, 100]}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
+          sx={{
+            '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
+            '& .MuiDataGrid-cell .MuiTypography-noWrap': { maxWidth: '100%' },
+          }}
           slots={{
             noRowsOverlay: () => (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
