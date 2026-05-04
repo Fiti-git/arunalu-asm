@@ -673,13 +673,16 @@ def update_leave_status(request, id):
 
     user = request.user
 
-    is_admin = user.is_staff or user.is_superuser
-    is_manager = user.groups.filter(name="Manager").exists()
+    is_admin = (
+        user.is_staff
+        or user.is_superuser
+        or user.groups.filter(name__iexact="Admin").exists()
+    )
+    is_manager = user.groups.filter(name__iexact="Manager").exists()
     same_outlet = (
         hasattr(user, 'employee') and
         leave_request.employee.outlets.filter(id__in=user.employee.outlets.values_list('id', flat=True)).exists()
     )
-
 
     if not (is_admin or (is_manager and same_outlet)):
         return Response({"message": "You are not authorized to update this leave request."}, status=403)
@@ -697,7 +700,7 @@ def update_leave_status(request, id):
     phone = leave_request.employee.phone_number
     if phone:
         verb = 'approved' if new_status == 'approved' else 'rejected'
-        leave_date = leave_request.date.strftime('%Y-%m-%d') if leave_request.date else ''
+        leave_date = leave_request.leave_date.strftime('%Y-%m-%d') if leave_request.leave_date else ''
         msg = (
             f"Hi {leave_request.employee.fullname}, your leave on {leave_date} "
             f"has been {verb}. - Arunalu ASM"
