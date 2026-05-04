@@ -1880,16 +1880,20 @@ class BlankDatesAPIView(APIView):
             AND LOWER(l.status) = 'approved'
           GROUP BY l.employee_id, l.leave_date
         ),
-        pending_lv AS (
-          SELECT DISTINCT ON (l.employee_id, l.leave_date)
-                 l.employee_id, l.leave_date AS d,
-                 l.leave_refno, l.leave_type_id, lt.att_type, lt.att_type_name,
-                 l.remarks AS leave_remarks
+        pending_lv_max AS (
+          SELECT l.employee_id, l.leave_date AS d, MAX(l.leave_refno) AS leave_refno
           FROM public.main_empleave l
-          LEFT JOIN public.leave_type lt ON lt.id = l.leave_type_id
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'pending'
-          ORDER BY l.employee_id, l.leave_date, l.leave_refno DESC
+          GROUP BY l.employee_id, l.leave_date
+        ),
+        pending_lv AS (
+          SELECT m.employee_id, m.d, m.leave_refno,
+                 l.leave_type_id, lt.att_type, lt.att_type_name,
+                 l.remarks AS leave_remarks
+          FROM pending_lv_max m
+          JOIN public.main_empleave l ON l.leave_refno = m.leave_refno
+          LEFT JOIN public.leave_type lt ON lt.id = l.leave_type_id
         )
         SELECT ed.employee_id, ed.fullname, ed.empcode,
                ed.primary_outlet_id, ed.primary_outlet_name,
