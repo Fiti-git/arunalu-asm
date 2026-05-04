@@ -251,13 +251,15 @@ export default function BlankDatesReport() {
     {
       field: 'fullname', headerName: 'Employee', flex: 1.4, minWidth: 220,
       renderCell: ({ row }) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: '100%' }}>
-          <Avatar sx={{ width: 30, height: 30, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', overflow: 'hidden' }}>
+          <Avatar sx={{ width: 30, height: 30, fontSize: 11, fontWeight: 700, flexShrink: 0, bgcolor: pickAvatarColor(row.fullname || '') }}>
             {getInitials(row.fullname)}
           </Avatar>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="body2" fontWeight={600} noWrap>{row.fullname}</Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
+          <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.2 }}>
+            <Typography variant="body2" fontWeight={600} noWrap sx={{ lineHeight: 1.25 }}>
+              {row.fullname}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ lineHeight: 1.25 }}>
               {row.empcode || `#${row.employee_id}`}
             </Typography>
           </Box>
@@ -373,12 +375,17 @@ export default function BlankDatesReport() {
           columns={columns}
           loading={loading}
           disableRowSelectionOnClick
-          rowHeight={64}
+          rowHeight={68}
           pageSizeOptions={[25, 50, 100]}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
           sx={{
-            '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
-            '& .MuiDataGrid-cell .MuiTypography-noWrap': { maxWidth: '100%' },
+            '& .MuiDataGrid-cell': {
+              display: 'flex',
+              alignItems: 'center',
+              overflow: 'hidden',
+              py: 0.5,
+            },
+            '& .MuiDataGrid-row': { maxHeight: 'none !important' },
           }}
           slots={{
             noRowsOverlay: () => (
