@@ -1879,28 +1879,40 @@ class BlankDatesAPIView(APIView):
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
           GROUP BY l.employee_id, l.leave_date
+        ),
+        pending_lv AS (
+          SELECT DISTINCT ON (l.employee_id, l.leave_date)
+                 l.employee_id, l.leave_date AS d,
+                 l.leave_refno, l.leave_type_id, lt.att_type, lt.att_type_name,
+                 l.remarks AS leave_remarks
+          FROM public.main_empleave l
+          LEFT JOIN public.leave_type lt ON lt.id = l.leave_type_id
+          WHERE l.leave_date BETWEEN %s AND %s
+            AND LOWER(l.status) = 'pending'
+          ORDER BY l.employee_id, l.leave_date, l.leave_refno DESC
         )
         SELECT ed.employee_id, ed.fullname, ed.empcode,
                ed.primary_outlet_id, ed.primary_outlet_name,
                ed.d AS work_date,
                TO_CHAR(ed.d, 'Dy') AS weekday,
-               'Blank Day' AS attendance_status,
-               NULL::time   AS check_in_time,
-               NULL::time   AS check_out_time,
+               CASE WHEN pl.leave_refno IS NOT NULL THEN 'Pending Leave' ELSE 'Blank Day' END AS attendance_status,
+               NULL::time    AS check_in_time,
+               NULL::time    AS check_out_time,
                NULL::numeric AS worked_hours,
-               NULL::integer AS leave_refno,
-               NULL::text    AS leave_remarks,
-               NULL::integer AS leave_type_id,
-               NULL::text    AS att_type,
-               NULL::text    AS att_type_name
+               pl.leave_refno     AS pending_leave_refno,
+               pl.leave_type_id   AS pending_leave_type_id,
+               pl.att_type        AS pending_leave_type_code,
+               pl.att_type_name   AS pending_leave_type_name,
+               pl.leave_remarks   AS pending_leave_remarks
         FROM emp_dates ed
-        LEFT JOIN att  ON att.employee_id = ed.employee_id AND att.d = ed.d
-        LEFT JOIN lv   ON lv.employee_id  = ed.employee_id AND lv.d  = ed.d
+        LEFT JOIN att        ON att.employee_id = ed.employee_id AND att.d = ed.d
+        LEFT JOIN lv         ON lv.employee_id  = ed.employee_id AND lv.d  = ed.d
+        LEFT JOIN pending_lv pl ON pl.employee_id = ed.employee_id AND pl.d = ed.d
         WHERE att.d IS NULL AND lv.d IS NULL
         ORDER BY ed.fullname, ed.d;
         """
 
-        params = scope_params + extra_params + [sd, ed, sd, ed, sd, ed]
+        params = scope_params + extra_params + [sd, ed, sd, ed, sd, ed, sd, ed]
 
         try:
             rows = run_sql(query, params)

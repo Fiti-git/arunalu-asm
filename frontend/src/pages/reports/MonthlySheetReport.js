@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, TextField, Button, CircularProgress, Alert,
-  IconButton, Tooltip, Paper,
+  IconButton, Tooltip, Paper, TablePagination,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -47,6 +47,8 @@ export default function MonthlySheetReport() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
 
   const fetchData = useCallback(async () => {
     if (!startDate || !endDate) return;
@@ -57,6 +59,7 @@ export default function MonthlySheetReport() {
         params: { start_date: startDate, end_date: endDate },
       });
       setData(res.data);
+      setPage(0);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load report.');
     } finally {
@@ -67,6 +70,11 @@ export default function MonthlySheetReport() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const holidaySet = useMemo(() => new Set(data?.holidays || []), [data]);
+
+  const pagedEmployees = useMemo(
+    () => (data?.employees || []).slice(page * pageSize, page * pageSize + pageSize),
+    [data, page, pageSize],
+  );
 
   const dateLabels = useMemo(() => (data?.dates || []).map((d) => {
     const dd = new Date(d);
@@ -176,7 +184,7 @@ export default function MonthlySheetReport() {
               </Box>
             </Box>
             <Box component="tbody">
-              {data.employees.map((e, i) => (
+              {pagedEmployees.map((e, i) => (
                 <Box component="tr" key={e.employee_id} sx={{ bgcolor: i % 2 === 0 ? 'background.paper' : 'grey.50' }}>
                   <Box component="td" sx={{
                     position: 'sticky', left: 0, bgcolor: 'inherit', zIndex: 1,
@@ -196,6 +204,15 @@ export default function MonthlySheetReport() {
               ))}
             </Box>
           </Box>
+          <TablePagination
+            component="div"
+            count={data.employees.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={pageSize}
+            onRowsPerPageChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+          />
         </Paper>
       )}
     </Box>

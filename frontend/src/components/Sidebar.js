@@ -63,6 +63,13 @@ function Sidebar({ sidebarOpen, onClose }) {
       group: "Management",
     },
     {
+      text: "Outlets Detail",
+      path: "/admin/outlets-detail",
+      roles: ["Admin"],
+      icon: <StoreIcon />,
+      group: "Management",
+    },
+    {
       text: "Leave & Holidays",
       path: "/admin/create/leave",
       roles: ["Admin"],

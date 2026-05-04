@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Box, Typography, TextField, Button, CircularProgress, Alert, Chip, Avatar,
   IconButton, Tooltip, FormControl, InputLabel, Select, MenuItem, Divider,
+  TablePagination,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -63,6 +64,8 @@ export default function ModificationAuditReport() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
 
   const fetchData = useCallback(async () => {
     if (endDate < startDate) { setError('End date must be on or after start date.'); return; }
@@ -78,6 +81,7 @@ export default function ModificationAuditReport() {
       });
       const list = Array.isArray(res.data) ? res.data : (res.data.results || []);
       setLogs(list);
+      setPage(0);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load audit log.');
     } finally { setLoading(false); }
@@ -161,7 +165,7 @@ export default function ModificationAuditReport() {
         </Typography>
       ) : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {logs.map((log) => {
+          {logs.slice(page * pageSize, page * pageSize + pageSize).map((log) => {
             const o = log.original || {};
             const p = log.proposed || {};
             return (
@@ -217,6 +221,15 @@ export default function ModificationAuditReport() {
               </Box>
             );
           })}
+          <TablePagination
+            component="div"
+            count={logs.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={pageSize}
+            onRowsPerPageChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+          />
         </Box>
       )}
     </Box>

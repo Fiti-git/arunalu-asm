@@ -33,6 +33,7 @@ const AttendanceLockPeriods = lazy(() => import('./pages/admin/AttendanceLockPer
 const AdminEmployeeEditor = lazy(() => import('./pages/admin/AdminEmployeeEditor'));
 const OutletManager = lazy(() => import('./pages/admin/OutletManager'));
 const AdminOutletSummary = lazy(() => import('./pages/admin/AdminOutletSummary'));
+const AdminOutletsDetail = lazy(() => import('./pages/admin/AdminOutletsDetail'));
 
 const AdminLeaveApproval = lazy(() => import('./pages/admin/assign/AdminLeaveApproval'));
 const DeviceOutletAssignment = lazy(() => import('./pages/admin/assign/DeviceOutletAssignment'));
@@ -249,6 +250,11 @@ function App() {
           <Route path="/admin/reports/outlet-summary" element={
             <ProtectedRoute role={role} requiredRole="Admin">
               <Layout><AdminOutletSummary /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/outlets-detail" element={
+            <ProtectedRoute role={role} requiredRole="Admin">
+              <Layout><AdminOutletsDetail /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/attendance" element={
