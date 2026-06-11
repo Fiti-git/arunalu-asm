@@ -345,6 +345,9 @@ class EmployeeStatusLog(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="status_logs")
     action = models.CharField(max_length=20, choices=ACTION_CHOICES)
     action_at = models.DateTimeField(default=timezone.now)
+    # Date the action takes effect (admin-chosen). Falls back to action_at::date
+    # in reports when null so existing rows keep behaving as before.
+    effective_date = models.DateField(null=True, blank=True)
 
     # who did it (admin/manager user)
     action_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="employee_status_actions")

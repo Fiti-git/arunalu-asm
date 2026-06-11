@@ -21,6 +21,10 @@ const getColor = (name = '') => {
   return COLORS[Math.abs(hash) % COLORS.length];
 };
 const getInitials = (name = '') => name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 function EmployeeStatusCard({ emp, onToggle, onHistory }) {
   const color = getColor(emp.fullname);
@@ -106,6 +110,8 @@ export default function UserStatusManager() {
   const [toggleDialog, setToggleDialog] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [note, setNote] = useState('');
+  const [effectiveDate, setEffectiveDate] = useState(todayISO());
+  const [toggleError, setToggleError] = useState('');
   const [toggleLoading, setToggleLoading] = useState(false);
 
   // History drawer
@@ -155,21 +161,33 @@ export default function UserStatusManager() {
   const openToggleDialog = (emp) => {
     setSelectedEmployee(emp);
     setNote('');
+    setEffectiveDate(todayISO());
+    setToggleError('');
     setToggleDialog(true);
   };
 
   const handleToggleConfirm = async () => {
     if (!selectedEmployee) return;
+    if (!effectiveDate) {
+      setToggleError('Please select an effective date.');
+      return;
+    }
+    if (effectiveDate > todayISO()) {
+      setToggleError('Effective date cannot be in the future.');
+      return;
+    }
+    setToggleError('');
     setToggleLoading(true);
     const endpoint = selectedEmployee.is_active
       ? `/api/deactivate-employee/${selectedEmployee.employee_id}/`
       : `/api/activate-employee/${selectedEmployee.employee_id}/`;
     try {
-      await api.post(endpoint, { note });
+      await api.post(endpoint, { note, effective_date: effectiveDate });
       setToggleDialog(false);
       fetchEmployees();
     } catch (err) {
       console.error('Error toggling employee status:', err);
+      setToggleError(err.response?.data?.error || 'Failed to update employee status.');
     } finally {
       setToggleLoading(false);
     }
@@ -308,6 +326,17 @@ export default function UserStatusManager() {
                 : 'This will restore the employee\'s access to the system.'}
             </Typography>
             <TextField
+              label={selectedEmployee?.is_active ? 'Deactivation date' : 'Activation date'}
+              type="date"
+              value={effectiveDate}
+              onChange={(e) => setEffectiveDate(e.target.value)}
+              fullWidth
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ max: todayISO() }}
+              sx={{ mb: 2 }}
+            />
+            <TextField
               label="Reason (optional)"
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -316,6 +345,11 @@ export default function UserStatusManager() {
               rows={2}
               size="small"
             />
+            {toggleError && (
+              <Typography color="error" variant="caption" sx={{ mt: 1, display: 'block' }}>
+                {toggleError}
+              </Typography>
+            )}
           </DialogContent>
           <DialogActions sx={{ pt: 2, px: 0 }}>
             <Button onClick={() => setToggleDialog(false)} disabled={toggleLoading} sx={{ borderRadius: 2 }}>
@@ -390,6 +424,11 @@ export default function UserStatusManager() {
                 <Typography variant="body2" color="text.secondary" mt={0.5}>
                   By: <strong>{log.action_by}</strong>
                 </Typography>
+                {log.effective_date && (
+                  <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+                    Effective: <strong>{log.effective_date}</strong>
+                  </Typography>
+                )}
                 {log.note && (
                   <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
                     Note: {log.note}

@@ -20,6 +20,7 @@ const BulkLeaveAssignment = lazy(() => import('./pages/BulkLeaveAssignment'));
 const ManagerDailyAttendance = lazy(() => import('./pages/manager/ManagerDailyAttendance'));
 const DatabaseBackup = lazy(() => import('./pages/manager/DatabaseBackup'));
 const OutletDetail = lazy(() => import('./pages/manager/OutletDetail'));
+const OutletSummary = lazy(() => import('./pages/manager/OutletSummary'));
 
 const CreateEmployee = lazy(() => import('./pages/admin/create/CreateEmployee'));
 const CreateRole = lazy(() => import('./pages/admin/create/CreateRole'));
@@ -124,6 +125,11 @@ function App() {
           <Route path="/manager/outlet-detail" element={
             <ProtectedRoute role={role} requiredRole="Manager">
               <Layout><OutletDetail /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/manager/outlet-summary" element={
+            <ProtectedRoute role={role} requiredRole="Manager">
+              <Layout><OutletSummary /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/manager/employees" element={

@@ -1483,6 +1483,14 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
                  ) AS dates
           FROM emp_outlet eo CROSS JOIN date_range dr
           GROUP BY eo.employee_id
+        ),
+        present_dates_agg AS (
+          SELECT employee_id, ARRAY_AGG(d ORDER BY d) AS dates
+          FROM present_dates GROUP BY employee_id
+        ),
+        leave_dates_agg AS (
+          SELECT employee_id, ARRAY_AGG(d ORDER BY d) AS dates
+          FROM leave_dates GROUP BY employee_id
         )
         SELECT
           eo.employee_id,
@@ -1492,6 +1500,8 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
           COALESCE(pd.c, 0) AS present_days,
           COALESCE(ld.c, 0) AS leave_days,
           GREATEST((SELECT n FROM days_count) - COALESCE(pd.c, 0) - COALESCE(ld.c, 0), 0) AS absent_days,
+          COALESCE(pda.dates, ARRAY[]::date[]) AS present_dates,
+          COALESCE(lda.dates, ARRAY[]::date[]) AS leave_dates,
           COALESCE(ad.dates, ARRAY[]::date[]) AS absent_dates,
           (SELECT n FROM days_count) AS total_days,
           CASE WHEN (SELECT n FROM days_count) > 0
@@ -1501,6 +1511,8 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
         LEFT JOIN present_days pd ON pd.employee_id = eo.employee_id
         LEFT JOIN leave_days ld ON ld.employee_id = eo.employee_id
         LEFT JOIN absent_dates ad ON ad.employee_id = eo.employee_id
+        LEFT JOIN present_dates_agg pda ON pda.employee_id = eo.employee_id
+        LEFT JOIN leave_dates_agg lda ON lda.employee_id = eo.employee_id
         ORDER BY eo.fullname;
         """
         try:
@@ -1557,8 +1569,9 @@ ACTIVE_PERIODS_CTE = """
 active_log AS (
   SELECT employee_id,
          action,
-         action_at::date AS d,
-         LEAD(action_at::date) OVER (PARTITION BY employee_id ORDER BY action_at) AS next_d
+         COALESCE(effective_date, action_at::date) AS d,
+         LEAD(COALESCE(effective_date, action_at::date))
+           OVER (PARTITION BY employee_id ORDER BY action_at) AS next_d
   FROM public.main_employeestatuslog
 ),
 first_deactivation AS (

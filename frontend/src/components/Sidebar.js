@@ -261,6 +261,13 @@ function Sidebar({ sidebarOpen, onClose }) {
       group: "Reports",
     },
     {
+      text: "Outlet Summary",
+      path: "/manager/outlet-summary",
+      roles: ["Manager"],
+      icon: <AssessmentOutlinedIcon />,
+      group: "Reports",
+    },
+    {
       text: "Attendance Detail",
       path: "/manager/reports/attendance-detail",
       roles: ["Manager"],

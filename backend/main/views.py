@@ -45,6 +45,19 @@ def get_active_employees(request):
     employees = Employee.objects.filter(is_active=True)
     return paginate_queryset(request, employees, EmployeeSerializer)
 
+def _parse_effective_date(raw, today):
+    """Parse an ISO YYYY-MM-DD effective date; default to today; reject future."""
+    if raw in (None, ""):
+        return today, None
+    try:
+        parsed = datetime.strptime(str(raw), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None, "effective_date must be in YYYY-MM-DD format"
+    if parsed > today:
+        return None, "effective_date cannot be in the future"
+    return parsed, None
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @transaction.atomic
@@ -64,10 +77,14 @@ def deactivate_employee(request, employee_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Deactivate employee
     today = timezone.now().date()
+    effective_date, err = _parse_effective_date(request.data.get("effective_date"), today)
+    if err:
+        return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Deactivate employee
     employee.is_active = False
-    employee.inactive_date = today
+    employee.inactive_date = effective_date
     employee.save(update_fields=["is_active", "inactive_date"])
 
     # Deactivate linked User (if exists)
@@ -80,6 +97,7 @@ def deactivate_employee(request, employee_id):
         employee=employee,
         action="DEACTIVATED",
         action_by=request.user,
+        effective_date=effective_date,
         note=request.data.get("note", "")
     )
 
@@ -87,7 +105,8 @@ def deactivate_employee(request, employee_id):
         "message": f"Employee {employee.fullname} has been deactivated.",
         "employee_id": employee.employee_id,
         "is_active": False,
-        "inactive_date": employee.inactive_date
+        "inactive_date": employee.inactive_date,
+        "effective_date": effective_date,
     }, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
@@ -109,6 +128,11 @@ def activate_employee(request, employee_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    today = timezone.now().date()
+    effective_date, err = _parse_effective_date(request.data.get("effective_date"), today)
+    if err:
+        return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+
     # Activate employee
     employee.is_active = True
     employee.inactive_date = None
@@ -124,6 +148,7 @@ def activate_employee(request, employee_id):
         employee=employee,
         action="ACTIVATED",
         action_by=request.user,
+        effective_date=effective_date,
         note=request.data.get("note", "")
     )
 
@@ -131,7 +156,8 @@ def activate_employee(request, employee_id):
         "message": f"Employee {employee.fullname} has been activated.",
         "employee_id": employee.employee_id,
         "is_active": True,
-        "inactive_date": employee.inactive_date
+        "inactive_date": employee.inactive_date,
+        "effective_date": effective_date,
     }, status=status.HTTP_200_OK)
 
 
@@ -148,6 +174,7 @@ def get_employee_status_history(request, employee_id):
         {
             "action": log.action,
             "action_at": log.action_at,
+            "effective_date": log.effective_date,
             "action_by": log.action_by.get_full_name() if log.action_by else "System",
             "note": log.note or "",
         }
