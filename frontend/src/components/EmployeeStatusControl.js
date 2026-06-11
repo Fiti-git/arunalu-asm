@@ -9,9 +9,15 @@ import HistoryIcon from '@mui/icons-material/History';
 import CloseIcon from '@mui/icons-material/Close';
 import api from 'utils/api';
 
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export default function EmployeeStatusControl({ employee, onChanged, dense = false }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [note, setNote] = useState('');
+  const [effectiveDate, setEffectiveDate] = useState(todayISO());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -23,13 +29,21 @@ export default function EmployeeStatusControl({ employee, onChanged, dense = fal
   const isActive = !!employee.is_active;
 
   const handleConfirm = async () => {
+    if (!effectiveDate) {
+      setError('Please select an effective date.');
+      return;
+    }
+    if (effectiveDate > todayISO()) {
+      setError('Effective date cannot be in the future.');
+      return;
+    }
     setSubmitting(true);
     setError('');
     const endpoint = isActive
       ? `/api/deactivate-employee/${employee.employee_id}/`
       : `/api/activate-employee/${employee.employee_id}/`;
     try {
-      await api.post(endpoint, { note });
+      await api.post(endpoint, { note, effective_date: effectiveDate });
       setConfirmOpen(false);
       setNote('');
       onChanged && onChanged({ ...employee, is_active: !isActive });
@@ -68,7 +82,7 @@ export default function EmployeeStatusControl({ employee, onChanged, dense = fal
           variant="outlined"
           color={isActive ? 'error' : 'success'}
           startIcon={isActive ? <PersonOffIcon /> : <PersonIcon />}
-          onClick={() => { setError(''); setNote(''); setConfirmOpen(true); }}
+          onClick={() => { setError(''); setNote(''); setEffectiveDate(todayISO()); setConfirmOpen(true); }}
         >
           {isActive ? 'Deactivate' : 'Activate'}
         </Button>
@@ -91,6 +105,16 @@ export default function EmployeeStatusControl({ employee, onChanged, dense = fal
               : "This will restore the employee's access to the system."}
           </Typography>
           {error && <Typography color="error" variant="body2" sx={{ mb: 1 }}>{error}</Typography>}
+          <TextField
+            label={isActive ? 'Deactivation date' : 'Activation date'}
+            type="date"
+            value={effectiveDate}
+            onChange={(e) => setEffectiveDate(e.target.value)}
+            fullWidth size="small"
+            InputLabelProps={{ shrink: true }}
+            inputProps={{ max: todayISO() }}
+            sx={{ mb: 2 }}
+          />
           <TextField
             label="Reason (optional)"
             value={note}
@@ -157,6 +181,11 @@ export default function EmployeeStatusControl({ employee, onChanged, dense = fal
                 <Typography variant="body2" color="text.secondary">
                   By: <strong>{log.action_by}</strong>
                 </Typography>
+                {log.effective_date && (
+                  <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+                    Effective: <strong>{log.effective_date}</strong>
+                  </Typography>
+                )}
                 {log.note && (
                   <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
                     Note: {log.note}
