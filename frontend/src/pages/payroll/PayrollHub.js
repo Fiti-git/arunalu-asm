@@ -101,6 +101,56 @@ export default function PayrollHub() {
     navigate(`/admin/payroll/employee/${row.employee_id}${qs}`);
   };
 
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    a.remove(); URL.revokeObjectURL(url);
+  };
+
+  const downloadRowPayslip = async (row) => {
+    if (!row.payroll_id) return;
+    setError('');
+    try {
+      const res = await api.get(`/payroll/payrolls/${row.payroll_id}/payslip/`, {
+        responseType: 'blob',
+      });
+      const filename = `payslip_${row.empcode || row.employee_id}_${periodStart}_${periodEnd}.pdf`;
+      downloadBlob(new Blob([res.data], { type: 'application/pdf' }), filename);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to download payslip.');
+    }
+  };
+
+  const downloadPayslipZip = async ({ includeDrafts = false } = {}) => {
+    setError('');
+    try {
+      const params = { period_start: periodStart, period_end: periodEnd };
+      if (outletId !== 'all') params.outlet_id = outletId;
+      if (includeDrafts) params.include_drafts = 1;
+      const res = await api.get('/payroll/payslips-zip/', {
+        params, responseType: 'blob',
+      });
+      const cd = res.headers['content-disposition'] || '';
+      const m = /filename="?([^";]+)"?/.exec(cd);
+      const filename = m ? m[1] : `payslips_${periodStart}_to_${periodEnd}.zip`;
+      downloadBlob(new Blob([res.data], { type: 'application/zip' }), filename);
+    } catch (err) {
+      const body = err.response?.data;
+      let msg = 'Failed to download payslip ZIP.';
+      if (body instanceof Blob) {
+        try {
+          const text = await body.text();
+          try { msg = JSON.parse(text).error || text; } catch { msg = text || msg; }
+        } catch { /* keep default */ }
+      } else if (body?.error) {
+        msg = body.error;
+      }
+      setError(msg);
+    }
+  };
+
   const columns = useMemo(() => [
     {
       field: 'fullname', headerName: 'Employee', flex: 1.3, minWidth: 220,
@@ -141,11 +191,20 @@ export default function PayrollHub() {
     { field: 'payroll_net_pay', headerName: 'Net Pay', flex: 0.7, minWidth: 130, align: 'right', headerAlign: 'right',
       renderCell: ({ value }) => value != null ? Number(value).toLocaleString() : '—' },
     {
-      field: 'actions', headerName: 'Action', flex: 0.6, minWidth: 140, sortable: false, filterable: false,
+      field: 'actions', headerName: 'Action', flex: 0.8, minWidth: 200, sortable: false, filterable: false,
       renderCell: ({ row }) => (
-        <Button size="small" variant="outlined" startIcon={<CalculateOutlinedIcon />} onClick={() => openEmployee(row)}>
-          {row.payroll_id ? 'Open' : 'Calculate'}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Button size="small" variant="outlined" startIcon={<CalculateOutlinedIcon />} onClick={() => openEmployee(row)}>
+            {row.payroll_id ? 'Open' : 'Calc'}
+          </Button>
+          {row.payroll_id && (
+            <Tooltip title="Download payslip PDF">
+              <IconButton size="small" color="primary" onClick={() => downloadRowPayslip(row)}>
+                <DownloadIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
       ),
     },
   ], [periodStart, periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -181,6 +240,7 @@ export default function PayrollHub() {
               <Button startIcon={<DownloadIcon />} onClick={() => downloadExport('epf')}>EPF</Button>
               <Button startIcon={<DownloadIcon />} onClick={() => downloadExport('etf')}>ETF</Button>
               <Button startIcon={<DownloadIcon />} onClick={() => downloadExport('bank')}>Bank</Button>
+              <Button startIcon={<DownloadIcon />} onClick={() => downloadPayslipZip()}>Payslips ZIP</Button>
             </ButtonGroup>
           </Box>
         }

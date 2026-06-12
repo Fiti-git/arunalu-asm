@@ -31,8 +31,9 @@ urlpatterns = [
     # Gratuity
     path("gratuity/", views.gratuity_report),
 
-    # Payslip PDF
+    # Payslip PDF (single + batch ZIP)
     path("payrolls/<int:pk>/payslip/", views.payslip_pdf),
+    path("payslips-zip/", views.payslips_zip),
 
     # Company config (singleton)
     path("company-config/", views.company_config),

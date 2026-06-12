@@ -620,20 +620,9 @@ def gratuity_report(request):
 # Payslip PDF
 # ═══════════════════════════════════════════════════════════════════════════
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def payslip_pdf(request, pk):
-    gate = _gate(request)
-    if gate: return gate
-
-    p = get_object_or_404(
-        Payroll.objects.select_related("employee", "employee__primary_outlet")
-        .prefetch_related("allowances", "deductions"),
-        pk=pk,
-    )
-
+def _render_payslip_bytes(p):
+    """Render a single Payroll record to PDF bytes. Reused by single + batch endpoints."""
     import io
-    from django.http import HttpResponse
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -765,10 +754,95 @@ def payslip_pdf(request, pk):
 
     doc.build(story)
     buf.seek(0)
+    return buf.getvalue()
 
-    filename = f"payslip_{p.employee.empcode or p.employee_id}_{p.period_start}_{p.period_end}.pdf"
-    resp = HttpResponse(buf.getvalue(), content_type="application/pdf")
-    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+def _payslip_filename(p):
+    return f"payslip_{p.employee.empcode or p.employee_id}_{p.period_start}_{p.period_end}.pdf"
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def payslip_pdf(request, pk):
+    from django.http import HttpResponse
+    gate = _gate(request)
+    if gate: return gate
+
+    p = get_object_or_404(
+        Payroll.objects.select_related("employee", "employee__primary_outlet")
+        .prefetch_related("allowances", "deductions"),
+        pk=pk,
+    )
+    pdf_bytes = _render_payslip_bytes(p)
+    resp = HttpResponse(pdf_bytes, content_type="application/pdf")
+    resp["Content-Disposition"] = f'attachment; filename="{_payslip_filename(p)}"'
+    return resp
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def payslips_zip(request):
+    """Stream a ZIP of payslip PDFs for all payrolls matching the given filters.
+
+    Query params:
+      period_start, period_end — REQUIRED (ISO YYYY-MM-DD), match Payroll.period_start / period_end exactly.
+      outlet_id — optional, restrict to one primary outlet.
+      include_drafts — optional, default 0. When 1, include Draft + Locked. Default Locked only.
+    """
+    import io
+    import zipfile
+    from django.http import HttpResponse
+
+    gate = _gate(request)
+    if gate: return gate
+
+    period_start = request.query_params.get("period_start")
+    period_end = request.query_params.get("period_end")
+    if not period_start or not period_end:
+        return Response({"error": "period_start and period_end are required."}, status=400)
+
+    outlet_id = request.query_params.get("outlet_id")
+    include_drafts = str(request.query_params.get("include_drafts", "")).lower() in ("1", "true", "yes")
+
+    qs = (Payroll.objects
+          .select_related("employee", "employee__primary_outlet")
+          .prefetch_related("allowances", "deductions")
+          .filter(period_start=period_start, period_end=period_end))
+    if not include_drafts:
+        qs = qs.filter(status="Locked")
+    if outlet_id:
+        try:
+            qs = qs.filter(employee__primary_outlet_id=int(outlet_id))
+        except (TypeError, ValueError):
+            return Response({"error": "Invalid outlet_id."}, status=400)
+    qs = qs.order_by("employee__fullname")
+
+    payrolls = list(qs)
+    if not payrolls:
+        return Response({"error": "No payrolls match the given filters."}, status=404)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        used = set()
+        for p in payrolls:
+            name = _payslip_filename(p)
+            # Defensive: avoid duplicate names inside the zip
+            base, ext = name.rsplit(".", 1)
+            n, candidate = 1, name
+            while candidate in used:
+                n += 1
+                candidate = f"{base}_{n}.{ext}"
+            used.add(candidate)
+            zf.writestr(candidate, _render_payslip_bytes(p))
+
+    buf.seek(0)
+    out_name = f"payslips_{period_start}_to_{period_end}"
+    if outlet_id:
+        out_name += f"_outlet{outlet_id}"
+    out_name += ".zip"
+    resp = HttpResponse(buf.getvalue(), content_type="application/zip")
+    resp["Content-Disposition"] = f'attachment; filename="{out_name}"'
+    resp["X-Payslip-Count"] = str(len(payrolls))
     return resp
 
 
