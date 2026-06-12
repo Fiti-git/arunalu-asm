@@ -32,7 +32,6 @@ from . import engine
 # ─── Access control ────────────────────────────────────────────────────────
 
 PAYROLL_GROUPS = ("Admin", "Acc")
-PAYROLL_FEATURE_CODE = "payroll"
 
 
 def _is_payroll_user(user):
@@ -54,25 +53,7 @@ def _is_admin_user(user):
     return user.groups.filter(name__iexact="Admin").exists()
 
 
-def _license_feature_ok(request):
-    """Return True if the payroll feature is enabled in the current license.
-    When no license is bound (request.license is None), allow — the
-    LicenseMiddleware treats that as 'active' and we don't want to block dev.
-    """
-    license_data = getattr(request, "license", None)
-    if license_data is None:
-        return True
-    features = license_data.get("features", []) or []
-    return PAYROLL_FEATURE_CODE in features
-
-
 def _gate(request):
-    if not _license_feature_ok(request):
-        return Response(
-            {"error": "Payroll feature is not enabled on this license.",
-             "feature": PAYROLL_FEATURE_CODE},
-            status=403,
-        )
     if not _is_payroll_user(request.user):
         return Response({"error": "You don't have access to payroll."}, status=403)
     return None

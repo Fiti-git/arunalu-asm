@@ -181,15 +181,6 @@ urlpatterns = [
     path('fingerprint/', include('fingerprint.urls')),
 
     # -----------------
-    # OTHER APPS (if any)
-    # -----------------
-
-    # -----------------
-    # LICENSING
-    # -----------------
-    path('api/license/', include('licensing.urls')),
-
-    # -----------------
     # MOBILE API
     # -----------------
     path('mobile/', include('mobile_api.urls')),

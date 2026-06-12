@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { Box, useMediaQuery } from "@mui/material";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
-import LicenseBanner from "./LicenseBanner";
 import ChatBot from "./ChatBot";
 import {
   SIDEBAR_WIDTH_OPEN,
@@ -66,7 +65,6 @@ function Layout({ children }) {
             boxSizing: "border-box",
           }}
         >
-          <LicenseBanner />
           {children}
         </Box>
       </Box>

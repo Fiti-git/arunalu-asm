@@ -23,11 +23,11 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # ------------------------------------------------------------------------------
 # SECURITY
 # ------------------------------------------------------------------------------
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key")
+# Fail loudly if SECRET_KEY is missing in production — no insecure default.
+SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-#ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-ALLOWED_HOSTS = ['*']  # ✅ allows all hosts (use with caution in production)
+ALLOWED_HOSTS = [h.strip() for h in os.environ["DJANGO_ALLOWED_HOSTS"].split(',') if h.strip()]
 # ------------------------------------------------------------------------------
 # APPS
 # ------------------------------------------------------------------------------
@@ -52,7 +52,6 @@ INSTALLED_APPS = [
     'calculation',
     'payroll',
     'fingerprint',
-    'licensing',
     'notifications',
     'chatbot',
 ]
@@ -67,7 +66,6 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'licensing.middleware.LicenseMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -144,9 +142,9 @@ SIMPLE_JWT = {
 # ------------------------------------------------------------------------------
 # CORS
 # ------------------------------------------------------------------------------
-#CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://123.231.60.24:1604/').split(',')
-# Allows the frontend to communicate from any Origin
-CORS_ALLOW_ALL_ORIGINS = True  # ✅ allows all origins (use with caution in production)
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ["CORS_ALLOWED_ORIGINS"].split(',') if o.strip()
+]
 # ------------------------------------------------------------------------------
 # URL / SLASH HANDLING
 # ------------------------------------------------------------------------------
@@ -160,11 +158,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # ------------------------------------------------------------------------------
 # FACE RECOGNITION / AWS
 # ------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------
-# LICENSE ENCRYPTION
-# ------------------------------------------------------------------------------
-LICENSE_ENCRYPTION_KEY = os.getenv('LICENSE_ENCRYPTION_KEY', '')
-
 HAARCASCADE_FILE_PATH = BASE_DIR / 'models' / 'haarcascade_frontalface_default.xml'
 
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')

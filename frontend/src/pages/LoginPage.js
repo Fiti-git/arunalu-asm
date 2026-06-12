@@ -72,24 +72,11 @@ const LoginPage = () => {
       const decoded = jwtDecode(access);
       const { role } = decoded;
 
-      // ServiceProvider has no Employee profile — skip user details
-      if (role !== 'ServiceProvider') {
-        const userDetails = await fetchUserDetails(access);
-        const { outlets } = userDetails;
-        if (outlets && outlets.length > 0) {
-          localStorage.setItem('outlet', outlets[0].id);
-          localStorage.setItem('outlet_name', outlets[0].name);
-        }
-      }
-
-      // Fetch license status after login
-      try {
-        const licRes = await axios.get(`${API_BASE}/api/license/status/`, {
-          headers: { Authorization: `Bearer ${access}` },
-        });
-        localStorage.setItem('license', JSON.stringify(licRes.data));
-      } catch {
-        // License fetch is non-blocking — may fail on unconfigured instances
+      const userDetails = await fetchUserDetails(access);
+      const { outlets } = userDetails;
+      if (outlets && outlets.length > 0) {
+        localStorage.setItem('outlet', outlets[0].id);
+        localStorage.setItem('outlet_name', outlets[0].name);
       }
 
       handleRoleBasedNavigation(role);
@@ -106,7 +93,6 @@ const LoginPage = () => {
     const roleBasedRedirect = {
       Admin: '/admin/reports/outlet-summary',
       Manager: '/manager/dashboard',
-      ServiceProvider: '/admin/reports/outlet-summary',
     };
 
     const navigateToRolePage = roleBasedRedirect[role] || '/';

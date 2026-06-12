@@ -10,7 +10,7 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { NavLink } from "react-router-dom";
-import { getUserRole, hasFeature, isServiceProvider } from "../utils/auth";
+import { getUserRole } from "../utils/auth";
 import { SIDEBAR_WIDTH_OPEN, SIDEBAR_WIDTH_COLLAPSED } from "../theme/tokens";
 
 // Icons
@@ -30,7 +30,6 @@ import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import PersonSearchOutlinedIcon from "@mui/icons-material/PersonSearchOutlined";
 import CalculateOutlinedIcon from "@mui/icons-material/CalculateOutlined";
 import FingerprintOutlinedIcon from "@mui/icons-material/FingerprintOutlined";
-import VpnKeyIcon from "@mui/icons-material/VpnKey";
 
 function Sidebar({ sidebarOpen, onClose }) {
   const role = getUserRole() || "";
@@ -308,24 +307,8 @@ function Sidebar({ sidebarOpen, onClose }) {
     },
   ];
 
-  // ServiceProvider-only items
-  if (isServiceProvider()) {
-    navItems.push({
-      text: "License Config",
-      path: "/admin/license-configuration",
-      roles: ["ServiceProvider", "Admin"],
-      icon: <VpnKeyIcon />,
-      group: "System",
-    });
-  }
-
-  const effectiveRole = role === 'ServiceProvider' ? 'ServiceProvider' : normalizedRole;
-
   const groupedNav = navItems.reduce((acc, item) => {
-    const matchesRole = item.roles.includes(effectiveRole)
-      || (effectiveRole === 'ServiceProvider' && item.roles.includes('Admin'));
-    if (!matchesRole) return acc;
-    if (item.feature && !hasFeature(item.feature)) return acc;
+    if (!item.roles.includes(normalizedRole)) return acc;
     acc[item.group] = acc[item.group] || [];
     acc[item.group].push(item);
     return acc;

@@ -2,8 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import Layout from './components/Layout';
-import { isAuthenticated, getUserRole, isServiceProvider } from './utils/auth';
-import FeatureGate from './components/FeatureGate';
+import { isAuthenticated, getUserRole } from './utils/auth';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -72,15 +71,9 @@ const GratuityReport = lazy(() => import('./pages/payroll/GratuityReport'));
 const FingerprintHub = lazy(() => import('./pages/fingerprint/FingerprintHub'));
 const FingerprintUploadDetail = lazy(() => import('./pages/fingerprint/FingerprintUploadDetail'));
 
-// License
-const LicenseSetupRequired = lazy(() => import('./pages/LicenseSetupRequired'));
-const LicenseConfiguration = lazy(() => import('./pages/admin/LicenseConfiguration'));
-
-
 const ProtectedRoute = ({ role, children, requiredRole }) => {
   if (!isAuthenticated()) return <Navigate to="/" />;
   if (role === requiredRole) return children;
-  if (role === 'ServiceProvider' && (requiredRole === 'Admin' || requiredRole === 'Manager')) return children;
   return <Navigate to="/" />;
 };
 
@@ -99,7 +92,6 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<LoginPage />} />
-          <Route path="/license-setup-required" element={<LicenseSetupRequired />} />
 
           {/* Admin Dashboard — redirected to Outlet Summary */}
           <Route path="/admin/dashboard" element={<Navigate to="/admin/reports/outlet-summary" replace />} />
@@ -179,15 +171,8 @@ function App() {
           } />
           <Route path="/manager/database-backup" element={
             <ProtectedRoute role={role} requiredRole="Manager">
-              <Layout><FeatureGate feature="database_backup"><DatabaseBackup /></FeatureGate></Layout>
+              <Layout><DatabaseBackup /></Layout>
             </ProtectedRoute>
-          } />
-
-          {/* License Configuration — ServiceProvider only */}
-          <Route path="/admin/license-configuration" element={
-            isAuthenticated() && isServiceProvider()
-              ? <Layout><LicenseConfiguration /></Layout>
-              : <Navigate to="/" />
           } />
 
           {/* Admin Routes */}
@@ -282,7 +267,7 @@ function App() {
           } />
           <Route path="/admin/attendance-edit-requests" element={
             <ProtectedRoute role={role} requiredRole="Admin">
-              <Layout><FeatureGate feature="attendance_edit_requests"><AttendanceEditRequests /></FeatureGate></Layout>
+              <Layout><AttendanceEditRequests /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/employees/status" element={
@@ -293,7 +278,7 @@ function App() {
 
           {/* Reports section — admin */}
           <Route path="/admin/reports" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="reports_advanced"><ReportsHub /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><ReportsHub /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/reports/monthly-sheet" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><MonthlySheetReport /></Layout></ProtectedRoute>
@@ -317,48 +302,48 @@ function App() {
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><EmployeeReport /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/reports/location-verification" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="reports_advanced"><LocationVerificationReport /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><LocationVerificationReport /></Layout></ProtectedRoute>
           } />
 
           {/* Payroll / Calculation — admin only */}
           <Route path="/admin/payroll" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><PayrollHub /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><PayrollHub /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/employee/:employeeId" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EmployeeCalculation /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><EmployeeCalculation /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/outlet-allocations" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><OutletAllocations /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><OutletAllocations /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/report" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><PayrollReport /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><PayrollReport /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/allowance-types" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><AllowanceTypes /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><AllowanceTypes /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/bonus-tiers" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><BonusTiers /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><BonusTiers /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/work-schedules" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><WorkSchedules /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><WorkSchedules /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/apit-slabs" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><ApitSlabs /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><ApitSlabs /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/gratuity" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><GratuityReport /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><GratuityReport /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/employee-salary" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EmployeeSalaryCompliance /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><EmployeeSalaryCompliance /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/employee-bank" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EmployeeBankDetails /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><EmployeeBankDetails /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/company-config" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><PayrollCompanyConfig /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><PayrollCompanyConfig /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/payroll/epf-directory" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="payroll"><EpfDirectory /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><EpfDirectory /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/audit-trail" element={
             <ProtectedRoute role={role} requiredRole="Admin"><Layout><AuditTrail /></Layout></ProtectedRoute>
@@ -366,16 +351,16 @@ function App() {
 
           {/* Fingerprint Import — admin + manager */}
           <Route path="/admin/fingerprint" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="fingerprint_import"><FingerprintHub /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FingerprintHub /></Layout></ProtectedRoute>
           } />
           <Route path="/admin/fingerprint/:uploadId" element={
-            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FeatureGate feature="fingerprint_import"><FingerprintUploadDetail /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Admin"><Layout><FingerprintUploadDetail /></Layout></ProtectedRoute>
           } />
           <Route path="/manager/fingerprint" element={
-            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FeatureGate feature="fingerprint_import"><FingerprintHub /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FingerprintHub /></Layout></ProtectedRoute>
           } />
           <Route path="/manager/fingerprint/:uploadId" element={
-            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FeatureGate feature="fingerprint_import"><FingerprintUploadDetail /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FingerprintUploadDetail /></Layout></ProtectedRoute>
           } />
 
           {/* Reports section — manager */}
@@ -404,7 +389,7 @@ function App() {
             <ProtectedRoute role={role} requiredRole="Manager"><Layout><EmployeeReport /></Layout></ProtectedRoute>
           } />
           <Route path="/manager/reports/location-verification" element={
-            <ProtectedRoute role={role} requiredRole="Manager"><Layout><FeatureGate feature="reports_advanced"><LocationVerificationReport /></FeatureGate></Layout></ProtectedRoute>
+            <ProtectedRoute role={role} requiredRole="Manager"><Layout><LocationVerificationReport /></Layout></ProtectedRoute>
           } />
 
         </Routes>
