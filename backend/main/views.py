@@ -35,14 +35,21 @@ def get_agencies(request):
     agencies = Agency.objects.all().values('id', 'name', 'address')  # Add address here
     return JsonResponse(list(agencies), safe=False)
 
+_EMPLOYEE_LIST_PREFETCH = ('user__groups', 'outlets')
+
 @api_view(['GET'])
 def get_all_employees(request):
-    employees = Employee.objects.all()
+    employees = (Employee.objects
+                 .select_related('user')
+                 .prefetch_related(*_EMPLOYEE_LIST_PREFETCH))
     return paginate_queryset(request, employees, EmployeeSerializer)
 
 @api_view(['GET'])
 def get_active_employees(request):
-    employees = Employee.objects.filter(is_active=True)
+    employees = (Employee.objects
+                 .filter(is_active=True)
+                 .select_related('user')
+                 .prefetch_related(*_EMPLOYEE_LIST_PREFETCH))
     return paginate_queryset(request, employees, EmployeeSerializer)
 
 def _parse_effective_date(raw, today):
@@ -337,7 +344,11 @@ def get_outlet_employees(request):
         return Response({"detail": "You are not assigned to this outlet."}, status=403)
 
     # Filter employees by outlet
-    employees = Employee.objects.filter(outlets__id=outlet_id).distinct()
+    employees = (Employee.objects
+                 .filter(outlets__id=outlet_id)
+                 .select_related('user')
+                 .prefetch_related(*_EMPLOYEE_LIST_PREFETCH)
+                 .distinct())
     return paginate_queryset(request, employees, EmployeeSerializer)
 
 # API to create an employee (and user)
@@ -1048,7 +1059,9 @@ def v2_employee_list(request):
     deactivated employees (so they can be viewed and reactivated).
     """
     include_inactive = str(request.query_params.get('include_inactive', '')).lower() in ('1', 'true', 'yes')
-    employees = Employee.objects.select_related('primary_outlet', 'user')
+    employees = (Employee.objects
+                 .select_related('primary_outlet', 'user')
+                 .prefetch_related(*_EMPLOYEE_LIST_PREFETCH))
     if not include_inactive:
         employees = employees.filter(is_active=True)
     search = (request.query_params.get('search') or '').strip()
