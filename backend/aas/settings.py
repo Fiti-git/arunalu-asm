@@ -23,11 +23,17 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # ------------------------------------------------------------------------------
 # SECURITY
 # ------------------------------------------------------------------------------
-# Fail loudly if SECRET_KEY is missing in production — no insecure default.
-SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
+# In production the .env must set DJANGO_SECRET_KEY. The empty default keeps
+# Dockerfile build steps (collectstatic) working without leaking a real key.
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = [h.strip() for h in os.environ["DJANGO_ALLOWED_HOSTS"].split(',') if h.strip()]
+# Safe default of just 'localhost' instead of '*' — production .env must list
+# the real host(s) in DJANGO_ALLOWED_HOSTS as a comma-separated value.
+ALLOWED_HOSTS = [
+    h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(',')
+    if h.strip()
+]
 # ------------------------------------------------------------------------------
 # APPS
 # ------------------------------------------------------------------------------
@@ -140,10 +146,12 @@ SIMPLE_JWT = {
 }
 
 # ------------------------------------------------------------------------------
-# CORS
+# CORS — comma-separated allow-list, no wildcard fallback. If the env var is
+# missing the list is empty, so browsers get blocked rather than silently
+# allowing every origin. Production .env must set CORS_ALLOWED_ORIGINS.
 # ------------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = [
-    o.strip() for o in os.environ["CORS_ALLOWED_ORIGINS"].split(',') if o.strip()
+    o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(',') if o.strip()
 ]
 # ------------------------------------------------------------------------------
 # URL / SLASH HANDLING
