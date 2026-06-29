@@ -3,17 +3,16 @@ import {
   Box, Typography, TextField, Button, CircularProgress, Alert, Avatar, Chip,
   IconButton, Tooltip, Autocomplete, FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate } from 'react-router-dom';
 import api from 'utils/api';
 import { pickAvatarColor } from 'theme/tokens';
-import { PageHeader, StatCard } from 'components/ui';
+import { PageHeader, StatCard, DataTable, applyClientFilters, exportRowsToCsv } from 'components/ui';
 import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
 import BeachAccessOutlinedIcon from '@mui/icons-material/BeachAccessOutlined';
-import { firstOfMonth, today, exportCsv, getInitials, rangeFieldSx } from './shared';
+import { firstOfMonth, today, getInitials, rangeFieldSx } from './shared';
 import { getUserRole } from 'utils/auth';
 
 const statusChipColor = (s) => {
@@ -47,6 +46,11 @@ export default function EmployeeReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   // Load outlets
   useEffect(() => {
     api.get('/api/user/').then((res) => {
@@ -78,6 +82,7 @@ export default function EmployeeReport() {
         params: { start_date: startDate, end_date: endDate },
       });
       setReport(res.data);
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load report.');
     } finally { setLoading(false); }
@@ -87,24 +92,26 @@ export default function EmployeeReport() {
 
   const totals = useMemo(() => {
     if (!report?.daily_report) return { present: 0, leave: 0 };
-    const rows = report.daily_report;
+    const rs = report.daily_report;
     const isLeave = (r) => r.leave_refno != null || (r.attendance_status || '').toLowerCase() === 'on leave';
     return {
-      present: rows.filter((r) => {
+      present: rs.filter((r) => {
         const v = (r.attendance_status || '').toLowerCase();
         return !isLeave(r) && (v === 'present' || v === 'late' || v === 'half day');
       }).length,
-      leave: rows.filter(isLeave).length,
+      leave: rs.filter(isLeave).length,
     };
   }, [report]);
 
   const rows = useMemo(() => (report?.daily_report || []).map((r, i) => ({ id: i, ...r })), [report]);
 
   const columns = [
-    { field: 'work_date', headerName: 'Date', flex: 0.8, minWidth: 120,
-      renderCell: ({ value }) => {
-        const d = new Date(value);
-        if (isNaN(d.getTime())) return value || '—';
+    {
+      key: 'work_date', label: 'Date', width: 130,
+      sortKey: 'work_date', filterKey: 'f_date', filterType: 'text',
+      render: (row) => {
+        const d = new Date(row.work_date);
+        if (isNaN(d.getTime())) return row.work_date || '—';
         return (
           <Box>
             <Typography variant="body2" fontWeight={600}>{d.toLocaleDateString()}</Typography>
@@ -113,24 +120,39 @@ export default function EmployeeReport() {
         );
       },
     },
-    { field: 'attendance_status', headerName: 'Status', flex: 0.7, minWidth: 110,
-      renderCell: ({ value, row }) => {
+    {
+      key: 'attendance_status', label: 'Status', width: 130,
+      sortKey: 'attendance_status', filterKey: 'f_status', filterType: 'text',
+      render: (row) => {
         if (row.leave_refno != null) {
           const label = row.att_type_name || 'Leave';
           return <Chip label={label} size="small" color="info" sx={{ fontWeight: 600 }} />;
         }
-        const v = (value || '').toLowerCase();
+        const v = (row.attendance_status || '').toLowerCase();
         if (v === 'absent' || v === 'late') return null;
-        return value ? <Chip label={value} size="small" color={statusChipColor(value)} sx={{ fontWeight: 600 }} /> : null;
-      } },
-    { field: 'check_in_time', headerName: 'Check-in', flex: 0.6, minWidth: 100,
-      renderCell: ({ value }) => <Typography variant="body2">{fmtT(value)}</Typography> },
-    { field: 'check_out_time', headerName: 'Check-out', flex: 0.6, minWidth: 100,
-      renderCell: ({ value }) => <Typography variant="body2">{fmtT(value)}</Typography> },
-    { field: 'worked_hours', headerName: 'Hours', flex: 0.5, minWidth: 80, align: 'center', headerAlign: 'center',
-      renderCell: ({ value }) => (value != null ? `${value}h` : '—') },
-    { field: 'leave_remarks', headerName: 'Leave / Notes', flex: 1.5, minWidth: 200,
-      renderCell: ({ row }) => (
+        return row.attendance_status ? <Chip label={row.attendance_status} size="small" color={statusChipColor(row.attendance_status)} sx={{ fontWeight: 600 }} /> : null;
+      },
+    },
+    {
+      key: 'check_in_time', label: 'Check-in', width: 110,
+      sortKey: 'check_in_time',
+      render: (row) => <Typography variant="body2">{fmtT(row.check_in_time)}</Typography>,
+    },
+    {
+      key: 'check_out_time', label: 'Check-out', width: 110,
+      sortKey: 'check_out_time',
+      render: (row) => <Typography variant="body2">{fmtT(row.check_out_time)}</Typography>,
+    },
+    {
+      key: 'worked_hours', label: 'Hours', width: 90, align: 'center',
+      sortKey: 'worked_hours',
+      render: (row) => (row.worked_hours != null ? `${row.worked_hours}h` : '—'),
+    },
+    {
+      key: 'leave_remarks', label: 'Leave / Notes', width: 240,
+      filterKey: 'f_notes', filterType: 'text',
+      filterValue: (row) => `${row.leave_refno || ''} ${row.leave_remarks || ''}`,
+      render: (row) => (
         <Typography variant="caption" color="text.secondary" noWrap>
           {row.leave_refno ? `${row.leave_refno} — ` : ''}{row.leave_remarks || ''}
         </Typography>
@@ -138,19 +160,36 @@ export default function EmployeeReport() {
     },
   ];
 
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
+
   const handleExport = () => {
     if (!report) return;
-    const csvRows = rows.map((r) => ({
-      date: r.work_date,
-      status: r.attendance_status,
-      check_in: r.check_in_time,
-      check_out: r.check_out_time,
-      hours: r.worked_hours,
-      leave_refno: r.leave_refno,
-      leave_remarks: r.leave_remarks,
-    }));
+    const exportCols = [
+      { label: 'Date', key: 'work_date' },
+      { label: 'Status', key: 'attendance_status' },
+      { label: 'Check-in', key: 'check_in_time' },
+      { label: 'Check-out', key: 'check_out_time' },
+      { label: 'Hours', key: 'worked_hours' },
+      { label: 'Leave Ref', key: 'leave_refno' },
+      { label: 'Leave Remarks', key: 'leave_remarks' },
+    ];
     const emp = selectedEmployee?.fullname?.replace(/\s+/g, '_') || 'employee';
-    exportCsv(`employee-${emp}_${startDate}_to_${endDate}.csv`, csvRows);
+    exportRowsToCsv(`employee-${emp}_${startDate}_to_${endDate}.csv`, exportCols, filteredRows);
   };
 
   return (
@@ -178,7 +217,7 @@ export default function EmployeeReport() {
                 </IconButton>
               </span>
             </Tooltip>
-            <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={handleExport} disabled={!report}>
+            <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={handleExport} disabled={!report || filteredRows.length === 0}>
               Export CSV
             </Button>
           </Box>
@@ -227,16 +266,22 @@ export default function EmployeeReport() {
         <StatCard icon={<BeachAccessOutlinedIcon />} label="Leave" value={totals.leave} color="info" />
       </Box>
 
-      <Box sx={{ height: 540, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No attendance records in range"
+      />
     </Box>
   );
 }

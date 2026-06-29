@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import { DataGrid, GridToolbar } from '@mui/x-data-grid';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -11,15 +10,7 @@ import {
   MenuItem,
 } from '@mui/material';
 import api from 'utils/api';
-
-// Define which fields should be visible by default
-const VISIBLE_FIELDS = [
-  'employee_id',
-  'employ_number',
-  'fullname',
-  'groups',
-  'date',
-];
+import { DataTable, applyClientFilters } from 'components/ui';
 
 export default function EmployeeDataReport() {
   const [reportData, setReportData] = useState([]);
@@ -28,16 +19,19 @@ export default function EmployeeDataReport() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const token = localStorage.getItem('access_token');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   useEffect(() => {
     const fetchUserOutlets = async () => {
       try {
         const res = await api.get('/api/user/');
-        const userOutlets = res.data.outlets || [];
-        setUserOutlets(userOutlets);
-        if (userOutlets.length > 0) {
-          setSelectedOutletId(userOutlets[0].id);
+        const outlets = res.data.outlets || [];
+        setUserOutlets(outlets);
+        if (outlets.length > 0) {
+          setSelectedOutletId(outlets[0].id);
         }
       } catch (err) {
         setError(err.message);
@@ -55,6 +49,7 @@ export default function EmployeeDataReport() {
       try {
         const res = await api.get(`/outletsalldata/${selectedOutletId}/`);
         setReportData(transformData(res.data));
+        setPage(1);
       } catch (err) {
         setError(err.message);
         setReportData([]);
@@ -159,43 +154,30 @@ export default function EmployeeDataReport() {
     return result;
   };
 
-  const allColumns = [
-    { field: 'employee_id', headerName: 'Emp ID', width: 90 },
-    { field: 'employ_number', headerName: 'Emp No.', width: 90 },
-    { field: 'fullname', headerName: 'Full Name', flex: 1.5, minWidth: 180 },
-    { field: 'groups', headerName: 'Groups', width: 120 },
-    { field: 'date', headerName: 'Date', width: 120 },
-    // Other columns are now part of the grid and can be toggled
-    { field: 'is_active', headerName: 'Active', width: 90, type: 'boolean' },
-    { field: 'basic_salary', headerName: 'Basic Salary', width: 120, type: 'number' },
-    { field: 'status', headerName: 'Status', width: 120 },
-    { field: 'check_in_time', headerName: 'Check In', width: 180 },
-    { field: 'check_out_time', headerName: 'Check Out', width: 180 },
-    { field: 'worked_hours', headerName: 'Worked Hrs', width: 110, type: 'number' },
-    { field: 'ot_hours', headerName: 'OT Hrs', width: 90, type: 'number' },
-    { field: 'punchin_verification', headerName: 'Punch-In Verified', width: 150 },
-    { field: 'punchout_verification', headerName: 'Punch-Out Verified', width: 160 },
-    { field: 'check_in_location', headerName: 'Check-In Location', width: 160 },
-    { field: 'check_out_location', headerName: 'Check-Out Location', width: 160 },
-    { field: 'attendance_id', headerName: 'Attendance ID', width: 120 },
-    { field: 'leave_type_name', headerName: 'Leave Type', width: 130 },
-    { field: 'remarks', headerName: 'Remarks', flex: 1, minWidth: 150 },
-    { field: 'leave_refno', headerName: 'Leave Ref No', width: 120 },
-    { field: 'add_date', headerName: 'Leave Add Date', width: 130 },
-    { field: 'action_date', headerName: 'Leave Action Date', width: 150 },
-    { field: 'email', headerName: 'Email', flex: 1.5, minWidth: 200 },
-    { field: 'phone_number', headerName: 'Phone', width: 130 },
-    { field: 'idnumber', headerName: 'ID Number', width: 150 },
-    { field: 'date_of_birth', headerName: 'DOB', width: 120 },
-    { field: 'epf_number', headerName: 'EPF Number', width: 130 },
-    { field: 'epf_grade', headerName: 'EPF Grade', width: 100 },
+  const columns = [
+    { key: 'employee_id', label: 'Emp ID', width: 90, sortKey: 'employee_id', filterKey: 'f_emp_id', filterType: 'text' },
+    { key: 'employ_number', label: 'Emp No.', width: 100, sortKey: 'employ_number', filterKey: 'f_emp_no', filterType: 'text' },
+    { key: 'fullname', label: 'Full Name', width: 200, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text' },
+    { key: 'groups', label: 'Groups', width: 140, sortKey: 'groups', filterKey: 'f_groups', filterType: 'text' },
+    { key: 'date', label: 'Date', width: 120, sortKey: 'date', filterKey: 'f_date', filterType: 'text' },
   ];
 
-  // Create an object for initial column visibility
-  const initialColumnVisibility = {};
-  allColumns.forEach(col => {
-    initialColumnVisibility[col.field] = VISIBLE_FIELDS.includes(col.field);
-  });
+  const filteredRows = useMemo(
+    () => applyClientFilters(reportData, columns, columnFilters, sortBy),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reportData, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Paper sx={{ p: 3, mt: 3, borderRadius: 3, boxShadow: 3 }}>
@@ -240,29 +222,22 @@ export default function EmployeeDataReport() {
           {error}
         </Typography>
       ) : (
-        <div style={{ height: 600, width: '100%' }}>
-          <DataGrid
-            rows={reportData}
-            columns={allColumns} // Pass all columns
-            loading={loading}
-            components={{ Toolbar: GridToolbar }}
-            initialState={{
-              columns: {
-                columnVisibilityModel: initialColumnVisibility,
-              },
-            }}
-            showToolbar
-            pageSize={10}
-            rowsPerPageOptions={[10, 25, 50, 100]}
-            disableRowSelectionOnClick
-            sx={{
-              borderRadius: 2,
-              '& .MuiDataGrid-row:hover': { backgroundColor: 'grey.50' },
-              '& .MuiDataGrid-cell:focus': { outline: 'none' },
-              '& .record-type-cell': { fontWeight: 'bold' },
-            }}
-          />
-        </div>
+        <DataTable
+          columns={columns}
+          rows={pagedRows}
+          getRowId={(r) => r.id}
+          loading={loading}
+          page={page}
+          pageSize={pageSize}
+          totalCount={filteredRows.length}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          filters={columnFilters}
+          onFilterChange={handleFilterChange}
+          sortBy={sortBy}
+          onSortChange={(s) => { setSortBy(s); setPage(1); }}
+          emptyMessage="No records found"
+        />
       )}
     </Paper>
   );

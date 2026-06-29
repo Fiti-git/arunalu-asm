@@ -3,18 +3,17 @@ import {
   Box, Typography, TextField, Button, CircularProgress, Alert, Avatar,
   IconButton, Tooltip,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate } from 'react-router-dom';
 import api from 'utils/api';
 import { pickAvatarColor } from 'theme/tokens';
-import { PageHeader, StatCard } from 'components/ui';
+import { PageHeader, StatCard, DataTable, applyClientFilters, exportRowsToCsv } from 'components/ui';
 import WatchLaterOutlinedIcon from '@mui/icons-material/WatchLaterOutlined';
 import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
-import { firstOfMonth, today, exportCsv, getInitials, rangeFieldSx } from './shared';
+import { firstOfMonth, today, getInitials, rangeFieldSx } from './shared';
 import { getUserRole } from 'utils/auth';
 
 export default function OvertimeReport() {
@@ -28,6 +27,11 @@ export default function OvertimeReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchData = useCallback(async () => {
     if (endDate < startDate) { setError('End date must be on or after start date.'); return; }
     setLoading(true); setError('');
@@ -36,6 +40,7 @@ export default function OvertimeReport() {
         params: { start_date: startDate, end_date: endDate },
       });
       setRows(res.data || []);
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load report.');
     } finally { setLoading(false); }
@@ -51,8 +56,10 @@ export default function OvertimeReport() {
 
   const columns = [
     {
-      field: 'fullname', headerName: 'Employee', flex: 1.4, minWidth: 220,
-      renderCell: ({ row }) => (
+      key: 'fullname', label: 'Employee', width: 240,
+      sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text',
+      filterValue: (row) => row.fullname,
+      render: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Avatar sx={{ width: 30, height: 30, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
             {getInitials(row.fullname)}
@@ -66,19 +73,56 @@ export default function OvertimeReport() {
         </Box>
       ),
     },
-    { field: 'primary_outlet_name', headerName: 'Outlet', flex: 1, minWidth: 160 },
-    { field: 'ot_hours', headerName: 'OT Hours', flex: 0.6, minWidth: 110, align: 'center', headerAlign: 'center',
-      renderCell: ({ value }) => <Typography fontWeight={700} color="info.dark">{value}h</Typography> },
-    { field: 'days_with_ot', headerName: 'Days w/ OT', flex: 0.6, minWidth: 110, align: 'center', headerAlign: 'center' },
-    { field: 'worked_hours', headerName: 'Total Worked', flex: 0.7, minWidth: 120, align: 'center', headerAlign: 'center',
-      renderCell: ({ value }) => <Typography variant="body2">{value}h</Typography> },
+    {
+      key: 'primary_outlet_name', label: 'Outlet', width: 180,
+      sortKey: 'primary_outlet_name', filterKey: 'f_outlet', filterType: 'text',
+      render: (row) => row.primary_outlet_name || '—',
+    },
+    {
+      key: 'ot_hours', label: 'OT Hours', width: 120, align: 'center',
+      sortKey: 'ot_hours',
+      render: (row) => <Typography fontWeight={700} color="info.dark">{row.ot_hours}h</Typography>,
+    },
+    {
+      key: 'days_with_ot', label: 'Days w/ OT', width: 120, align: 'center',
+      sortKey: 'days_with_ot',
+      render: (row) => row.days_with_ot,
+    },
+    {
+      key: 'worked_hours', label: 'Total Worked', width: 130, align: 'center',
+      sortKey: 'worked_hours',
+      render: (row) => <Typography variant="body2">{row.worked_hours}h</Typography>,
+    },
   ];
 
-  const handleExport = () =>
-    exportCsv(`overtime_${startDate}_to_${endDate}.csv`, rows, {
-      empcode: 'Emp Code', fullname: 'Employee', primary_outlet_name: 'Outlet',
-      ot_hours: 'OT Hours', days_with_ot: 'Days with OT', worked_hours: 'Total Worked Hours',
-    });
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
+
+  const handleExport = () => {
+    const exportCols = [
+      { label: 'Emp Code', key: 'empcode' },
+      { label: 'Employee', key: 'fullname' },
+      { label: 'Outlet', key: 'primary_outlet_name' },
+      { label: 'OT Hours', key: 'ot_hours' },
+      { label: 'Days with OT', key: 'days_with_ot' },
+      { label: 'Total Worked Hours', key: 'worked_hours' },
+    ];
+    exportRowsToCsv(`overtime_${startDate}_to_${endDate}.csv`, exportCols, filteredRows);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -89,7 +133,7 @@ export default function OvertimeReport() {
 
       <PageHeader
         title="Overtime"
-        subtitle={`${rows.length} employee${rows.length === 1 ? '' : 's'} with recorded OT`}
+        subtitle={`${filteredRows.length} employee${filteredRows.length === 1 ? '' : 's'} with recorded OT`}
         actions={
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField label="From" type="date" size="small" value={startDate}
@@ -105,7 +149,7 @@ export default function OvertimeReport() {
                 </IconButton>
               </span>
             </Tooltip>
-            <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={handleExport} disabled={rows.length === 0}>
+            <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={handleExport} disabled={filteredRows.length === 0}>
               Export CSV
             </Button>
           </Box>
@@ -120,17 +164,22 @@ export default function OvertimeReport() {
         <StatCard icon={<PeopleAltOutlinedIcon />} label="Employees" value={totals.empCount} color="secondary" />
       </Box>
 
-      <Box sx={{ height: 560, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.employee_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No overtime records in range"
+      />
     </Box>
   );
 }

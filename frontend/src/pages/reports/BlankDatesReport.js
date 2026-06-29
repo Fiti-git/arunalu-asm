@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, TextField, Button, CircularProgress, Alert, Avatar,
   IconButton, Tooltip, Autocomplete, FormControl, InputLabel, Select, MenuItem, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions, Divider, Paper,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -13,8 +12,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useNavigate } from 'react-router-dom';
 import api from 'utils/api';
 import { pickAvatarColor } from 'theme/tokens';
-import { PageHeader } from 'components/ui';
-import { firstOfMonth, today, exportCsv, getInitials, rangeFieldSx } from './shared';
+import { PageHeader, DataTable, applyClientFilters, exportRowsToCsv } from 'components/ui';
+import { firstOfMonth, today, getInitials, rangeFieldSx } from './shared';
 import { getUserRole } from 'utils/auth';
 
 const ALL_EMPLOYEES = { employee_id: '__all__', fullname: 'All employees' };
@@ -207,6 +206,11 @@ export default function BlankDatesReport() {
   const [fixRow, setFixRow] = useState(null);
   const [fixedCount, setFixedCount] = useState(0);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   useEffect(() => {
     api.get('/api/user/').then((res) => {
       const list = res.data?.outlets || [];
@@ -234,6 +238,7 @@ export default function BlankDatesReport() {
       }
       const res = await api.get('/report/reports/blank-dates/', { params });
       setRows((res.data || []).map((r, i) => ({ id: `${r.employee_id}-${r.work_date}-${i}`, ...r })));
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load report.');
     } finally { setLoading(false); }
@@ -249,8 +254,10 @@ export default function BlankDatesReport() {
 
   const columns = [
     {
-      field: 'fullname', headerName: 'Employee', flex: 1.4, minWidth: 220,
-      renderCell: ({ row }) => (
+      key: 'fullname', label: 'Employee', width: 240,
+      sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text',
+      filterValue: (row) => row.fullname,
+      render: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', overflow: 'hidden' }}>
           <Avatar sx={{ width: 30, height: 30, fontSize: 11, fontWeight: 700, flexShrink: 0, bgcolor: pickAvatarColor(row.fullname || '') }}>
             {getInitials(row.fullname)}
@@ -266,12 +273,17 @@ export default function BlankDatesReport() {
         </Box>
       ),
     },
-    { field: 'primary_outlet_name', headerName: 'Outlet', flex: 1, minWidth: 160 },
     {
-      field: 'work_date', headerName: 'Date', flex: 0.8, minWidth: 140,
-      renderCell: ({ value, row }) => {
-        const d = new Date(value);
-        const label = isNaN(d.getTime()) ? value : d.toLocaleDateString();
+      key: 'primary_outlet_name', label: 'Outlet', width: 180,
+      sortKey: 'primary_outlet_name', filterKey: 'f_outlet', filterType: 'text',
+      render: (row) => row.primary_outlet_name || '—',
+    },
+    {
+      key: 'work_date', label: 'Date', width: 150,
+      sortKey: 'work_date', filterKey: 'f_date', filterType: 'text',
+      render: (row) => {
+        const d = new Date(row.work_date);
+        const label = isNaN(d.getTime()) ? row.work_date : d.toLocaleDateString();
         return (
           <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.2 }}>
             <Typography variant="body2" fontWeight={600}>{label}</Typography>
@@ -281,37 +293,55 @@ export default function BlankDatesReport() {
       },
     },
     {
-      field: 'attendance_status', headerName: 'Status', flex: 0.7, minWidth: 150, sortable: false,
-      renderCell: ({ row }) => (
+      key: 'attendance_status', label: 'Status', width: 160,
+      render: (row) => (
         row.pending_leave_refno
           ? <Chip label="Pending Leave" size="small" color="info" sx={{ fontWeight: 600 }} />
           : <Chip label="Blank Day" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
       ),
     },
     {
-      field: '_fix', headerName: 'Fix', flex: 0.5, minWidth: 110, sortable: false, filterable: false,
-      renderCell: ({ row }) => (
+      key: '_fix', label: 'Fix', width: 110,
+      render: (row) => (
         <Button size="small" variant="contained" startIcon={<BuildIcon fontSize="small" />}
           onClick={() => setFixRow(row)}>Fix</Button>
       ),
     },
   ];
 
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
+
   const handleExport = () => {
-    if (rows.length === 0) return;
+    if (filteredRows.length === 0) return;
     const empPart = selectedEmployee && selectedEmployee.employee_id !== '__all__'
       ? `_${selectedEmployee.fullname.replace(/\s+/g, '_')}`
       : '_all';
-    exportCsv(`blank-dates${empPart}_${startDate}_to_${endDate}.csv`, rows, {
-      empcode: 'Emp Code',
-      fullname: 'Employee',
-      primary_outlet_name: 'Outlet',
-      work_date: 'Date',
-      weekday: 'Weekday',
-      attendance_status: 'Status',
-      pending_leave_refno: 'Pending Leave Ref',
-      pending_leave_type_name: 'Pending Leave Type',
-    });
+    const exportCols = [
+      { label: 'Emp Code', key: 'empcode' },
+      { label: 'Employee', key: 'fullname' },
+      { label: 'Outlet', key: 'primary_outlet_name' },
+      { label: 'Date', key: 'work_date' },
+      { label: 'Weekday', key: 'weekday' },
+      { label: 'Status', key: 'attendance_status' },
+      { label: 'Pending Leave Ref', key: 'pending_leave_refno' },
+      { label: 'Pending Leave Type', key: 'pending_leave_type_name' },
+    ];
+    exportRowsToCsv(`blank-dates${empPart}_${startDate}_to_${endDate}.csv`, exportCols, filteredRows);
   };
 
   return (
@@ -323,7 +353,7 @@ export default function BlankDatesReport() {
 
       <PageHeader
         title="Blank Dates"
-        subtitle={`${rows.length} day${rows.length === 1 ? '' : 's'} with no attendance and no approved leave${fixedCount ? ` · ${fixedCount} fixed this session` : ''}`}
+        subtitle={`${filteredRows.length} day${filteredRows.length === 1 ? '' : 's'} with no attendance and no approved leave${fixedCount ? ` · ${fixedCount} fixed this session` : ''}`}
         actions={
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField label="From" type="date" size="small" value={startDate}
@@ -339,7 +369,7 @@ export default function BlankDatesReport() {
                 </IconButton>
               </span>
             </Tooltip>
-            <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={handleExport} disabled={rows.length === 0}>
+            <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={handleExport} disabled={filteredRows.length === 0}>
               Export CSV
             </Button>
           </Box>
@@ -369,35 +399,22 @@ export default function BlankDatesReport() {
 
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      <Box sx={{ height: 600, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={loading}
-          disableRowSelectionOnClick
-          rowHeight={68}
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-          sx={{
-            '& .MuiDataGrid-cell': {
-              display: 'flex',
-              alignItems: 'center',
-              overflow: 'hidden',
-              py: 0.5,
-            },
-            '& .MuiDataGrid-row': { maxHeight: 'none !important' },
-          }}
-          slots={{
-            noRowsOverlay: () => (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                <Typography color="text.secondary" variant="body2">
-                  No blank dates in the selected range.
-                </Typography>
-              </Box>
-            ),
-          }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No blank dates in the selected range."
+      />
 
       <FixDialog row={fixRow} onClose={() => setFixRow(null)} onFixed={handleFixed} />
     </Box>

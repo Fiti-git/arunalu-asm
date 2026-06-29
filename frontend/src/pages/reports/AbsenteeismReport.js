@@ -1,17 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, TextField, Button, CircularProgress, Alert, Avatar, LinearProgress,
   IconButton, Tooltip, MenuItem,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate } from 'react-router-dom';
 import api from 'utils/api';
 import { pickAvatarColor } from 'theme/tokens';
-import { PageHeader } from 'components/ui';
-import { firstOfMonth, today, exportCsv, getInitials, rangeFieldSx } from './shared';
+import { PageHeader, DataTable, applyClientFilters, exportRowsToCsv } from 'components/ui';
+import { firstOfMonth, today, getInitials, rangeFieldSx } from './shared';
 import { getUserRole } from 'utils/auth';
 
 export default function AbsenteeismReport() {
@@ -26,6 +25,11 @@ export default function AbsenteeismReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchData = useCallback(async () => {
     if (endDate < startDate) { setError('End date must be on or after start date.'); return; }
     setLoading(true); setError('');
@@ -34,6 +38,7 @@ export default function AbsenteeismReport() {
         params: { start_date: startDate, end_date: endDate, min_days: minDays },
       });
       setRows(res.data || []);
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load report.');
     } finally { setLoading(false); }
@@ -43,8 +48,10 @@ export default function AbsenteeismReport() {
 
   const columns = [
     {
-      field: 'fullname', headerName: 'Employee', flex: 1.4, minWidth: 220,
-      renderCell: ({ row }) => (
+      key: 'fullname', label: 'Employee', width: 240,
+      sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text',
+      filterValue: (row) => row.fullname,
+      render: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Avatar sx={{ width: 30, height: 30, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
             {getInitials(row.fullname)}
@@ -58,35 +65,82 @@ export default function AbsenteeismReport() {
         </Box>
       ),
     },
-    { field: 'primary_outlet_name', headerName: 'Outlet', flex: 1, minWidth: 160 },
-    { field: 'total_days', headerName: 'Days', flex: 0.4, minWidth: 80, align: 'center', headerAlign: 'center' },
-    { field: 'present_days', headerName: 'Present', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center' },
-    { field: 'leave_days', headerName: 'Leave', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center' },
-    { field: 'absent_days', headerName: 'Absent', flex: 0.5, minWidth: 90, align: 'center', headerAlign: 'center',
-      renderCell: ({ value }) => <Typography fontWeight={700} color="error.dark">{value}</Typography> },
     {
-      field: 'absent_rate', headerName: 'Absent Rate', flex: 0.8, minWidth: 150,
-      renderCell: ({ value }) => (
-        <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <LinearProgress variant="determinate" value={Math.min(Number(value || 0), 100)}
-            sx={{
-              flex: 1, height: 6, borderRadius: 3, bgcolor: 'grey.100',
-              '& .MuiLinearProgress-bar': {
-                bgcolor: Number(value) >= 40 ? 'error.main' : Number(value) >= 20 ? 'warning.main' : 'success.main',
-                borderRadius: 3,
-              },
-            }} />
-          <Typography variant="caption" fontWeight={700} sx={{ width: 46, textAlign: 'right' }}>{value}%</Typography>
-        </Box>
-      ),
+      key: 'primary_outlet_name', label: 'Outlet', width: 180,
+      sortKey: 'primary_outlet_name', filterKey: 'f_outlet', filterType: 'text',
+      render: (row) => row.primary_outlet_name || '—',
+    },
+    {
+      key: 'total_days', label: 'Days', width: 90, align: 'center',
+      sortKey: 'total_days',
+      render: (row) => row.total_days,
+    },
+    {
+      key: 'present_days', label: 'Present', width: 100, align: 'center',
+      sortKey: 'present_days',
+      render: (row) => row.present_days,
+    },
+    {
+      key: 'leave_days', label: 'Leave', width: 100, align: 'center',
+      sortKey: 'leave_days',
+      render: (row) => row.leave_days,
+    },
+    {
+      key: 'absent_days', label: 'Absent', width: 100, align: 'center',
+      sortKey: 'absent_days',
+      render: (row) => <Typography fontWeight={700} color="error.dark">{row.absent_days}</Typography>,
+    },
+    {
+      key: 'absent_rate', label: 'Absent Rate', width: 170, sortKey: 'absent_rate',
+      render: (row) => {
+        const value = row.absent_rate;
+        return (
+          <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LinearProgress variant="determinate" value={Math.min(Number(value || 0), 100)}
+              sx={{
+                flex: 1, height: 6, borderRadius: 3, bgcolor: 'grey.100',
+                '& .MuiLinearProgress-bar': {
+                  bgcolor: Number(value) >= 40 ? 'error.main' : Number(value) >= 20 ? 'warning.main' : 'success.main',
+                  borderRadius: 3,
+                },
+              }} />
+            <Typography variant="caption" fontWeight={700} sx={{ width: 46, textAlign: 'right' }}>{value}%</Typography>
+          </Box>
+        );
+      },
     },
   ];
 
-  const handleExport = () =>
-    exportCsv(`absenteeism_${startDate}_to_${endDate}.csv`, rows, {
-      empcode: 'Emp Code', fullname: 'Employee', primary_outlet_name: 'Outlet',
-      total_days: 'Days', present_days: 'Present', leave_days: 'Leave', absent_days: 'Absent', absent_rate: 'Absent Rate (%)',
-    });
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
+
+  const handleExport = () => {
+    const exportCols = [
+      { label: 'Emp Code', key: 'empcode' },
+      { label: 'Employee', key: 'fullname' },
+      { label: 'Outlet', key: 'primary_outlet_name' },
+      { label: 'Days', key: 'total_days' },
+      { label: 'Present', key: 'present_days' },
+      { label: 'Leave', key: 'leave_days' },
+      { label: 'Absent', key: 'absent_days' },
+      { label: 'Absent Rate (%)', key: 'absent_rate' },
+    ];
+    exportRowsToCsv(`absenteeism_${startDate}_to_${endDate}.csv`, exportCols, filteredRows);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -97,7 +151,7 @@ export default function AbsenteeismReport() {
 
       <PageHeader
         title="Absenteeism"
-        subtitle={`${rows.length} employee${rows.length === 1 ? '' : 's'} with ≥ ${minDays} absent day${minDays === 1 ? '' : 's'}`}
+        subtitle={`${filteredRows.length} employee${filteredRows.length === 1 ? '' : 's'} with ≥ ${minDays} absent day${minDays === 1 ? '' : 's'}`}
         actions={
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField label="From" type="date" size="small" value={startDate}
@@ -119,7 +173,7 @@ export default function AbsenteeismReport() {
                 </IconButton>
               </span>
             </Tooltip>
-            <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={handleExport} disabled={rows.length === 0}>
+            <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={handleExport} disabled={filteredRows.length === 0}>
               Export CSV
             </Button>
           </Box>
@@ -128,17 +182,22 @@ export default function AbsenteeismReport() {
 
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      <Box sx={{ height: 600, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.employee_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No absentees in range"
+      />
     </Box>
   );
 }

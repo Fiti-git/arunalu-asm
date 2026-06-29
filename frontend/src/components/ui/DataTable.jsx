@@ -356,6 +356,41 @@ function InlineEditor({ row, col, onCommit, onCancel }) {
   );
 }
 
+// ─── Client-side filter + sort helper ──────────────────────────────────────
+// Apply filters[col.filterKey] (icontains) and sortBy {key, dir} to a row array.
+// Use this in parents that hold all data client-side, then pass the result to <DataTable rows={...}>.
+export function applyClientFilters(rows, columns, filters, sortBy) {
+  let out = rows;
+  for (const col of columns) {
+    if (!col.filterKey) continue;
+    const v = filters?.[col.filterKey];
+    if (v === '' || v == null) continue;
+    out = out.filter(r => {
+      const raw = col.filterValue ? col.filterValue(r) : r[col.key];
+      if (col.filterType === 'bool') return String(!!raw) === String(v);
+      return String(raw ?? '').toLowerCase().includes(String(v).toLowerCase());
+    });
+  }
+  if (sortBy?.key) {
+    const col = columns.find(c => c.sortKey === sortBy.key);
+    const getter = col?.sortValue
+      ? col.sortValue
+      : (r) => col ? (col.filterValue ? col.filterValue(r) : r[col.key]) : r[sortBy.key];
+    out = [...out].sort((a, b) => {
+      const va = getter(a); const vb = getter(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      const na = Number(va); const nb = Number(vb);
+      let cmp;
+      if (!isNaN(na) && !isNaN(nb)) cmp = na - nb;
+      else cmp = String(va).localeCompare(String(vb));
+      return sortBy.dir === 'desc' ? -cmp : cmp;
+    });
+  }
+  return out;
+}
+
 // ─── CSV export helper ──────────────────────────────────────────────────────
 export function exportRowsToCsv(filename, columns, rows) {
   const headers = columns.filter(c => c.label).map(c => c.label);
