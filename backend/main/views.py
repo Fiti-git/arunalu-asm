@@ -1076,6 +1076,64 @@ def v2_employee_list(request):
             Q(user__last_name__icontains=search) |
             Q(user__email__icontains=search)
         ).distinct()
+
+    # Per-column filters (icontains for text fields, exact for booleans)
+    qp = request.query_params
+    text_filters = {
+        'f_fullname': 'fullname__icontains',
+        'f_first_name': 'user__first_name__icontains',
+        'f_last_name': 'user__last_name__icontains',
+        'f_email': 'user__email__icontains',
+        'f_phone': 'phone_number__icontains',
+        'f_dob': 'date_of_birth__icontains',
+        'f_idnumber': 'idnumber__icontains',
+        'f_employ_number': 'employ_number__icontains',
+        'f_epf_number': 'epf_number__icontains',
+        'f_basic_salary': 'basic_salary__icontains',
+    }
+    for param, lookup in text_filters.items():
+        val = (qp.get(param) or '').strip()
+        if val:
+            employees = employees.filter(**{lookup: val})
+
+    f_outlet = (qp.get('f_outlet') or '').strip()
+    if f_outlet:
+        employees = employees.filter(outlets__name__icontains=f_outlet).distinct()
+    f_primary_outlet = (qp.get('f_primary_outlet') or '').strip()
+    if f_primary_outlet:
+        employees = employees.filter(primary_outlet__name__icontains=f_primary_outlet)
+    f_group = (qp.get('f_group') or '').strip()
+    if f_group:
+        employees = employees.filter(user__groups__name__icontains=f_group).distinct()
+    f_is_active = (qp.get('f_is_active') or '').strip().lower()
+    if f_is_active in ('true', 'false', '1', '0'):
+        employees = employees.filter(is_active=f_is_active in ('true', '1'))
+    f_cal_epf = (qp.get('f_cal_epf') or '').strip().lower()
+    if f_cal_epf in ('true', 'false', '1', '0'):
+        employees = employees.filter(cal_epf=f_cal_epf in ('true', '1'))
+
+    ordering = (qp.get('ordering') or '').strip()
+    ordering_map = {
+        'fullname': 'fullname',
+        'first_name': 'user__first_name',
+        'last_name': 'user__last_name',
+        'email': 'user__email',
+        'phone_number': 'phone_number',
+        'date_of_birth': 'date_of_birth',
+        'idnumber': 'idnumber',
+        'employ_number': 'employ_number',
+        'epf_number': 'epf_number',
+        'basic_salary': 'basic_salary',
+        'is_active': 'is_active',
+        'cal_epf': 'cal_epf',
+        'primary_outlet': 'primary_outlet__name',
+    }
+    if ordering:
+        desc = ordering.startswith('-')
+        key = ordering[1:] if desc else ordering
+        if key in ordering_map:
+            employees = employees.order_by(('-' if desc else '') + ordering_map[key])
+
     return paginate_queryset(request, employees, EmployeeSerializer)
 
 

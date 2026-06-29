@@ -4,9 +4,10 @@ import {
   Alert, Divider, Switch, FormControlLabel, InputAdornment,
   IconButton, Avatar, Tabs, Tab, Stepper, Step, StepLabel,
   DialogContent, DialogActions, Tooltip, Dialog,
-  CircularProgress, Stack, Chip,
+  CircularProgress, Stack, Chip, Select, Pagination, Table,
+  TableBody, TableCell, TableContainer, TableHead, TableRow,
+  TableSortLabel,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -112,220 +113,111 @@ function PunchPhotoSlot({ label, src, tone }) {
 
 const Dash = () => <Typography variant="caption" color="text.disabled">—</Typography>;
 
-const buildColumns = (onEdit) => [
-  {
-    field: 'name',
-    headerName: 'Employee',
-    flex: 1.6,
-    minWidth: 240,
-    sortable: true,
-    valueGetter: (_, row) =>
-      `${row.first_name || ''} ${row.last_name || ''}`.trim() || row.fullname,
-    renderCell: ({ row, value }) => (
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.5,
-          width: '100%',
-          height: '100%',
-          py: 1,
-        }}
-      >
-        <Avatar
-          src={row.reference_photo ? `${BASE_URL}${row.reference_photo}` : undefined}
-          sx={{
-            width: 40, height: 40, flexShrink: 0,
-            bgcolor: pickAvatarColor(row.fullname),
-            fontWeight: 700, fontSize: '0.9rem',
-          }}
-        >
-          {getInitials(row.fullname)}
-        </Avatar>
-        <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.3 }}>
-          <Typography
-            variant="body2"
-            fontWeight={600}
-            noWrap
-            sx={{ lineHeight: 1.3 }}
-            title={value}
+const COLUMNS = [
+  { key: 'name', label: 'Employee', width: 260, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text' },
+  { key: 'group_name', label: 'Role', width: 140, filterKey: 'f_group', filterType: 'text' },
+  { key: 'email', label: 'Email', width: 200, sortKey: 'email', filterKey: 'f_email', filterType: 'text' },
+  { key: 'phone_number', label: 'Phone', width: 140, sortKey: 'phone_number', filterKey: 'f_phone', filterType: 'text' },
+  { key: 'date_of_birth', label: 'Date of Birth', width: 140, sortKey: 'date_of_birth', filterKey: 'f_dob', filterType: 'text' },
+  { key: 'idnumber', label: 'ID Number', width: 140, sortKey: 'idnumber', filterKey: 'f_idnumber', filterType: 'text' },
+  { key: 'outlet_names', label: 'Outlets', width: 200, filterKey: 'f_outlet', filterType: 'text' },
+  { key: 'primary_outlet_name', label: 'Primary Outlet', width: 160, sortKey: 'primary_outlet', filterKey: 'f_primary_outlet', filterType: 'text' },
+  { key: 'employ_number', label: 'Emp. No.', width: 110, sortKey: 'employ_number', filterKey: 'f_employ_number', filterType: 'text' },
+  { key: 'epf_number', label: 'EPF No.', width: 120, sortKey: 'epf_number', filterKey: 'f_epf_number', filterType: 'text' },
+  { key: 'basic_salary', label: 'Basic Salary', width: 140, align: 'right', sortKey: 'basic_salary', filterKey: 'f_basic_salary', filterType: 'text' },
+  { key: 'is_active', label: 'Status', width: 120, align: 'center', sortKey: 'is_active', filterKey: 'f_is_active', filterType: 'bool' },
+  { key: 'cal_epf', label: 'Calc EPF', width: 110, align: 'center', sortKey: 'cal_epf', filterKey: 'f_cal_epf', filterType: 'bool' },
+  { key: 'actions', label: '', width: 70, align: 'center' },
+];
+
+function renderCell(col, row, onEdit) {
+  switch (col.key) {
+    case 'name':
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Avatar
+            src={row.reference_photo ? `${BASE_URL}${row.reference_photo}` : undefined}
+            sx={{ width: 36, height: 36, flexShrink: 0, bgcolor: pickAvatarColor(row.fullname), fontWeight: 700, fontSize: '0.85rem' }}
           >
-            {value}
-          </Typography>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            noWrap
-            sx={{ lineHeight: 1.3 }}
-          >
-            @{row.fullname}
-          </Typography>
+            {getInitials(row.fullname)}
+          </Avatar>
+          <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.3 }}>
+            <Typography variant="body2" fontWeight={600} noWrap>
+              {`${row.first_name || ''} ${row.last_name || ''}`.trim() || row.fullname}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>@{row.fullname}</Typography>
+          </Box>
         </Box>
-      </Box>
-    ),
-  },
-  {
-    field: 'group_name',
-    headerName: 'Role',
-    flex: 0.8,
-    minWidth: 120,
-    renderCell: ({ value }) =>
-      value && value !== '—'
-        ? <Chip label={value} size="small" variant="outlined" />
-        : <Dash />,
-  },
-  {
-    field: 'email',
-    headerName: 'Email',
-    flex: 1.2,
-    minWidth: 180,
-    renderCell: ({ value }) => (
-      <Typography variant="body2" color="text.secondary" noWrap>{value || '—'}</Typography>
-    ),
-  },
-  {
-    field: 'phone_number',
-    headerName: 'Phone',
-    flex: 0.8,
-    minWidth: 130,
-    renderCell: ({ value }) => (
-      <Typography variant="body2" color="text.secondary" noWrap>{value || '—'}</Typography>
-    ),
-  },
-  {
-    field: 'date_of_birth',
-    headerName: 'Date of Birth',
-    flex: 0.8,
-    minWidth: 130,
-    renderCell: ({ value }) => (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, height: '100%' }}>
-        <CakeOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-        <Typography variant="caption" color="text.secondary">{value || '—'}</Typography>
-      </Box>
-    ),
-  },
-  {
-    field: 'idnumber',
-    headerName: 'ID Number',
-    flex: 0.8,
-    minWidth: 130,
-    renderCell: ({ value }) => (
-      <Typography variant="caption" color="text.secondary">{value || '—'}</Typography>
-    ),
-  },
-  {
-    field: 'outlet_names',
-    headerName: 'Outlets',
-    flex: 1.2,
-    minWidth: 180,
-    sortable: false,
-    renderCell: ({ value }) =>
-      value?.length > 0 ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, height: '100%', minWidth: 0 }}>
+      );
+    case 'group_name':
+      return row.group_name && row.group_name !== '—'
+        ? <Chip label={row.group_name} size="small" variant="outlined" />
+        : <Dash />;
+    case 'email':
+    case 'phone_number':
+      return <Typography variant="body2" color="text.secondary" noWrap>{row[col.key] || '—'}</Typography>;
+    case 'date_of_birth':
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
+          <CakeOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+          <Typography variant="caption" color="text.secondary">{row.date_of_birth || '—'}</Typography>
+        </Box>
+      );
+    case 'idnumber':
+    case 'employ_number':
+    case 'epf_number':
+      return <Typography variant="caption" color="text.secondary">{row[col.key] || '—'}</Typography>;
+    case 'outlet_names':
+      return row.outlet_names?.length > 0 ? (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, minWidth: 0 }}>
           <LocationOnOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', flexShrink: 0 }} />
           <Typography variant="caption" color="text.secondary" noWrap>
-            {value.slice(0, 2).join(', ')}
-            {value.length > 2 && ` +${value.length - 2}`}
+            {row.outlet_names.slice(0, 2).join(', ')}
+            {row.outlet_names.length > 2 && ` +${row.outlet_names.length - 2}`}
           </Typography>
         </Box>
-      ) : <Dash />,
-  },
-  {
-    field: 'primary_outlet_name',
-    headerName: 'Primary Outlet',
-    flex: 1,
-    minWidth: 150,
-    renderCell: ({ value }) =>
-      value ? (
+      ) : <Dash />;
+    case 'primary_outlet_name':
+      return row.primary_outlet_name ? (
+        <Chip label={row.primary_outlet_name} size="small" sx={{ bgcolor: 'success.light', color: 'success.dark', fontWeight: 600 }} />
+      ) : <Dash />;
+    case 'basic_salary':
+      return (
+        <Typography variant="caption" color="text.secondary">
+          {row.basic_salary ? `Rs. ${Number(row.basic_salary).toLocaleString()}` : '—'}
+        </Typography>
+      );
+    case 'is_active':
+      return (
         <Chip
-          label={value}
+          label={row.is_active ? 'Active' : 'Inactive'}
           size="small"
-          sx={{ bgcolor: 'success.light', color: 'success.dark', fontWeight: 600 }}
+          color={row.is_active ? 'success' : 'error'}
+          variant={row.is_active ? 'filled' : 'outlined'}
+          sx={{ fontWeight: 600 }}
         />
-      ) : <Dash />,
-  },
-  {
-    field: 'employ_number',
-    headerName: 'Emp. No.',
-    flex: 0.6,
-    minWidth: 100,
-    renderCell: ({ value }) => (
-      <Typography variant="caption" color="text.secondary">{value || '—'}</Typography>
-    ),
-  },
-  {
-    field: 'epf_number',
-    headerName: 'EPF No.',
-    flex: 0.7,
-    minWidth: 110,
-    renderCell: ({ value }) => (
-      <Typography variant="caption" color="text.secondary">{value || '—'}</Typography>
-    ),
-  },
-  {
-    field: 'basic_salary',
-    headerName: 'Basic Salary',
-    flex: 0.8,
-    minWidth: 130,
-    align: 'right',
-    headerAlign: 'right',
-    renderCell: ({ value }) => (
-      <Typography variant="caption" color="text.secondary">
-        {value ? `Rs. ${Number(value).toLocaleString()}` : '—'}
-      </Typography>
-    ),
-  },
-  {
-    field: 'is_active',
-    headerName: 'Status',
-    flex: 0.6,
-    minWidth: 110,
-    align: 'center',
-    headerAlign: 'center',
-    renderCell: ({ row }) => (
-      <Chip
-        label={row.is_active ? 'Active' : 'Inactive'}
-        size="small"
-        color={row.is_active ? 'success' : 'error'}
-        variant={row.is_active ? 'filled' : 'outlined'}
-        sx={{ fontWeight: 600 }}
-      />
-    ),
-  },
-  {
-    field: 'cal_epf',
-    headerName: 'Calc EPF',
-    flex: 0.6,
-    minWidth: 100,
-    align: 'center',
-    headerAlign: 'center',
-    renderCell: ({ value }) => (
-      <Chip
-        label={value ? 'Yes' : 'No'}
-        size="small"
-        color={value ? 'success' : 'default'}
-        variant="outlined"
-      />
-    ),
-  },
-  {
-    field: 'actions',
-    headerName: 'Actions',
-    flex: 0.5,
-    minWidth: 80,
-    sortable: false,
-    filterable: false,
-    align: 'center',
-    headerAlign: 'center',
-    renderCell: ({ row }) => (
-      <Tooltip title="Edit employee">
-        <IconButton size="small" onClick={() => onEdit(row)} color="primary">
-          <EditOutlinedIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-    ),
-  },
-];
+      );
+    case 'cal_epf':
+      return (
+        <Chip
+          label={row.cal_epf ? 'Yes' : 'No'}
+          size="small"
+          color={row.cal_epf ? 'success' : 'default'}
+          variant="outlined"
+        />
+      );
+    case 'actions':
+      return (
+        <Tooltip title="Edit employee">
+          <IconButton size="small" onClick={() => onEdit(row)} color="primary">
+            <EditOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      );
+    default:
+      return null;
+  }
+}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AdminEmployeeEditor() {
@@ -335,9 +227,13 @@ export default function AdminEmployeeEditor() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [totalCount, setTotalCount] = useState(0);
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
   const searchTimeout = useRef(null);
+  const filterTimeout = useRef(null);
 
   // Create wizard
   const [createOpen, setCreateOpen] = useState(false);
@@ -360,11 +256,27 @@ export default function AdminEmployeeEditor() {
   const watchedEditOutlets = editForm.watch('outlets');
 
   // ─── Fetch ──────────────────────────────────────────────────────────────
-  const fetchEmployees = useCallback(async (page = 1, q = '', inactive = includeInactive) => {
+  const fetchEmployees = useCallback(async (
+    page = 1,
+    q = '',
+    inactive = includeInactive,
+    filters = columnFilters,
+    sort = sortBy,
+    size = pageSize,
+  ) => {
     setLoading(true);
     try {
+      const params = {
+        page,
+        page_size: size,
+        ...(q ? { search: q } : {}),
+        ...(inactive ? { include_inactive: 'true' } : {}),
+        ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== '' && v != null)),
+      };
+      if (sort.key) params.ordering = (sort.dir === 'desc' ? '-' : '') + sort.key;
+
       const [empRes, outletRes] = await Promise.all([
-        api.get('/api/v2/employees/', { params: { page, page_size: 25, ...(q ? { search: q } : {}), ...(inactive ? { include_inactive: 'true' } : {}) } }),
+        api.get('/api/v2/employees/', { params }),
         api.get('/api/outlets/'),
       ]);
       const outletsMap = outletRes.data.reduce((a, o) => ({ ...a, [o.id]: o.name }), {});
@@ -389,9 +301,9 @@ export default function AdminEmployeeEditor() {
   }, []);
 
   useEffect(() => {
-    fetchEmployees(currentPage, search, includeInactive);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- search is debounced via handleSearchChange; pagination must preserve current search value
-  }, [currentPage, includeInactive, fetchEmployees]);
+    fetchEmployees(currentPage, search, includeInactive, columnFilters, sortBy, pageSize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, includeInactive, sortBy, pageSize, fetchEmployees]);
 
   const handleSearchChange = (e) => {
     const val = e.target.value;
@@ -399,9 +311,40 @@ export default function AdminEmployeeEditor() {
     clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => {
       setCurrentPage(1);
-      fetchEmployees(1, val);
+      fetchEmployees(1, val, includeInactive, columnFilters, sortBy, pageSize);
     }, 300);
   };
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    clearTimeout(filterTimeout.current);
+    filterTimeout.current = setTimeout(() => {
+      setCurrentPage(1);
+      fetchEmployees(1, search, includeInactive, next, sortBy, pageSize);
+    }, 300);
+  };
+
+  const handleSort = (sortKey) => {
+    if (!sortKey) return;
+    setCurrentPage(1);
+    setSortBy(prev => {
+      if (prev.key !== sortKey) return { key: sortKey, dir: 'asc' };
+      if (prev.dir === 'asc') return { key: sortKey, dir: 'desc' };
+      return { key: '', dir: 'asc' };
+    });
+  };
+
+  const clearAllFilters = () => {
+    setColumnFilters({});
+    setSortBy({ key: '', dir: 'asc' });
+    setCurrentPage(1);
+    fetchEmployees(1, search, includeInactive, {}, { key: '', dir: 'asc' }, pageSize);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const hasActiveFilters = Object.keys(columnFilters).length > 0 || sortBy.key !== '';
 
   // ─── Create ──────────────────────────────────────────────────────────────
   const openCreate = () => {
@@ -574,47 +517,165 @@ export default function AdminEmployeeEditor() {
           border: 1,
           borderColor: 'divider',
           borderRadius: 2,
+          display: 'flex',
+          flexDirection: 'column',
           height: 'calc(100vh - 220px)',
           minHeight: 560,
+          overflow: 'hidden',
         }}
       >
-        <DataGrid
-          rows={employees}
-          columns={buildColumns(openEdit)}
-          getRowId={(row) => row.employee_id}
-          getRowClassName={(params) => (params.row.is_active ? '' : 'row-inactive')}
-          loading={loading}
-          rowHeight={72}
-          columnHeaderHeight={52}
-          disableRowSelectionOnClick
-          paginationMode="server"
-          rowCount={totalCount}
-          paginationModel={{ page: currentPage - 1, pageSize: 25 }}
-          onPaginationModelChange={(model) => setCurrentPage(model.page + 1)}
-          pageSizeOptions={[25]}
-          sx={{
-            border: 0,
-            '& .MuiDataGrid-columnHeaders': { bgcolor: 'grey.50' },
-            '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 700 },
-            '& .MuiDataGrid-cell': {
-              display: 'flex',
-              alignItems: 'center',
-              py: 0.5,
-            },
-            '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': { outline: 'none' },
-            '& .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within': { outline: 'none' },
-            '& .MuiDataGrid-row': { alignItems: 'center' },
-            '& .MuiDataGrid-row.row-inactive': { bgcolor: 'rgba(244,67,54,0.04)', opacity: 0.75 },
-          }}
-          slots={{
-            noRowsOverlay: () => (
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                <PersonOutlineIcon sx={{ fontSize: 52, color: 'text.disabled', mb: 1 }} />
-                <Typography color="text.secondary">No employees found</Typography>
-              </Box>
-            ),
-          }}
-        />
+        {hasActiveFilters && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, borderBottom: 1, borderColor: 'divider', bgcolor: 'primary.50' }}>
+            <Typography variant="caption" color="primary.dark" fontWeight={600}>
+              Filters active — showing {totalCount} matching employees
+            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Button size="small" onClick={clearAllFilters} variant="text">Clear all</Button>
+          </Box>
+        )}
+
+        <TableContainer sx={{ flex: 1, overflow: 'auto' }}>
+          <Table stickyHeader size="small" sx={{ tableLayout: 'fixed' }}>
+            <TableHead>
+              <TableRow>
+                {COLUMNS.map(col => (
+                  <TableCell
+                    key={col.key}
+                    align={col.align || 'left'}
+                    sx={{
+                      width: col.width,
+                      minWidth: col.width,
+                      bgcolor: 'grey.50',
+                      fontWeight: 700,
+                      borderBottom: 2,
+                      borderColor: 'divider',
+                      py: 1,
+                    }}
+                  >
+                    {col.sortKey ? (
+                      <TableSortLabel
+                        active={sortBy.key === col.sortKey}
+                        direction={sortBy.key === col.sortKey ? sortBy.dir : 'asc'}
+                        onClick={() => handleSort(col.sortKey)}
+                      >
+                        {col.label}
+                      </TableSortLabel>
+                    ) : col.label}
+                  </TableCell>
+                ))}
+              </TableRow>
+              <TableRow>
+                {COLUMNS.map(col => (
+                  <TableCell
+                    key={`f-${col.key}`}
+                    sx={{
+                      width: col.width,
+                      minWidth: col.width,
+                      bgcolor: 'grey.50',
+                      borderBottom: 1,
+                      borderColor: 'divider',
+                      py: 0.5,
+                      px: 1,
+                    }}
+                  >
+                    {col.filterType === 'text' && (
+                      <TextField
+                        size="small"
+                        fullWidth
+                        placeholder="Filter…"
+                        value={columnFilters[col.filterKey] || ''}
+                        onChange={(e) => handleFilterChange(col.filterKey, e.target.value)}
+                        sx={{ '& .MuiInputBase-input': { fontSize: '0.75rem', py: 0.5 } }}
+                      />
+                    )}
+                    {col.filterType === 'bool' && (
+                      <Select
+                        size="small"
+                        fullWidth
+                        displayEmpty
+                        value={columnFilters[col.filterKey] ?? ''}
+                        onChange={(e) => handleFilterChange(col.filterKey, e.target.value)}
+                        sx={{ fontSize: '0.75rem', '& .MuiSelect-select': { py: 0.5 } }}
+                      >
+                        <MenuItem value=""><em>All</em></MenuItem>
+                        <MenuItem value="true">
+                          {col.key === 'is_active' ? 'Active' : 'Yes'}
+                        </MenuItem>
+                        <MenuItem value="false">
+                          {col.key === 'is_active' ? 'Inactive' : 'No'}
+                        </MenuItem>
+                      </Select>
+                    )}
+                  </TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading && employees.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={COLUMNS.length} align="center" sx={{ py: 8 }}>
+                    <CircularProgress size={28} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && employees.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={COLUMNS.length} align="center" sx={{ py: 8 }}>
+                    <PersonOutlineIcon sx={{ fontSize: 52, color: 'text.disabled', mb: 1 }} />
+                    <Typography color="text.secondary">No employees found</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {employees.map(row => (
+                <TableRow
+                  key={row.employee_id}
+                  hover
+                  sx={{
+                    bgcolor: row.is_active ? 'inherit' : 'rgba(244,67,54,0.04)',
+                    opacity: row.is_active ? 1 : 0.75,
+                    '& td': { py: 1 },
+                  }}
+                >
+                  {COLUMNS.map(col => (
+                    <TableCell
+                      key={col.key}
+                      align={col.align || 'left'}
+                      sx={{ width: col.width, minWidth: col.width, overflow: 'hidden' }}
+                    >
+                      {renderCell(col, row, openEdit)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, py: 1.25, borderTop: 1, borderColor: 'divider', bgcolor: 'grey.50' }}>
+          <Typography variant="caption" color="text.secondary">
+            Showing {employees.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+            –{Math.min(currentPage * pageSize, totalCount)} of {totalCount}
+          </Typography>
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="caption" color="text.secondary">Rows per page:</Typography>
+          <Select
+            size="small"
+            value={pageSize}
+            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+            sx={{ fontSize: '0.8rem' }}
+          >
+            {[25, 50, 100, 200, 500].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}
+          </Select>
+          <Pagination
+            page={currentPage}
+            count={totalPages}
+            onChange={(_, p) => setCurrentPage(p)}
+            size="small"
+            shape="rounded"
+            showFirstButton
+            showLastButton
+          />
+        </Box>
       </Box>
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
