@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import {
   Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   TableSortLabel, TextField, Select, MenuItem, Pagination, Typography,
@@ -15,13 +15,18 @@ import {
  *   align?:     'left'|'center'|'right'
  *   sortKey?:   string                  — server ordering key; omit to disable sort
  *   filterKey?: string                  — server filter param name; omit to disable filter
- *   filterType?:'text' | 'bool' | 'select'
+ *   filterType?:'text' | 'bool' | 'select' | 'date'
  *   filterOptions?: [{ value, label }]  — required for filterType:'select'
  *   boolLabels?: { true, false }        — labels for bool filter (default Yes/No)
- *   render:     (row) => ReactNode      — cell renderer
+ *   render:     (row) => ReactNode      — read-only cell renderer
+ *   editable?:  boolean                 — show inline editor when cell is focused
+ *   editType?:  'text' | 'number' | 'date' | 'select'
+ *   editOptions?: [{ value, label }]    — for editType:'select'
+ *   getValue?:  (row) => string|number  — value to seed editor (defaults to row[key])
  * }
  *
- * Filters/sorting/pagination are fully controlled — parent owns state and fetches data.
+ * Inline edit: when editable, double-click a cell to edit. onCellEdit(row, key, value)
+ * is called when the editor blurs / Enter is pressed and the value changed.
  */
 export default function DataTable({
   columns,
@@ -41,6 +46,10 @@ export default function DataTable({
   // sorting
   sortBy = { key: '', dir: 'asc' },
   onSortChange,
+  // inline edit
+  onCellEdit,
+  // toolbar (top strip) — render arbitrary actions like Export
+  toolbar,
   // misc
   onRowClassName,
   emptyIcon,
@@ -50,6 +59,7 @@ export default function DataTable({
   debounceMs = 300,
 }) {
   const filterTimeouts = useRef({});
+  const [editingCell, setEditingCell] = useState(null); // { id, key }
 
   const handleFilterInput = (filterKey, value) => {
     clearTimeout(filterTimeouts.current[filterKey]);
@@ -72,6 +82,14 @@ export default function DataTable({
     if (onSortChange) onSortChange({ key: '', dir: 'asc' });
   };
 
+  const commitEdit = useCallback((row, col, newValue) => {
+    const prev = col.getValue ? col.getValue(row) : row[col.key];
+    if (`${prev ?? ''}` !== `${newValue ?? ''}` && onCellEdit) {
+      onCellEdit(row, col.key, newValue);
+    }
+    setEditingCell(null);
+  }, [onCellEdit]);
+
   const hasActiveFilters =
     Object.values(filters).some(v => v !== '' && v != null) || !!sortBy.key;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -91,13 +109,18 @@ export default function DataTable({
         overflow: 'hidden',
       }}
     >
-      {hasActiveFilters && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, borderBottom: 1, borderColor: 'divider', bgcolor: 'primary.50' }}>
-          <Typography variant="caption" color="primary.dark" fontWeight={600}>
-            Filters active — showing {totalCount} matching records
-          </Typography>
+      {(toolbar || hasActiveFilters) && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, borderBottom: 1, borderColor: 'divider', bgcolor: hasActiveFilters ? 'primary.50' : 'grey.50' }}>
+          {hasActiveFilters && (
+            <Typography variant="caption" color="primary.dark" fontWeight={600}>
+              Filters active — showing {totalCount} matching records
+            </Typography>
+          )}
           <Box sx={{ flex: 1 }} />
-          <Button size="small" onClick={clearAll} variant="text">Clear all</Button>
+          {toolbar}
+          {hasActiveFilters && (
+            <Button size="small" onClick={clearAll} variant="text">Clear all</Button>
+          )}
         </Box>
       )}
 
@@ -154,6 +177,16 @@ export default function DataTable({
                         defaultValue={filters[col.filterKey] || ''}
                         key={`${col.filterKey}-${filters[col.filterKey] || ''}`}
                         onChange={(e) => handleFilterInput(col.filterKey, e.target.value)}
+                        sx={{ '& .MuiInputBase-input': { fontSize: '0.75rem', py: 0.5 } }}
+                      />
+                    )}
+                    {col.filterKey && col.filterType === 'date' && (
+                      <TextField
+                        size="small"
+                        type="date"
+                        fullWidth
+                        value={filters[col.filterKey] || ''}
+                        onChange={(e) => onFilterChange && onFilterChange(col.filterKey, e.target.value)}
                         sx={{ '& .MuiInputBase-input': { fontSize: '0.75rem', py: 0.5 } }}
                       />
                     )}
@@ -217,15 +250,26 @@ export default function DataTable({
                   className={rowClass || undefined}
                   sx={{ '& td': { py: 1 } }}
                 >
-                  {columns.map(col => (
-                    <TableCell
-                      key={col.key}
-                      align={col.align || 'left'}
-                      sx={{ width: col.width, minWidth: col.width, overflow: 'hidden' }}
-                    >
-                      {col.render ? col.render(row) : row[col.key]}
-                    </TableCell>
-                  ))}
+                  {columns.map(col => {
+                    const isEditing = editingCell && editingCell.id === id && editingCell.key === col.key;
+                    return (
+                      <TableCell
+                        key={col.key}
+                        align={col.align || 'left'}
+                        onDoubleClick={col.editable ? () => setEditingCell({ id, key: col.key }) : undefined}
+                        sx={{
+                          width: col.width,
+                          minWidth: col.width,
+                          overflow: 'hidden',
+                          cursor: col.editable ? 'cell' : 'default',
+                        }}
+                      >
+                        {isEditing
+                          ? <InlineEditor row={row} col={col} onCommit={(v) => commitEdit(row, col, v)} onCancel={() => setEditingCell(null)} />
+                          : (col.render ? col.render(row) : row[col.key])}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               );
             })}
@@ -266,4 +310,72 @@ export default function DataTable({
       )}
     </Box>
   );
+}
+
+function InlineEditor({ row, col, onCommit, onCancel }) {
+  const initial = col.getValue ? col.getValue(row) : row[col.key];
+  const [val, setVal] = useState(initial ?? '');
+
+  const commit = () => onCommit(val);
+  const onKey = (e) => {
+    if (e.key === 'Enter') commit();
+    if (e.key === 'Escape') onCancel();
+  };
+
+  if (col.editType === 'select') {
+    return (
+      <Select
+        size="small"
+        autoFocus
+        open
+        value={val}
+        onChange={(e) => { setVal(e.target.value); onCommit(e.target.value); }}
+        onClose={onCancel}
+        fullWidth
+        sx={{ fontSize: '0.8rem' }}
+      >
+        {(col.editOptions || []).map(opt => (
+          <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+        ))}
+      </Select>
+    );
+  }
+
+  return (
+    <TextField
+      size="small"
+      autoFocus
+      fullWidth
+      type={col.editType === 'number' ? 'number' : col.editType === 'date' ? 'date' : 'text'}
+      value={val}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={onKey}
+      sx={{ '& .MuiInputBase-input': { fontSize: '0.8rem', py: 0.5 } }}
+    />
+  );
+}
+
+// ─── CSV export helper ──────────────────────────────────────────────────────
+export function exportRowsToCsv(filename, columns, rows) {
+  const headers = columns.filter(c => c.label).map(c => c.label);
+  const lines = [headers.join(',')];
+  for (const row of rows) {
+    const cells = columns.filter(c => c.label).map(c => {
+      const v = c.csvValue ? c.csvValue(row) : (c.getValue ? c.getValue(row) : row[c.key]);
+      if (v == null) return '';
+      const s = String(v).replace(/"/g, '""');
+      return /[",\n]/.test(s) ? `"${s}"` : s;
+    });
+    lines.push(cells.join(','));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

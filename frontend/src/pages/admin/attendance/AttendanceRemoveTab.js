@@ -4,7 +4,6 @@ import {
   FormControl, InputLabel, Select, MenuItem,
   Dialog, DialogContent, DialogActions, IconButton,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SearchIcon from '@mui/icons-material/Search';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -13,6 +12,7 @@ import api from 'utils/api';
 import { pickAvatarColor } from 'theme/tokens';
 import { useUserOutlets, usePrimaryOutletEmployees, getInitials } from '../assign/leave/shared';
 import { statusChipColor, formatTime } from './shared';
+import { DataTable } from 'components/ui';
 
 export default function AttendanceRemoveTab() {
   const { outlets } = useUserOutlets();
@@ -27,7 +27,10 @@ export default function AttendanceRemoveTab() {
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 25 });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   const [appliedFilters, setAppliedFilters] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -46,13 +49,14 @@ export default function AttendanceRemoveTab() {
     setLoading(true);
     setError('');
     try {
-      const res = await api.get('/api/attendance/v3/', {
-        params: {
-          ...appliedFilters,
-          page: paginationModel.page + 1,
-          page_size: paginationModel.pageSize,
-        },
-      });
+      const params = {
+        ...appliedFilters,
+        page,
+        page_size: pageSize,
+        ...Object.fromEntries(Object.entries(columnFilters).filter(([, v]) => v !== '' && v != null)),
+      };
+      if (sortBy.key) params.ordering = (sortBy.dir === 'desc' ? '-' : '') + sortBy.key;
+      const res = await api.get('/api/attendance/v3/', { params });
       const data = res.data;
       const items = Array.isArray(data) ? data : (data.results || []);
       const total = Array.isArray(data) ? data.length : (data.count ?? items.length);
@@ -65,9 +69,16 @@ export default function AttendanceRemoveTab() {
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, paginationModel]);
+  }, [appliedFilters, page, pageSize, columnFilters, sortBy]);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   const runSearch = () => {
     if (!selectedOutlet) { setError('Pick an outlet first.'); return; }
@@ -79,7 +90,7 @@ export default function AttendanceRemoveTab() {
       end_date: endDate || undefined,
       status: statusFilter !== 'all' ? statusFilter : undefined,
     });
-    setPaginationModel((prev) => ({ ...prev, page: 0 }));
+    setPage(1);
     setHasSearched(true);
   };
 
@@ -113,9 +124,10 @@ export default function AttendanceRemoveTab() {
 
   const columns = [
     {
-      field: 'employee', headerName: 'Employee', flex: 1.2, minWidth: 200, sortable: false,
-      renderCell: ({ row }) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, py: 0.5, minWidth: 0 }}>
+      key: 'employee', label: 'Employee', width: 240,
+      sortKey: 'employee', filterKey: 'f_employee', filterType: 'text',
+      render: (row) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0 }}>
           <Avatar sx={{
             width: 32, height: 32, fontSize: 12, fontWeight: 700,
             bgcolor: pickAvatarColor(row.employee_fullname || ''),
@@ -132,31 +144,32 @@ export default function AttendanceRemoveTab() {
       ),
     },
     {
-      field: 'date', headerName: 'Date', flex: 0.7, minWidth: 110,
-      valueFormatter: (value) => value ? new Date(value).toLocaleDateString() : '',
+      key: 'date', label: 'Date', width: 130,
+      sortKey: 'date', filterKey: 'f_date', filterType: 'date',
+      render: (row) => row.date ? new Date(row.date).toLocaleDateString() : '',
     },
     {
-      field: 'check_in_time', headerName: 'In', flex: 0.5, minWidth: 80,
-      renderCell: ({ value }) => <Typography variant="body2">{formatTime(value)}</Typography>,
+      key: 'check_in_time', label: 'In', width: 90, sortKey: 'check_in_time',
+      render: (row) => <Typography variant="body2">{formatTime(row.check_in_time)}</Typography>,
     },
     {
-      field: 'check_out_time', headerName: 'Out', flex: 0.5, minWidth: 80,
-      renderCell: ({ value }) => <Typography variant="body2">{formatTime(value)}</Typography>,
+      key: 'check_out_time', label: 'Out', width: 90, sortKey: 'check_out_time',
+      render: (row) => <Typography variant="body2">{formatTime(row.check_out_time)}</Typography>,
     },
     {
-      field: 'worked_hours', headerName: 'Hours', flex: 0.5, minWidth: 80,
-      valueFormatter: (value) => (value != null ? `${value}h` : '—'),
+      key: 'worked_hours', label: 'Hours', width: 80, sortKey: 'worked_hours',
+      render: (row) => (row.worked_hours != null ? `${row.worked_hours}h` : '—'),
     },
     {
-      field: 'status', headerName: 'Status', flex: 0.7, minWidth: 110,
-      renderCell: ({ value }) => (
-        <Chip label={value || '—'} color={statusChipColor(value)} size="small" sx={{ fontWeight: 600 }} />
+      key: 'status', label: 'Status', width: 130,
+      sortKey: 'status', filterKey: 'f_status', filterType: 'text',
+      render: (row) => (
+        <Chip label={row.status || '—'} color={statusChipColor(row.status)} size="small" sx={{ fontWeight: 600 }} />
       ),
     },
     {
-      field: 'actions', headerName: 'Delete', flex: 0.5, minWidth: 90,
-      sortable: false, filterable: false, align: 'center', headerAlign: 'center',
-      renderCell: ({ row }) => (
+      key: 'actions', label: 'Delete', width: 90, align: 'center',
+      render: (row) => (
         <Tooltip title="Delete record">
           <IconButton size="small" color="error" onClick={() => openDelete(row)}>
             <DeleteOutlineIcon fontSize="small" />
@@ -224,17 +237,24 @@ export default function AttendanceRemoveTab() {
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
       {hasSearched ? (
-        <Box sx={{ height: 580 }}>
-          <DataGrid
-            rows={rows} columns={columns} getRowId={(r) => r.attendance_id}
-            loading={loading} rowCount={totalRows}
-            paginationMode="server"
-            paginationModel={paginationModel}
-            onPaginationModelChange={setPaginationModel}
-            pageSizeOptions={[25, 50, 100]}
-            disableRowSelectionOnClick
-          />
-        </Box>
+        <DataTable
+          columns={columns}
+          rows={rows}
+          getRowId={(r) => r.attendance_id}
+          loading={loading}
+          page={page}
+          pageSize={pageSize}
+          totalCount={totalRows}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          filters={columnFilters}
+          onFilterChange={handleFilterChange}
+          sortBy={sortBy}
+          onSortChange={(s) => { setSortBy(s); setPage(1); }}
+          emptyMessage="No attendance records"
+          height={580}
+          minHeight={580}
+        />
       ) : (
         <Box sx={{
           py: 8, px: 3, textAlign: 'center',

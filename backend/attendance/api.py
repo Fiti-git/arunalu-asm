@@ -1637,6 +1637,39 @@ def v2_attendance_edit_requests_list(request):
     if filter_status:
         qs = qs.filter(status=filter_status)
 
+    qp = request.query_params
+    text_filters = {
+        'f_employee': 'attendance__employee__fullname__icontains',
+        'f_reason': 'reason__icontains',
+        'f_requested_by': 'requested_by__username__icontains',
+        'f_status': 'status__icontains',
+    }
+    for param, lookup in text_filters.items():
+        val = (qp.get(param) or '').strip()
+        if val:
+            qs = qs.filter(**{lookup: val})
+    f_date = (qp.get('f_date') or '').strip()
+    if f_date:
+        qs = qs.filter(attendance__date=f_date)
+
+    ordering_map = {
+        'employee': 'attendance__employee__fullname',
+        'date': 'attendance__date',
+        'status': 'status',
+        'created_at': 'created_at',
+        'requested_by': 'requested_by__username',
+    }
+    ordering = (qp.get('ordering') or '').strip()
+    if ordering:
+        desc = ordering.startswith('-')
+        key = ordering[1:] if desc else ordering
+        if key in ordering_map:
+            qs = qs.order_by(('-' if desc else '') + ordering_map[key])
+        else:
+            qs = qs.order_by('-created_at')
+    else:
+        qs = qs.order_by('-created_at')
+
     total = qs.count()
     offset = (page - 1) * page_size
     records = qs[offset: offset + page_size]
@@ -1912,7 +1945,43 @@ def v3_attendance_list(request):
     from main.active_periods import filter_qs_by_active_periods
     qs = filter_qs_by_active_periods(qs, employee_field='employee', date_field='date')
 
-    qs = qs.order_by('-date', '-check_in_time')
+    # Per-column filters
+    qp = request.query_params
+    text_filters = {
+        'f_employee': 'employee__fullname__icontains',
+        'f_empcode': 'employee__empcode__icontains',
+        'f_status': 'status__icontains',
+        'f_punchin_verification': 'punchin_verification__icontains',
+        'f_punchout_verification': 'punchout_verification__icontains',
+    }
+    for param, lookup in text_filters.items():
+        val = (qp.get(param) or '').strip()
+        if val:
+            qs = qs.filter(**{lookup: val})
+    f_date = (qp.get('f_date') or '').strip()
+    if f_date:
+        qs = qs.filter(date=f_date)
+
+    ordering_map = {
+        'date': 'date',
+        'check_in_time': 'check_in_time',
+        'check_out_time': 'check_out_time',
+        'employee': 'employee__fullname',
+        'empcode': 'employee__empcode',
+        'worked_hours': 'worked_hours',
+        'ot_hours': 'ot_hours',
+        'status': 'status',
+    }
+    ordering = (qp.get('ordering') or '').strip()
+    if ordering:
+        desc = ordering.startswith('-')
+        key = ordering[1:] if desc else ordering
+        if key in ordering_map:
+            qs = qs.order_by(('-' if desc else '') + ordering_map[key])
+        else:
+            qs = qs.order_by('-date', '-check_in_time')
+    else:
+        qs = qs.order_by('-date', '-check_in_time')
 
     paginator = StandardPagination()
     page = paginator.paginate_queryset(qs, request)

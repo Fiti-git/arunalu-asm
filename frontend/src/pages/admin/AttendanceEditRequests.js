@@ -3,10 +3,6 @@ import {
   Box,
   Typography,
   Paper,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   CircularProgress,
   IconButton,
   Tooltip,
@@ -20,11 +16,11 @@ import {
   DialogActions,
   Button,
 } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CancelIcon from "@mui/icons-material/Cancel";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import api from "utils/api";
+import { DataTable } from "components/ui";
 
 const isoToHHMM = (iso) => {
   if (!iso) return "-";
@@ -57,30 +53,38 @@ const STATUS_COLORS = {
 export default function AttendanceEditRequests() {
   const [rows, setRows] = useState([]);
   const [rowCount, setRowCount] = useState(0);
-  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 25 });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [loading, setLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("Pending");
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   // Confirm dialog
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmRow, setConfirmRow] = useState(null);
-  const [confirmAction, setConfirmAction] = useState(null); // 'approve' | 'reject'
+  const [confirmAction, setConfirmAction] = useState(null);
   const [processing, setProcessing] = useState(false);
 
   const [toast, setToast] = useState({ open: false, msg: "", severity: "success" });
   const openToast = (msg, severity = "success") => setToast({ open: true, msg, severity });
   const closeToast = () => setToast((t) => ({ ...t, open: false }));
 
-  const fetchRequests = useCallback(async () => {
+  const fetchRequests = useCallback(async (
+    pageArg = page,
+    pageSizeArg = pageSize,
+    filters = columnFilters,
+    sort = sortBy,
+  ) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: paginationModel.page + 1,
-        page_size: paginationModel.pageSize,
-      });
-      if (statusFilter) params.append("status", statusFilter);
+      const params = {
+        page: pageArg,
+        page_size: pageSizeArg,
+        ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== '' && v != null)),
+      };
+      if (sort.key) params.ordering = (sort.dir === 'desc' ? '-' : '') + sort.key;
 
-      const response = await api.get(`/api/attendance/v2/edit-requests/?${params}`);
+      const response = await api.get('/api/attendance/v2/edit-requests/', { params });
       const data = response.data;
 
       const formatted = (data.results || []).map((req) => ({
@@ -108,15 +112,20 @@ export default function AttendanceEditRequests() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, statusFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
+    fetchRequests(page, pageSize, columnFilters, sortBy);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, sortBy, fetchRequests]);
 
-  const handleFilterChange = (value) => {
-    setPaginationModel((m) => ({ ...m, page: 0 }));
-    setStatusFilter(value);
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+    fetchRequests(1, pageSize, next, sortBy);
   };
 
   const openConfirm = (row, action) => {
@@ -147,7 +156,7 @@ export default function AttendanceEditRequests() {
         confirmAction === "approve" ? "success" : "info"
       );
       closeConfirm();
-      fetchRequests();
+      fetchRequests(page, pageSize, columnFilters, sortBy);
     } catch (err) {
       openToast(err.response?.data?.error || "Failed to process request.", "error");
       setProcessing(false);
@@ -155,86 +164,84 @@ export default function AttendanceEditRequests() {
   };
 
   const columns = [
-    { field: "employee_name", headerName: "Employee", width: 180 },
     {
-      field: "date",
-      headerName: "Date",
-      width: 120,
-      renderCell: (params) => <span>{isoToDate(params.value)}</span>,
+      key: "employee_name", label: "Employee", width: 180,
+      sortKey: 'employee', filterKey: 'f_employee', filterType: 'text',
+      render: (row) => <span>{row.employee_name}</span>,
     },
     {
-      field: "current_check_in",
-      headerName: "Current In",
-      width: 115,
-      renderCell: (params) => <span style={{ color: "#6b7280" }}>{isoToHHMM(params.value)}</span>, // theme text.secondary-ish
+      key: "date", label: "Date", width: 130,
+      sortKey: 'date', filterKey: 'f_date', filterType: 'date',
+      render: (row) => <span>{isoToDate(row.date)}</span>,
     },
     {
-      field: "current_check_out",
-      headerName: "Current Out",
-      width: 115,
-      renderCell: (params) => <span style={{ color: "#6b7280" }}>{isoToHHMM(params.value)}</span>, // theme text.secondary-ish
+      key: "current_check_in", label: "Current In", width: 115,
+      render: (row) => <span style={{ color: "#6b7280" }}>{isoToHHMM(row.current_check_in)}</span>,
     },
     {
-      field: "proposed_check_in",
-      headerName: "Proposed In",
-      width: 120,
-      renderCell: (params) => <span style={{ color: "#1d4ed8", fontWeight: 600 }}>{isoToHHMM(params.value)}</span>,
+      key: "current_check_out", label: "Current Out", width: 115,
+      render: (row) => <span style={{ color: "#6b7280" }}>{isoToHHMM(row.current_check_out)}</span>,
     },
     {
-      field: "proposed_check_out",
-      headerName: "Proposed Out",
-      width: 120,
-      renderCell: (params) => <span style={{ color: "#1d4ed8", fontWeight: 600 }}>{isoToHHMM(params.value)}</span>,
+      key: "proposed_check_in", label: "Proposed In", width: 120,
+      render: (row) => <span style={{ color: "#1d4ed8", fontWeight: 600 }}>{isoToHHMM(row.proposed_check_in)}</span>,
     },
     {
-      field: "reason",
-      headerName: "Reason",
-      width: 220,
-      renderCell: (params) => (
-        <Tooltip title={params.value}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {params.value}
+      key: "proposed_check_out", label: "Proposed Out", width: 120,
+      render: (row) => <span style={{ color: "#1d4ed8", fontWeight: 600 }}>{isoToHHMM(row.proposed_check_out)}</span>,
+    },
+    {
+      key: "reason", label: "Reason", width: 220,
+      filterKey: 'f_reason', filterType: 'text',
+      render: (row) => (
+        <Tooltip title={row.reason}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: 'block' }}>
+            {row.reason}
           </span>
         </Tooltip>
       ),
     },
-    { field: "requested_by", headerName: "Requested By", width: 140 },
     {
-      field: "created_at",
-      headerName: "Submitted",
-      width: 150,
-      renderCell: (params) => <span>{formatDateTime(params.value)}</span>,
+      key: "requested_by", label: "Requested By", width: 140,
+      sortKey: 'requested_by', filterKey: 'f_requested_by', filterType: 'text',
+      render: (row) => <span>{row.requested_by}</span>,
     },
     {
-      field: "status",
-      headerName: "Status",
-      width: 110,
-      renderCell: (params) => (
+      key: "created_at", label: "Submitted", width: 160,
+      sortKey: 'created_at',
+      render: (row) => <span>{formatDateTime(row.created_at)}</span>,
+    },
+    {
+      key: "status", label: "Status", width: 130,
+      sortKey: 'status',
+      filterKey: 'f_status', filterType: 'select',
+      filterOptions: [
+        { value: 'Pending', label: 'Pending' },
+        { value: 'Approved', label: 'Approved' },
+        { value: 'Rejected', label: 'Rejected' },
+      ],
+      render: (row) => (
         <Chip
-          label={params.value}
+          label={row.status}
           size="small"
-          color={STATUS_COLORS[params.value] || "default"}
+          color={STATUS_COLORS[row.status] || "default"}
           variant="outlined"
         />
       ),
     },
     {
-      field: "actions",
-      headerName: "Actions",
-      width: 110,
-      sortable: false,
-      filterable: false,
-      renderCell: (params) => {
-        if (params.row.status !== "Pending") return null;
+      key: "actions", label: "Actions", width: 110, align: 'center',
+      render: (row) => {
+        if (row.status !== "Pending") return null;
         return (
-          <Stack direction="row" spacing={0.5}>
+          <Stack direction="row" spacing={0.5} justifyContent="center">
             <Tooltip title="Approve">
-              <IconButton size="small" color="success" onClick={() => openConfirm(params.row, "approve")}>
+              <IconButton size="small" color="success" onClick={() => openConfirm(row, "approve")}>
                 <CheckCircleIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title="Reject">
-              <IconButton size="small" color="error" onClick={() => openConfirm(params.row, "reject")}>
+              <IconButton size="small" color="error" onClick={() => openConfirm(row, "reject")}>
                 <CancelIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -244,9 +251,16 @@ export default function AttendanceEditRequests() {
     },
   ];
 
+  // Default to showing Pending requests when the screen opens
+  useEffect(() => {
+    if (Object.keys(columnFilters).length === 0) {
+      handleFilterChange('f_status', 'Pending');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <Box p={3}>
-      {/* Header */}
       <Paper
         elevation={0}
         sx={{
@@ -270,7 +284,7 @@ export default function AttendanceEditRequests() {
         </Box>
         <Tooltip title="Refresh">
           <IconButton
-            onClick={fetchRequests}
+            onClick={() => fetchRequests(page, pageSize, columnFilters, sortBy)}
             disabled={loading}
             sx={{ color: 'primary.contrastText', bgcolor: "rgba(255,255,255,0.15)", "&:hover": { bgcolor: "rgba(255,255,255,0.25)" } }}
           >
@@ -279,48 +293,23 @@ export default function AttendanceEditRequests() {
         </Tooltip>
       </Paper>
 
-      {/* Filter */}
-      <Paper elevation={2} sx={{ p: 2, mb: 2.5, borderRadius: 2 }}>
-        <FormControl sx={{ minWidth: 200 }} size="small">
-          <InputLabel id="status-filter-label">Filter by Status</InputLabel>
-          <Select
-            labelId="status-filter-label"
-            value={statusFilter}
-            onChange={(e) => handleFilterChange(e.target.value)}
-            label="Filter by Status"
-          >
-            <MenuItem value="">All</MenuItem>
-            <MenuItem value="Pending">Pending</MenuItem>
-            <MenuItem value="Approved">Approved</MenuItem>
-            <MenuItem value="Rejected">Rejected</MenuItem>
-          </Select>
-        </FormControl>
-      </Paper>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        getRowId={(r) => r.request_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={rowCount}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No edit requests"
+      />
 
-      {/* Data Grid */}
-      <Box sx={{ height: 560, width: "100%" }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          rowCount={rowCount}
-          loading={loading}
-          paginationMode="server"
-          paginationModel={paginationModel}
-          onPaginationModelChange={setPaginationModel}
-          pageSizeOptions={[10, 25, 50, 100]}
-          disableRowSelectionOnClick
-          sx={{
-            borderRadius: 2,
-            border: 1,
-            borderColor: 'divider',
-            "& .MuiDataGrid-columnHeaders": { backgroundColor: 'grey.50', fontWeight: 700 },
-            "& .MuiDataGrid-row:hover": { backgroundColor: 'grey.50' },
-            "& .MuiDataGrid-cell:focus": { outline: "none" },
-          }}
-        />
-      </Box>
-
-      {/* Approve / Reject Confirmation Dialog */}
       <Dialog open={confirmOpen} onClose={closeConfirm} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 700 }}>
           {confirmAction === "approve" ? "Approve Edit Request" : "Reject Edit Request"}
