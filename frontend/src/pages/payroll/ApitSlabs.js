@@ -4,12 +4,11 @@ import {
   DialogContent, DialogActions, Switch, FormControlLabel, IconButton, Tooltip,
   CircularProgress,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutline';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 
 const empty = {
   id: null, label: '', min_monthly: 0, max_monthly: null,
@@ -23,11 +22,17 @@ export default function ApitSlabs() {
   const [dialog, setDialog] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchList = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const res = await api.get('/payroll/apit-slabs/');
       setRows(res.data || []);
+      setPage(1);
     } catch { setError('Failed to load.'); }
     finally { setLoading(false); }
   }, []);
@@ -56,25 +61,34 @@ export default function ApitSlabs() {
   };
 
   const columns = useMemo(() => [
-    { field: 'label', headerName: 'Label', flex: 0.9, minWidth: 140 },
-    { field: 'min_monthly', headerName: 'Min (Rs.)', width: 130, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => Number(value).toLocaleString() },
-    { field: 'max_monthly', headerName: 'Max (Rs.)', width: 130, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => value == null ? '∞' : Number(value).toLocaleString() },
-    { field: 'rate_pct', headerName: 'Rate %', width: 100, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => `${value}%` },
-    { field: 'deduct_amount', headerName: 'Subtract (Rs.)', width: 140, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => Number(value).toLocaleString() },
+    { key: 'label', label: 'Label', width: 180, sortKey: 'label', filterKey: 'f_label', filterType: 'text' },
     {
-      field: 'is_active', headerName: 'Status', width: 100,
-      renderCell: ({ value }) => value
+      key: 'min_monthly', label: 'Min (Rs.)', width: 130, align: 'right', sortKey: 'min_monthly',
+      render: (row) => Number(row.min_monthly).toLocaleString(),
+    },
+    {
+      key: 'max_monthly', label: 'Max (Rs.)', width: 130, align: 'right', sortKey: 'max_monthly',
+      render: (row) => row.max_monthly == null ? '∞' : Number(row.max_monthly).toLocaleString(),
+    },
+    {
+      key: 'rate_pct', label: 'Rate %', width: 100, align: 'right', sortKey: 'rate_pct',
+      render: (row) => `${row.rate_pct}%`,
+    },
+    {
+      key: 'deduct_amount', label: 'Subtract (Rs.)', width: 140, align: 'right', sortKey: 'deduct_amount',
+      render: (row) => Number(row.deduct_amount).toLocaleString(),
+    },
+    {
+      key: 'is_active', label: 'Status', width: 100, sortKey: 'is_active',
+      filterKey: 'f_is_active', filterType: 'bool',
+      render: (row) => row.is_active
         ? <Chip size="small" label="Active" color="success" />
         : <Chip size="small" label="Inactive" />,
     },
     {
-      field: 'actions', headerName: 'Actions', width: 120, sortable: false,
-      renderCell: ({ row }) => (
-        <Box sx={{ display: 'flex', gap: 0.5 }}>
+      key: 'actions', label: 'Actions', width: 120, align: 'center',
+      render: (row) => (
+        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
           <Tooltip title="Edit">
             <IconButton size="small" onClick={() => setDialog({
               ...row,
@@ -90,6 +104,22 @@ export default function ApitSlabs() {
     },
   ], []);
 
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
+
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
       <PageHeader
@@ -99,16 +129,22 @@ export default function ApitSlabs() {
       />
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      <Box sx={{ height: 560, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={columns}
-          getRowId={(r) => r.id}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No APIT slabs"
+      />
 
       <Dialog open={!!dialog} onClose={() => setDialog(null)} maxWidth="xs" fullWidth>
         <DialogTitle>{dialog?.id ? 'Edit APIT Slab' : 'New APIT Slab'}</DialogTitle>

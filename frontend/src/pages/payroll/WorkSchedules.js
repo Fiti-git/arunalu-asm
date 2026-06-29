@@ -4,10 +4,9 @@ import {
   DialogContent, DialogActions, IconButton, CircularProgress, FormControl,
   InputLabel, Select, MenuItem,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 
 const DAYS = [
   ['mon_hours', 'Mon'], ['tue_hours', 'Tue'], ['wed_hours', 'Wed'],
@@ -25,6 +24,11 @@ export default function WorkSchedules() {
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   useEffect(() => {
     api.get('/api/outlets/').then(res => {
       setOutlets(Array.isArray(res.data) ? res.data : (res.data?.results || []));
@@ -37,6 +41,7 @@ export default function WorkSchedules() {
       const params = outletId !== 'all' ? { outlet: outletId } : {};
       const res = await api.get('/payroll/work-schedules/', { params });
       setRows(res.data || []);
+      setPage(1);
     } catch { setError('Failed to load.'); }
     finally { setLoading(false); }
   }, [outletId]);
@@ -65,28 +70,45 @@ export default function WorkSchedules() {
   };
 
   const columns = useMemo(() => [
-    { field: 'empcode', headerName: 'Emp Code', width: 110 },
-    { field: 'fullname', headerName: 'Employee', flex: 1, minWidth: 180 },
-    { field: 'primary_outlet_name', headerName: 'Outlet', flex: 0.9, minWidth: 150 },
+    { key: 'empcode', label: 'Emp Code', width: 110, sortKey: 'empcode', filterKey: 'f_empcode', filterType: 'text' },
+    { key: 'fullname', label: 'Employee', width: 200, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text' },
+    { key: 'primary_outlet_name', label: 'Outlet', width: 150, sortKey: 'primary_outlet_name', filterKey: 'f_outlet', filterType: 'text' },
     ...DAYS.map(([k, label]) => ({
-      field: k, headerName: label, width: 72, align: 'center', headerAlign: 'center',
-      renderCell: ({ value }) => Number(value) === 0
+      key: k, label, width: 72, align: 'center', sortKey: k,
+      render: (row) => Number(row[k]) === 0
         ? <Typography variant="caption" color="text.disabled">off</Typography>
-        : <Typography variant="body2">{value}</Typography>,
+        : <Typography variant="body2">{row[k]}</Typography>,
     })),
     {
-      field: 'configured', headerName: 'Status', width: 120,
-      renderCell: ({ value }) => value
+      key: 'configured', label: 'Status', width: 120, sortKey: 'configured',
+      filterKey: 'f_configured', filterType: 'bool',
+      render: (row) => row.configured
         ? <Chip size="small" label="Configured" color="success" />
         : <Chip size="small" label="Default" />,
     },
     {
-      field: 'actions', headerName: 'Edit', width: 80, sortable: false,
-      renderCell: ({ row }) => (
+      key: 'actions', label: 'Edit', width: 80, align: 'center',
+      render: (row) => (
         <IconButton size="small" onClick={() => openEdit(row)}><EditIcon fontSize="small" /></IconButton>
       ),
     },
   ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -105,16 +127,22 @@ export default function WorkSchedules() {
       />
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      <Box sx={{ height: 640, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={columns}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.employee_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No employees"
+      />
 
       <Dialog open={!!editing} onClose={close} maxWidth="sm" fullWidth>
         <DialogTitle>

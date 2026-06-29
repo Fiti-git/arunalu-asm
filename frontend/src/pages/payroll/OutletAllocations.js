@@ -4,10 +4,9 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, Table, TableBody,
   TableCell, TableHead, TableRow, Switch, FormControlLabel,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 
 export default function OutletAllocations() {
   const [rows, setRows] = useState([]);
@@ -18,12 +17,18 @@ export default function OutletAllocations() {
   const [draft, setDraft] = useState([]);       // [{outlet_id, outlet_name, percentage}]
   const [saving, setSaving] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchList = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const params = multiOnly ? { multi_only: '1' } : {};
       const res = await api.get('/calculation/allocations/', { params });
       setRows(res.data || []);
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load allocations.');
     } finally { setLoading(false); }
@@ -74,25 +79,28 @@ export default function OutletAllocations() {
   };
 
   const columns = useMemo(() => [
-    { field: 'empcode', headerName: 'Emp Code', width: 120 },
-    { field: 'fullname', headerName: 'Employee', flex: 1, minWidth: 200 },
+    { key: 'empcode', label: 'Emp Code', width: 120, sortKey: 'empcode', filterKey: 'f_empcode', filterType: 'text' },
+    { key: 'fullname', label: 'Employee', width: 220, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text' },
     {
-      field: 'outlets', headerName: 'Assigned Outlets', flex: 1.5, minWidth: 260, sortable: false,
-      renderCell: ({ row }) => (
+      key: 'outlets', label: 'Assigned Outlets', width: 280,
+      filterKey: 'f_outlets', filterType: 'text',
+      filterValue: (row) => (row.outlets || []).map(o => o.name).join(', '),
+      render: (row) => (
         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', py: 0.5 }}>
           {row.outlets.map(o => <Chip key={o.id} label={o.name} size="small" />)}
         </Box>
       ),
     },
     {
-      field: 'has_explicit', headerName: 'Allocation', width: 150,
-      renderCell: ({ row }) => row.has_explicit
+      key: 'has_explicit', label: 'Allocation', width: 150, sortKey: 'has_explicit',
+      filterKey: 'f_has_explicit', filterType: 'bool',
+      render: (row) => row.has_explicit
         ? <Chip label="Configured" size="small" color="success" />
         : <Chip label="Default split" size="small" />,
     },
     {
-      field: 'allocations', headerName: 'Split', flex: 1.2, minWidth: 240, sortable: false,
-      renderCell: ({ row }) => {
+      key: 'allocations', label: 'Split', width: 280,
+      render: (row) => {
         if (!row.has_explicit) {
           return <Typography variant="caption" color="text.secondary">Auto (primary=100% or equal)</Typography>;
         }
@@ -107,13 +115,29 @@ export default function OutletAllocations() {
       },
     },
     {
-      field: 'actions', headerName: 'Edit', width: 110, sortable: false, filterable: false,
-      renderCell: ({ row }) => (
+      key: 'actions', label: 'Edit', width: 110, align: 'center',
+      render: (row) => (
         <Button size="small" variant="outlined" startIcon={<EditOutlinedIcon />}
           onClick={() => openEditor(row)}>Edit</Button>
       ),
     },
   ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -130,17 +154,22 @@ export default function OutletAllocations() {
 
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      <Box sx={{ height: 640, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={columns}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
-          getRowHeight={() => 'auto'}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.employee_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No employees"
+      />
 
       <Dialog open={!!editing} onClose={closeEditor} maxWidth="sm" fullWidth>
         <DialogTitle>

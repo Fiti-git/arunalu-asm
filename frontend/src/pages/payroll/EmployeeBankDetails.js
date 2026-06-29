@@ -3,11 +3,10 @@ import {
   Box, Button, Alert, FormControl, InputLabel, Select, MenuItem,
   IconButton, Tooltip, CircularProgress,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import SaveIcon from '@mui/icons-material/SaveOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 
 // Common Sri Lankan bank codes (Central Bank SLIP list) for quick-fill
 const SL_BANK_CODES = [
@@ -22,6 +21,11 @@ const SL_BANK_CODES = [
   { code: '7728', name: 'DFCC Bank' },
 ];
 
+const BANK_CODE_OPTIONS = [
+  { value: '', label: '—' },
+  ...SL_BANK_CODES.map((b) => ({ value: b.code, label: `${b.code} · ${b.name}` })),
+];
+
 export default function EmployeeBankDetails() {
   const [outlets, setOutlets] = useState([]);
   const [outletId, setOutletId] = useState('all');
@@ -31,6 +35,11 @@ export default function EmployeeBankDetails() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   useEffect(() => {
     api.get('/api/outlets/').then((res) => {
@@ -46,6 +55,7 @@ export default function EmployeeBankDetails() {
       const res = await api.get('/payroll/financial-profiles/', { params });
       setRows(res.data || []);
       setDirtyIds(new Set());
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load employees.');
     } finally { setLoading(false); }
@@ -53,17 +63,15 @@ export default function EmployeeBankDetails() {
 
   useEffect(() => { fetchList(); }, [fetchList]);
 
-  const processRowUpdate = (newRow, oldRow) => {
-    const changed = JSON.stringify(newRow) !== JSON.stringify(oldRow);
-    if (changed) {
-      // If bank_code changed to a known code, auto-fill bank_name
-      const known = SL_BANK_CODES.find((b) => b.code === String(newRow.bank_code || '').trim());
-      if (known && newRow.bank_name !== known.name) newRow.bank_name = known.name;
-
-      setRows((prev) => prev.map((r) => (r.employee_id === newRow.employee_id ? newRow : r)));
-      setDirtyIds((prev) => new Set(prev).add(newRow.employee_id));
+  const handleCellEdit = (row, key, value) => {
+    const updated = { ...row, [key]: value };
+    // Auto-fill bank_name when a known bank_code is picked
+    if (key === 'bank_code') {
+      const known = SL_BANK_CODES.find((b) => b.code === String(value || '').trim());
+      if (known) updated.bank_name = known.name;
     }
-    return newRow;
+    setRows((prev) => prev.map((r) => (r.employee_id === row.employee_id ? updated : r)));
+    setDirtyIds((prev) => new Set(prev).add(row.employee_id));
   };
 
   const saveAll = async () => {
@@ -83,25 +91,56 @@ export default function EmployeeBankDetails() {
   };
 
   const columns = useMemo(() => [
-    { field: 'empcode', headerName: 'Emp Code', width: 110, editable: false },
-    { field: 'fullname', headerName: 'Full Name', flex: 1.2, minWidth: 200, editable: false },
-    { field: 'primary_outlet_name', headerName: 'Outlet', width: 140, editable: false },
-    { field: 'bank_code', headerName: 'Bank Code', width: 120, editable: true,
-      type: 'singleSelect',
-      valueOptions: [{ value: '', label: '—' }, ...SL_BANK_CODES.map((b) => ({
-        value: b.code, label: `${b.code} · ${b.name}`,
-      }))],
+    { key: 'empcode', label: 'Emp Code', width: 110, sortKey: 'empcode', filterKey: 'f_empcode', filterType: 'text' },
+    { key: 'fullname', label: 'Full Name', width: 220, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text' },
+    { key: 'primary_outlet_name', label: 'Outlet', width: 150, sortKey: 'primary_outlet_name', filterKey: 'f_outlet', filterType: 'text' },
+    {
+      key: 'bank_code', label: 'Bank Code', width: 140,
+      sortKey: 'bank_code', filterKey: 'f_bank_code', filterType: 'text',
+      editable: true, editType: 'select', editOptions: BANK_CODE_OPTIONS,
+      render: (row) => row.bank_code || '—',
     },
-    { field: 'bank_name', headerName: 'Bank Name', width: 200, editable: true },
-    { field: 'bank_branch_code', headerName: 'Branch Code', width: 130, editable: true },
-    { field: 'bank_account_no', headerName: 'Account No', flex: 1, minWidth: 180, editable: true },
+    {
+      key: 'bank_name', label: 'Bank Name', width: 220,
+      sortKey: 'bank_name', filterKey: 'f_bank_name', filterType: 'text',
+      editable: true, editType: 'text',
+      render: (row) => row.bank_name || '—',
+    },
+    {
+      key: 'bank_branch_code', label: 'Branch Code', width: 140,
+      sortKey: 'bank_branch_code', filterKey: 'f_branch', filterType: 'text',
+      editable: true, editType: 'text',
+      render: (row) => row.bank_branch_code || '—',
+    },
+    {
+      key: 'bank_account_no', label: 'Account No', width: 200,
+      sortKey: 'bank_account_no', filterKey: 'f_account', filterType: 'text',
+      editable: true, editType: 'text',
+      render: (row) => row.bank_account_no || '—',
+    },
   ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '97%', mx: 'auto', mt: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
       <PageHeader
         title="Employee Bank Details"
-        subtitle="Salary disbursement accounts. Pick a bank code to auto-fill the name; all fields are required for the People's Bank CIB upload file."
+        subtitle="Salary disbursement accounts. Pick a bank code to auto-fill the name; all fields are required for the People's Bank CIB upload file. Double-click a cell to edit."
         actions={
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <FormControl size="small" sx={{ minWidth: 200 }}>
@@ -131,23 +170,27 @@ export default function EmployeeBankDetails() {
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess('')}>{success}</Alert>}
 
-      <Box sx={{ height: 680, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          processRowUpdate={processRowUpdate}
-          onProcessRowUpdateError={(err) => setError(String(err))}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
-          getRowClassName={({ id }) => dirtyIds.has(id) ? 'row-dirty' : ''}
-          sx={{
-            '& .row-dirty': { bgcolor: 'warning.lighter', '&:hover': { bgcolor: 'warning.light' } },
-          }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.employee_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        onCellEdit={handleCellEdit}
+        onRowClassName={(row) => dirtyIds.has(row.employee_id) ? 'row-dirty' : ''}
+        emptyMessage="No employees"
+        height={680}
+        minHeight={680}
+      />
+      <style>{`.row-dirty td { background-color: rgba(255,167,38,0.08) !important; }`}</style>
     </Box>
   );
 }

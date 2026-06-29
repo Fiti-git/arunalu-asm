@@ -1,15 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Box, Typography, Button, TextField, MenuItem, Alert, Chip,
+  Box, Button, TextField, MenuItem, Alert, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions, Switch, FormControlLabel,
   IconButton, Tooltip, CircularProgress,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import BlockIcon from '@mui/icons-material/Block';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 
 const emptyForm = {
   id: null, name: '', calc_mode: 'FIXED',
@@ -23,11 +22,17 @@ export default function AllowanceTypes() {
   const [dialog, setDialog] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchList = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const res = await api.get('/payroll/allowance-types/');
       setRows(res.data || []);
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load.');
     } finally { setLoading(false); }
@@ -66,29 +71,39 @@ export default function AllowanceTypes() {
   };
 
   const columns = useMemo(() => [
-    { field: 'name', headerName: 'Name', flex: 1, minWidth: 160 },
+    { key: 'name', label: 'Name', width: 200, sortKey: 'name', filterKey: 'f_name', filterType: 'text' },
     {
-      field: 'calc_mode', headerName: 'Mode', width: 140,
-      renderCell: ({ value }) => (
-        <Chip size="small" label={value === 'PERCENT' ? '% of Basic' : 'Fixed'}
-          color={value === 'PERCENT' ? 'info' : 'default'} />
+      key: 'calc_mode', label: 'Mode', width: 140, sortKey: 'calc_mode',
+      filterKey: 'f_calc_mode', filterType: 'select',
+      filterOptions: [
+        { value: 'FIXED', label: 'Fixed' },
+        { value: 'PERCENT', label: '% of Basic' },
+      ],
+      render: (row) => (
+        <Chip size="small" label={row.calc_mode === 'PERCENT' ? '% of Basic' : 'Fixed'}
+          color={row.calc_mode === 'PERCENT' ? 'info' : 'default'} />
       ),
     },
-    { field: 'default_amount', headerName: 'Default', width: 120, align: 'right', headerAlign: 'right',
-      renderCell: ({ value, row }) => row.calc_mode === 'PERCENT' ? `${value}%` : Number(value).toLocaleString() },
-    { field: 'max_cap_amount', headerName: 'Max Cap', width: 120, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => Number(value) > 0 ? Number(value).toLocaleString() : '—' },
     {
-      field: 'is_active', headerName: 'Active', width: 100,
-      renderCell: ({ value }) => value
+      key: 'default_amount', label: 'Default', width: 120, align: 'right', sortKey: 'default_amount',
+      render: (row) => row.calc_mode === 'PERCENT' ? `${row.default_amount}%` : Number(row.default_amount).toLocaleString(),
+    },
+    {
+      key: 'max_cap_amount', label: 'Max Cap', width: 120, align: 'right', sortKey: 'max_cap_amount',
+      render: (row) => Number(row.max_cap_amount) > 0 ? Number(row.max_cap_amount).toLocaleString() : '—',
+    },
+    {
+      key: 'is_active', label: 'Active', width: 100, sortKey: 'is_active',
+      filterKey: 'f_is_active', filterType: 'bool',
+      render: (row) => row.is_active
         ? <Chip label="Active" size="small" color="success" />
         : <Chip label="Inactive" size="small" />,
     },
-    { field: 'notes', headerName: 'Notes', flex: 1.2, minWidth: 200 },
+    { key: 'notes', label: 'Notes', width: 220, sortKey: 'notes', filterKey: 'f_notes', filterType: 'text' },
     {
-      field: 'actions', headerName: 'Actions', width: 140, sortable: false,
-      renderCell: ({ row }) => (
-        <Box sx={{ display: 'flex', gap: 0.5 }}>
+      key: 'actions', label: 'Actions', width: 140, align: 'center',
+      render: (row) => (
+        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
           <Tooltip title="Edit">
             <IconButton size="small" onClick={() => openEdit(row)}><EditIcon fontSize="small" /></IconButton>
           </Tooltip>
@@ -102,6 +117,22 @@ export default function AllowanceTypes() {
     },
   ], []);
 
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
+
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
       <PageHeader
@@ -111,16 +142,22 @@ export default function AllowanceTypes() {
       />
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      <Box sx={{ height: 600, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={columns}
-          getRowId={(r) => r.id}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No allowance types"
+      />
 
       <Dialog open={!!dialog} onClose={close} maxWidth="sm" fullWidth>
         <DialogTitle>{dialog?.id ? 'Edit Allowance Type' : 'New Allowance Type'}</DialogTitle>

@@ -4,7 +4,6 @@ import {
   FormControl, InputLabel, Select, MenuItem, Tabs, Tab, Card, CardContent,
   IconButton, Tooltip,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
@@ -12,7 +11,7 @@ import {
   CartesianGrid, Legend,
 } from 'recharts';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 
 const currentMonth = () => {
   const d = new Date();
@@ -36,6 +35,11 @@ export default function PayrollReport() {
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   useEffect(() => {
     api.get('/api/outlets/').then((res) => {
       setOutlets(Array.isArray(res.data) ? res.data : (res.data?.results || []));
@@ -51,6 +55,9 @@ export default function PayrollReport() {
       if (outletId !== 'all') params.outlet = outletId;
       const res = await api.get(`/calculation/payroll-report/${activeTab}/`, { params });
       setData(res.data);
+      setPage(1);
+      setColumnFilters({});
+      setSortBy({ key: '', dir: 'asc' });
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load report.');
       setData(null);
@@ -82,46 +89,60 @@ export default function PayrollReport() {
 
   // ---------- Columns per tab ----------
   const employeeCols = useMemo(() => [
-    { field: 'empcode', headerName: 'Emp Code', width: 110 },
-    { field: 'fullname', headerName: 'Employee', flex: 1, minWidth: 180 },
-    { field: 'outlets', headerName: 'Outlets', flex: 1.1, minWidth: 180 },
-    { field: 'gross_pay', headerName: 'Gross', flex: 0.7, minWidth: 110, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => fmt(value) },
-    { field: 'epf_employee_deduction', headerName: 'EPF (Emp)', flex: 0.6, minWidth: 100, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => fmt(value) },
-    { field: 'epf_company_contribution', headerName: 'EPF (Com)', flex: 0.6, minWidth: 100, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => fmt(value) },
-    { field: 'etf_company_contribution', headerName: 'ETF (Com)', flex: 0.6, minWidth: 100, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => fmt(value) },
-    { field: 'deduction_total', headerName: 'Deduct.', flex: 0.6, minWidth: 100, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => fmt(value) },
-    { field: 'net_pay', headerName: 'Net', flex: 0.7, minWidth: 120, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => (
-        <Typography variant="body2" fontWeight={700}>{fmt(value)}</Typography>
-      ) },
+    { key: 'empcode', label: 'Emp Code', width: 110, sortKey: 'empcode', filterKey: 'f_empcode', filterType: 'text' },
+    { key: 'fullname', label: 'Employee', width: 200, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text' },
+    { key: 'outlets', label: 'Outlets', width: 220, sortKey: 'outlets', filterKey: 'f_outlets', filterType: 'text' },
+    {
+      key: 'gross_pay', label: 'Gross', width: 120, align: 'right', sortKey: 'gross_pay',
+      render: (row) => fmt(row.gross_pay),
+    },
+    {
+      key: 'epf_employee_deduction', label: 'EPF (Emp)', width: 110, align: 'right', sortKey: 'epf_employee_deduction',
+      render: (row) => fmt(row.epf_employee_deduction),
+    },
+    {
+      key: 'epf_company_contribution', label: 'EPF (Com)', width: 110, align: 'right', sortKey: 'epf_company_contribution',
+      render: (row) => fmt(row.epf_company_contribution),
+    },
+    {
+      key: 'etf_company_contribution', label: 'ETF (Com)', width: 110, align: 'right', sortKey: 'etf_company_contribution',
+      render: (row) => fmt(row.etf_company_contribution),
+    },
+    {
+      key: 'deduction_total', label: 'Deduct.', width: 110, align: 'right', sortKey: 'deduction_total',
+      render: (row) => fmt(row.deduction_total),
+    },
+    {
+      key: 'net_pay', label: 'Net', width: 130, align: 'right', sortKey: 'net_pay',
+      render: (row) => <Typography variant="body2" fontWeight={700}>{fmt(row.net_pay)}</Typography>,
+    },
   ], []);
 
   const outletCols = useMemo(() => [
-    { field: 'outlet_name', headerName: 'Outlet', flex: 1, minWidth: 200 },
-    { field: 'employee_count', headerName: 'Employees', width: 130, align: 'right', headerAlign: 'right' },
-    { field: 'total_cost', headerName: 'Total Cost', flex: 0.8, minWidth: 150, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => (
-        <Typography variant="body2" fontWeight={700}>{fmt(value)}</Typography>
-      ) },
+    { key: 'outlet_name', label: 'Outlet', width: 220, sortKey: 'outlet_name', filterKey: 'f_outlet_name', filterType: 'text' },
+    { key: 'employee_count', label: 'Employees', width: 130, align: 'right', sortKey: 'employee_count' },
+    {
+      key: 'total_cost', label: 'Total Cost', width: 160, align: 'right', sortKey: 'total_cost',
+      render: (row) => <Typography variant="body2" fontWeight={700}>{fmt(row.total_cost)}</Typography>,
+    },
   ], []);
 
   const multiCols = useMemo(() => [
-    { field: 'empcode', headerName: 'Emp Code', width: 110 },
-    { field: 'fullname', headerName: 'Employee', flex: 1, minWidth: 180 },
-    { field: 'net_pay', headerName: 'Net Pay', flex: 0.7, minWidth: 120, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => fmt(value) },
-    { field: 'outlet_name', headerName: 'Outlet', flex: 1, minWidth: 180 },
-    { field: 'percentage', headerName: '%', width: 90, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => `${Number(value || 0).toFixed(2)}%` },
-    { field: 'amount', headerName: 'Amount', flex: 0.7, minWidth: 120, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => (
-        <Typography variant="body2" fontWeight={700}>{fmt(value)}</Typography>
-      ) },
+    { key: 'empcode', label: 'Emp Code', width: 110, sortKey: 'empcode', filterKey: 'f_empcode', filterType: 'text' },
+    { key: 'fullname', label: 'Employee', width: 200, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text' },
+    {
+      key: 'net_pay', label: 'Net Pay', width: 130, align: 'right', sortKey: 'net_pay',
+      render: (row) => fmt(row.net_pay),
+    },
+    { key: 'outlet_name', label: 'Outlet', width: 200, sortKey: 'outlet_name', filterKey: 'f_outlet_name', filterType: 'text' },
+    {
+      key: 'percentage', label: '%', width: 90, align: 'right', sortKey: 'percentage',
+      render: (row) => `${Number(row.percentage || 0).toFixed(2)}%`,
+    },
+    {
+      key: 'amount', label: 'Amount', width: 130, align: 'right', sortKey: 'amount',
+      render: (row) => <Typography variant="body2" fontWeight={700}>{fmt(row.amount)}</Typography>,
+    },
   ], []);
 
   // ---------- Rows / totals per tab ----------
@@ -138,6 +159,22 @@ export default function PayrollReport() {
   const cols = activeTab === 'employees' ? employeeCols
             : activeTab === 'outlet-summary' ? outletCols
             : multiCols;
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, cols, columnFilters, sortBy),
+    [rows, cols, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -216,16 +253,22 @@ export default function PayrollReport() {
         </Card>
       )}
 
-      <Box sx={{ height: 600, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={cols}
-          getRowId={rowId}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={cols}
+        rows={pagedRows}
+        getRowId={rowId}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No data"
+      />
     </Box>
   );
 }

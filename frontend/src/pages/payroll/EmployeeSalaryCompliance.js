@@ -3,11 +3,15 @@ import {
   Box, Button, Alert, FormControl, InputLabel, Select, MenuItem,
   IconButton, Tooltip, CircularProgress, Chip,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import SaveIcon from '@mui/icons-material/SaveOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
+
+const EPF_STATUS_OPTIONS = [
+  { value: 'E', label: 'E (Existing)' },
+  { value: 'N', label: 'N (New)' },
+];
 
 export default function EmployeeSalaryCompliance() {
   const [outlets, setOutlets] = useState([]);
@@ -18,6 +22,11 @@ export default function EmployeeSalaryCompliance() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   useEffect(() => {
     api.get('/api/outlets/').then((res) => {
@@ -33,6 +42,7 @@ export default function EmployeeSalaryCompliance() {
       const res = await api.get('/payroll/financial-profiles/', { params });
       setRows(res.data || []);
       setDirtyIds(new Set());
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load employees.');
     } finally { setLoading(false); }
@@ -40,13 +50,10 @@ export default function EmployeeSalaryCompliance() {
 
   useEffect(() => { fetchList(); }, [fetchList]);
 
-  const processRowUpdate = (newRow, oldRow) => {
-    const changed = JSON.stringify(newRow) !== JSON.stringify(oldRow);
-    if (changed) {
-      setRows((prev) => prev.map((r) => (r.employee_id === newRow.employee_id ? newRow : r)));
-      setDirtyIds((prev) => new Set(prev).add(newRow.employee_id));
-    }
-    return newRow;
+  const handleCellEdit = (row, key, value) => {
+    const updated = { ...row, [key]: value };
+    setRows((prev) => prev.map((r) => (r.employee_id === row.employee_id ? updated : r)));
+    setDirtyIds((prev) => new Set(prev).add(row.employee_id));
   };
 
   const saveAll = async () => {
@@ -66,40 +73,55 @@ export default function EmployeeSalaryCompliance() {
   };
 
   const columns = useMemo(() => [
-    { field: 'empcode', headerName: 'Emp Code', width: 110, editable: true },
-    { field: 'fullname', headerName: 'Full Name', flex: 1.2, minWidth: 200, editable: true },
-    { field: 'initials', headerName: 'Initials', width: 110, editable: true },
-    { field: 'surname', headerName: 'Surname', width: 140, editable: true },
-    { field: 'idnumber', headerName: 'NIC', width: 140, editable: true },
-    { field: 'primary_outlet_name', headerName: 'Outlet', width: 140, editable: false },
-    { field: 'basic_salary', headerName: 'Basic (Rs.)', width: 120, type: 'number', editable: true,
-      align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => Number(value || 0).toLocaleString() },
-    { field: 'epf_number', headerName: 'EPF Member No', width: 140, editable: true },
-    { field: 'epf_member_status', headerName: 'EPF Status', width: 110, editable: true,
-      type: 'singleSelect', valueOptions: [
-        { value: 'E', label: 'E (Existing)' }, { value: 'N', label: 'N (New)' },
-      ],
-      renderCell: ({ value }) => (
-        <Chip size="small" label={value === 'N' ? 'N — New' : 'E — Existing'}
-          color={value === 'N' ? 'warning' : 'default'} />
+    { key: 'empcode', label: 'Emp Code', width: 110, sortKey: 'empcode', filterKey: 'f_empcode', filterType: 'text', editable: true, editType: 'text' },
+    { key: 'fullname', label: 'Full Name', width: 220, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text', editable: true, editType: 'text' },
+    { key: 'initials', label: 'Initials', width: 110, sortKey: 'initials', filterKey: 'f_initials', filterType: 'text', editable: true, editType: 'text' },
+    { key: 'surname', label: 'Surname', width: 140, sortKey: 'surname', filterKey: 'f_surname', filterType: 'text', editable: true, editType: 'text' },
+    { key: 'idnumber', label: 'NIC', width: 140, sortKey: 'idnumber', filterKey: 'f_nic', filterType: 'text', editable: true, editType: 'text' },
+    { key: 'primary_outlet_name', label: 'Outlet', width: 150, sortKey: 'primary_outlet_name', filterKey: 'f_outlet', filterType: 'text' },
+    {
+      key: 'basic_salary', label: 'Basic (Rs.)', width: 130, align: 'right', sortKey: 'basic_salary',
+      editable: true, editType: 'number',
+      render: (row) => Number(row.basic_salary || 0).toLocaleString(),
+    },
+    { key: 'epf_number', label: 'EPF Member No', width: 140, sortKey: 'epf_number', filterKey: 'f_epf_number', filterType: 'text', editable: true, editType: 'text' },
+    {
+      key: 'epf_member_status', label: 'EPF Status', width: 130, sortKey: 'epf_member_status',
+      filterKey: 'f_epf_status', filterType: 'select', filterOptions: EPF_STATUS_OPTIONS,
+      editable: true, editType: 'select', editOptions: EPF_STATUS_OPTIONS,
+      render: (row) => (
+        <Chip size="small" label={row.epf_member_status === 'N' ? 'N — New' : 'E — Existing'}
+          color={row.epf_member_status === 'N' ? 'warning' : 'default'} />
       ),
     },
-    { field: 'epf_grade', headerName: 'Occ. Grade', width: 120, editable: true },
-    { field: 'epf_cal_date', headerName: 'EPF Start Date', width: 140, editable: true,
-      type: 'date',
-      valueGetter: (v) => (v ? new Date(v) : null),
-      valueSetter: ({ row, value }) => ({
-        ...row,
-        epf_cal_date: value ? new Date(value).toISOString().slice(0, 10) : null,
-      }),
+    { key: 'epf_grade', label: 'Occ. Grade', width: 120, sortKey: 'epf_grade', filterKey: 'f_grade', filterType: 'text', editable: true, editType: 'text' },
+    {
+      key: 'epf_cal_date', label: 'EPF Start Date', width: 150, sortKey: 'epf_cal_date',
+      filterKey: 'f_epf_cal_date', filterType: 'date',
+      editable: true, editType: 'date',
+      render: (row) => row.epf_cal_date || '—',
     },
-    { field: 'etf_member_no', headerName: 'ETF Member No', width: 140, editable: true,
-      description: 'Leave blank to use EPF number in exports' },
-    { field: 'epf_emp_per', headerName: 'EPF Emp %', width: 110, type: 'number', editable: true },
-    { field: 'epf_com_per', headerName: 'EPF Co %', width: 110, type: 'number', editable: true },
-    { field: 'etf_com_per', headerName: 'ETF Co %', width: 110, type: 'number', editable: true },
+    { key: 'etf_member_no', label: 'ETF Member No', width: 140, sortKey: 'etf_member_no', filterKey: 'f_etf_no', filterType: 'text', editable: true, editType: 'text' },
+    { key: 'epf_emp_per', label: 'EPF Emp %', width: 110, align: 'right', sortKey: 'epf_emp_per', editable: true, editType: 'number' },
+    { key: 'epf_com_per', label: 'EPF Co %', width: 110, align: 'right', sortKey: 'epf_com_per', editable: true, editType: 'number' },
+    { key: 'etf_com_per', label: 'ETF Co %', width: 110, align: 'right', sortKey: 'etf_com_per', editable: true, editType: 'number' },
   ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '97%', mx: 'auto', mt: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -135,23 +157,27 @@ export default function EmployeeSalaryCompliance() {
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess('')}>{success}</Alert>}
 
-      <Box sx={{ height: 680, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          processRowUpdate={processRowUpdate}
-          onProcessRowUpdateError={(err) => setError(String(err))}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
-          getRowClassName={({ id }) => dirtyIds.has(id) ? 'row-dirty' : ''}
-          sx={{
-            '& .row-dirty': { bgcolor: 'warning.lighter', '&:hover': { bgcolor: 'warning.light' } },
-          }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.employee_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        onCellEdit={handleCellEdit}
+        onRowClassName={(row) => dirtyIds.has(row.employee_id) ? 'row-dirty' : ''}
+        emptyMessage="No employees"
+        height={680}
+        minHeight={680}
+      />
+      <style>{`.row-dirty td { background-color: rgba(255,167,38,0.08) !important; }`}</style>
     </Box>
   );
 }

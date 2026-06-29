@@ -3,14 +3,13 @@ import {
   Box, Typography, TextField, CircularProgress, Alert, Avatar, Chip, Button,
   IconButton, Tooltip, FormControl, InputLabel, Select, MenuItem, LinearProgress,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined';
 import DownloadIcon from '@mui/icons-material/FileDownloadOutlined';
 import ButtonGroup from '@mui/material/ButtonGroup';
 import { useNavigate } from 'react-router-dom';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 import { pickAvatarColor } from 'theme/tokens';
 
 const firstOfMonth = () => {
@@ -37,6 +36,11 @@ export default function PayrollHub() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   useEffect(() => {
     api.get('/api/outlets/').then((res) => {
       setOutlets(Array.isArray(res.data) ? res.data : (res.data?.results || []));
@@ -50,6 +54,7 @@ export default function PayrollHub() {
       if (outletId !== 'all') params.outlet_id = outletId;
       const res = await api.get('/payroll/employees/', { params });
       setRows(res.data || []);
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load employees.');
     } finally { setLoading(false); }
@@ -80,7 +85,6 @@ export default function PayrollHub() {
       a.href = url; a.download = filename; document.body.appendChild(a); a.click();
       a.remove(); URL.revokeObjectURL(url);
     } catch (err) {
-      // Error responses come back as Blob because responseType='blob' — parse if JSON
       const body = err.response?.data;
       let msg = `Failed to download ${kind} file.`;
       if (body instanceof Blob) {
@@ -153,8 +157,10 @@ export default function PayrollHub() {
 
   const columns = useMemo(() => [
     {
-      field: 'fullname', headerName: 'Employee', flex: 1.3, minWidth: 220,
-      renderCell: ({ row }) => (
+      key: 'fullname', label: 'Employee', width: 240,
+      sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text',
+      filterValue: (row) => row.fullname,
+      render: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Avatar sx={{ width: 30, height: 30, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
             {getInitials(row.fullname)}
@@ -168,32 +174,41 @@ export default function PayrollHub() {
         </Box>
       ),
     },
-    { field: 'primary_outlet_name', headerName: 'Outlet', flex: 0.9, minWidth: 150 },
-    { field: 'basic_salary', headerName: 'Basic', flex: 0.5, minWidth: 100, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => Number(value || 0).toLocaleString() },
+    { key: 'primary_outlet_name', label: 'Outlet', width: 160, sortKey: 'primary_outlet_name', filterKey: 'f_outlet', filterType: 'text' },
     {
-      field: 'payroll_score', headerName: 'Att. Score', flex: 0.7, minWidth: 130,
-      renderCell: ({ value }) => value == null ? '—' : (
+      key: 'basic_salary', label: 'Basic', width: 110, align: 'right', sortKey: 'basic_salary',
+      render: (row) => Number(row.basic_salary || 0).toLocaleString(),
+    },
+    {
+      key: 'payroll_score', label: 'Att. Score', width: 140, sortKey: 'payroll_score',
+      render: (row) => row.payroll_score == null ? '—' : (
         <Box sx={{ width: '100%', py: 0.5 }}>
-          <Typography variant="caption">{Number(value).toFixed(0)}%</Typography>
-          <LinearProgress variant="determinate" value={Math.min(100, Number(value))}
-            color={value >= 90 ? 'success' : value >= 75 ? 'warning' : 'error'}
+          <Typography variant="caption">{Number(row.payroll_score).toFixed(0)}%</Typography>
+          <LinearProgress variant="determinate" value={Math.min(100, Number(row.payroll_score))}
+            color={row.payroll_score >= 90 ? 'success' : row.payroll_score >= 75 ? 'warning' : 'error'}
             sx={{ height: 6, borderRadius: 1 }} />
         </Box>
       ),
     },
     {
-      field: 'payroll_status', headerName: 'This Period', flex: 0.6, minWidth: 130,
-      renderCell: ({ row }) => row.payroll_id ? (
+      key: 'payroll_status', label: 'This Period', width: 140, sortKey: 'payroll_status',
+      filterKey: 'f_status', filterType: 'select',
+      filterOptions: [
+        { value: 'Locked', label: 'Locked' },
+        { value: 'Draft', label: 'Draft' },
+      ],
+      render: (row) => row.payroll_id ? (
         <Chip label={row.payroll_status} size="small" color={statusColor(row.payroll_status)} sx={{ fontWeight: 600 }} />
       ) : <Typography variant="caption" color="text.disabled">Not generated</Typography>,
     },
-    { field: 'payroll_net_pay', headerName: 'Net Pay', flex: 0.7, minWidth: 130, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => value != null ? Number(value).toLocaleString() : '—' },
     {
-      field: 'actions', headerName: 'Action', flex: 0.8, minWidth: 200, sortable: false, filterable: false,
-      renderCell: ({ row }) => (
-        <Box sx={{ display: 'flex', gap: 0.5 }}>
+      key: 'payroll_net_pay', label: 'Net Pay', width: 130, align: 'right', sortKey: 'payroll_net_pay',
+      render: (row) => row.payroll_net_pay != null ? Number(row.payroll_net_pay).toLocaleString() : '—',
+    },
+    {
+      key: 'actions', label: 'Action', width: 200, align: 'center',
+      render: (row) => (
+        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
           <Button size="small" variant="outlined" startIcon={<CalculateOutlinedIcon />} onClick={() => openEmployee(row)}>
             {row.payroll_id ? 'Open' : 'Calc'}
           </Button>
@@ -208,6 +223,22 @@ export default function PayrollHub() {
       ),
     },
   ], [periodStart, periodEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -248,18 +279,22 @@ export default function PayrollHub() {
 
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      <Box sx={{ height: 640, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={columns}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
-          onRowDoubleClick={(p) => openEmployee(p.row)}
-          getRowHeight={() => 'auto'}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.employee_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No employees"
+      />
     </Box>
   );
 }

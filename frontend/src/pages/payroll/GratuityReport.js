@@ -3,9 +3,8 @@ import {
   Box, Typography, Alert, Chip, FormControl, InputLabel, Select, MenuItem,
   Card, CardContent,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 
 const fmt = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -15,6 +14,11 @@ export default function GratuityReport() {
   const [outletId, setOutletId] = useState('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   useEffect(() => {
     api.get('/api/outlets/').then(res => {
@@ -28,6 +32,7 @@ export default function GratuityReport() {
       const params = outletId !== 'all' ? { outlet: outletId } : {};
       const res = await api.get('/payroll/gratuity/', { params });
       setRows(res.data || []);
+      setPage(1);
     } catch { setError('Failed to load.'); }
     finally { setLoading(false); }
   }, [outletId]);
@@ -38,30 +43,56 @@ export default function GratuityReport() {
   const totalLiability = rows.reduce((a, r) => a + Number(r.gratuity || 0), 0);
 
   const columns = useMemo(() => [
-    { field: 'empcode', headerName: 'Emp Code', width: 110 },
-    { field: 'fullname', headerName: 'Employee', flex: 1, minWidth: 180 },
-    { field: 'primary_outlet_name', headerName: 'Outlet', flex: 0.9, minWidth: 150 },
-    { field: 'service_start', headerName: 'Start Date', width: 120,
-      renderCell: ({ value }) => value || '—' },
-    { field: 'service_years', headerName: 'Years', width: 100, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => Number(value || 0).toFixed(2) },
-    { field: 'basic_salary', headerName: 'Basic (Rs.)', width: 130, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => fmt(value) },
+    { key: 'empcode', label: 'Emp Code', width: 110, sortKey: 'empcode', filterKey: 'f_empcode', filterType: 'text' },
+    { key: 'fullname', label: 'Employee', width: 200, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text' },
+    { key: 'primary_outlet_name', label: 'Outlet', width: 160, sortKey: 'primary_outlet_name', filterKey: 'f_outlet', filterType: 'text' },
     {
-      field: 'eligible', headerName: 'Status', width: 130,
-      renderCell: ({ row }) => row.eligible
+      key: 'service_start', label: 'Start Date', width: 120, sortKey: 'service_start',
+      filterKey: 'f_start', filterType: 'date',
+      render: (row) => row.service_start || '—',
+    },
+    {
+      key: 'service_years', label: 'Years', width: 100, align: 'right', sortKey: 'service_years',
+      render: (row) => Number(row.service_years || 0).toFixed(2),
+    },
+    {
+      key: 'basic_salary', label: 'Basic (Rs.)', width: 130, align: 'right', sortKey: 'basic_salary',
+      render: (row) => fmt(row.basic_salary),
+    },
+    {
+      key: 'eligible', label: 'Status', width: 130, sortKey: 'eligible',
+      filterKey: 'f_eligible', filterType: 'bool',
+      render: (row) => row.eligible
         ? <Chip size="small" label="Eligible" color="success" />
         : <Chip size="small" label="Not yet" />,
     },
-    { field: 'gratuity', headerName: 'Gratuity (Rs.)', width: 160, align: 'right', headerAlign: 'right',
-      renderCell: ({ value }) => (
-        <Typography variant="body2" fontWeight={value > 0 ? 700 : 400}
-          color={value > 0 ? 'success.main' : 'text.disabled'}>
-          {fmt(value)}
+    {
+      key: 'gratuity', label: 'Gratuity (Rs.)', width: 160, align: 'right', sortKey: 'gratuity',
+      render: (row) => (
+        <Typography variant="body2" fontWeight={row.gratuity > 0 ? 700 : 400}
+          color={row.gratuity > 0 ? 'success.main' : 'text.disabled'}>
+          {fmt(row.gratuity)}
         </Typography>
-      ) },
-    { field: 'note', headerName: 'Note', flex: 1, minWidth: 200 },
+      ),
+    },
+    { key: 'note', label: 'Note', width: 220, sortKey: 'note', filterKey: 'f_note', filterType: 'text' },
   ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -101,16 +132,22 @@ export default function GratuityReport() {
         </Card>
       </Box>
 
-      <Box sx={{ height: 600, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={columns}
-          getRowId={(r) => r.employee_id}
-          loading={loading}
-          disableRowSelectionOnClick
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.employee_id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No employees"
+      />
     </Box>
   );
 }
