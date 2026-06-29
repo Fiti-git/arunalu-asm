@@ -220,64 +220,6 @@ const components = {
     },
   },
 
-  MuiDataGrid: {
-    defaultProps: {
-      disableRowSelectionOnClick: true,
-      rowHeight: 44,
-      columnHeaderHeight: 44,
-    },
-    styleOverrides: {
-      root: ({ theme }) => ({
-        border: `1px solid ${theme.palette.divider}`,
-        borderRadius: 12,
-        backgroundColor: theme.palette.background.paper,
-        fontSize: "0.8125rem",
-        "--DataGrid-rowBorderColor": theme.palette.divider,
-        "--DataGrid-containerBackground": theme.palette.grey[50],
-      }),
-      columnHeaders: ({ theme }) => ({
-        backgroundColor: theme.palette.grey[50],
-        borderBottom: `1px solid ${theme.palette.divider}`,
-      }),
-      columnHeader: ({ theme }) => ({
-        "&:focus, &:focus-within": { outline: "none" },
-        color: theme.palette.text.secondary,
-      }),
-      columnHeaderTitle: {
-        fontWeight: 600,
-        fontSize: "0.72rem",
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-      },
-      columnSeparator: {
-        visibility: "hidden",
-      },
-      cell: ({ theme }) => ({
-        borderBottom: `1px solid ${theme.palette.divider}`,
-        "&:focus, &:focus-within": { outline: "none" },
-      }),
-      row: ({ theme }) => ({
-        "&:hover": { backgroundColor: theme.palette.action.hover },
-        "&.Mui-selected": {
-          backgroundColor: theme.palette.action.selected,
-          "&:hover": { backgroundColor: theme.palette.action.selected },
-        },
-      }),
-      footerContainer: ({ theme }) => ({
-        borderTop: `1px solid ${theme.palette.divider}`,
-        backgroundColor: theme.palette.grey[50],
-        minHeight: 44,
-      }),
-      toolbarContainer: ({ theme }) => ({
-        padding: theme.spacing(1, 1.5),
-        gap: theme.spacing(1),
-        borderBottom: `1px solid ${theme.palette.divider}`,
-      }),
-      overlay: ({ theme }) => ({
-        backgroundColor: theme.palette.background.paper,
-      }),
-    },
-  },
 };
 
 export default components;
