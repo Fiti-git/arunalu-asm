@@ -4,7 +4,6 @@ import {
   LinearProgress, Avatar, Divider, FormControl, InputLabel,
   Select, MenuItem, IconButton, Tooltip, Button, Menu,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
@@ -13,7 +12,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import api from 'utils/api';
-import { PageHeader, SectionLabel } from 'components/ui';
+import { PageHeader, SectionLabel, DataTable, applyClientFilters } from 'components/ui';
 import { pickAvatarColor } from 'theme/tokens';
 
 const firstOfMonth = () => {
@@ -102,6 +101,11 @@ export default function AdminOutletsDetail() {
   const [outletEmployees, setOutletEmployees] = useState([]);
   const [drillLoading, setDrillLoading] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [empSortBy, setEmpSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchAll = useCallback(async () => {
     if (!startDate || !endDate) return;
     if (endDate < startDate) { setError('End date must be on or after start date.'); return; }
@@ -130,6 +134,7 @@ export default function AdminOutletsDetail() {
         if (cancelled) return;
         setOutletTrend(t.data || []);
         setOutletEmployees(e.data || []);
+        setPage(1);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setDrillLoading(false); });
@@ -157,10 +162,12 @@ export default function AdminOutletsDetail() {
     ].filter((d) => d.value > 0);
   }, [selectedOutlet]);
 
-  const empColumns = [
+  const empColumns = useMemo(() => [
     {
-      field: 'fullname', headerName: 'Employee', flex: 1.2, minWidth: 180,
-      renderCell: ({ row }) => (
+      key: 'fullname', label: 'Employee', width: 220,
+      sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text',
+      filterValue: (row) => row.fullname,
+      render: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Avatar sx={{ width: 28, height: 28, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
             {getInitials(row.fullname)}
@@ -174,34 +181,46 @@ export default function AdminOutletsDetail() {
         </Box>
       ),
     },
-    { field: 'username', headerName: 'Username', flex: 0.6, minWidth: 110 },
-    { field: 'present_days', headerName: 'Present', flex: 0.4, minWidth: 80, align: 'center', headerAlign: 'center' },
-    { field: 'leave_days', headerName: 'Leave', flex: 0.4, minWidth: 80, align: 'center', headerAlign: 'center' },
+    { key: 'username', label: 'Username', width: 130, sortKey: 'username', filterKey: 'f_username', filterType: 'text', render: (row) => row.username },
+    { key: 'present_days', label: 'Present', width: 90, align: 'center', sortKey: 'present_days', render: (row) => row.present_days },
+    { key: 'leave_days', label: 'Leave', width: 90, align: 'center', sortKey: 'leave_days', render: (row) => row.leave_days },
+    { key: 'absent_days', label: 'Absent (blank)', width: 120, align: 'center', sortKey: 'absent_days', render: (row) => row.absent_days },
     {
-      field: 'absent_days', headerName: 'Absent (blank)', flex: 0.5, minWidth: 110,
-      align: 'center', headerAlign: 'center',
+      key: 'absent_dates', label: 'Absent Dates', width: 140,
+      render: (row) => <AbsentDatesCell dates={row.absent_dates} />,
     },
     {
-      field: 'absent_dates', headerName: 'Absent Dates', flex: 0.6, minWidth: 130, sortable: false,
-      renderCell: ({ row }) => <AbsentDatesCell dates={row.absent_dates} />,
-    },
-    {
-      field: 'present_rate', headerName: 'Rate', flex: 0.7, minWidth: 110,
-      renderCell: ({ value }) => (
+      key: 'present_rate', label: 'Rate', width: 140, sortKey: 'present_rate',
+      render: (row) => (
         <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <LinearProgress variant="determinate" value={Math.min(Number(value || 0), 100)}
+          <LinearProgress variant="determinate" value={Math.min(Number(row.present_rate || 0), 100)}
             sx={{
               flex: 1, height: 6, borderRadius: 3, bgcolor: 'grey.100',
               '& .MuiLinearProgress-bar': {
-                bgcolor: Number(value) >= 80 ? 'success.main' : Number(value) >= 60 ? 'warning.main' : 'error.main',
+                bgcolor: Number(row.present_rate) >= 80 ? 'success.main' : Number(row.present_rate) >= 60 ? 'warning.main' : 'error.main',
                 borderRadius: 3,
               },
             }} />
-          <Typography variant="caption" fontWeight={700} sx={{ width: 40, textAlign: 'right' }}>{value}%</Typography>
+          <Typography variant="caption" fontWeight={700} sx={{ width: 40, textAlign: 'right' }}>{row.present_rate}%</Typography>
         </Box>
       ),
     },
-  ];
+  ], []);
+
+  const filteredEmpRows = useMemo(
+    () => applyClientFilters(outletEmployees, empColumns, columnFilters, empSortBy),
+    [outletEmployees, empColumns, columnFilters, empSortBy]
+  );
+  const pagedEmpRows = useMemo(
+    () => filteredEmpRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredEmpRows, page, pageSize]
+  );
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -327,16 +346,24 @@ export default function AdminOutletsDetail() {
                 <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                   Employees ({outletEmployees.length})
                 </Typography>
-                <Box sx={{ height: 480 }}>
-                  <DataGrid
-                    rows={outletEmployees}
-                    columns={empColumns}
-                    getRowId={(r) => r.employee_id}
-                    disableRowSelectionOnClick
-                    pageSizeOptions={[10, 25, 50, 100]}
-                    initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-                  />
-                </Box>
+                <DataTable
+                  columns={empColumns}
+                  rows={pagedEmpRows}
+                  getRowId={(r) => r.employee_id}
+                  loading={drillLoading}
+                  page={page}
+                  pageSize={pageSize}
+                  totalCount={filteredEmpRows.length}
+                  onPageChange={setPage}
+                  onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+                  filters={columnFilters}
+                  onFilterChange={handleFilterChange}
+                  sortBy={empSortBy}
+                  onSortChange={(s) => { setEmpSortBy(s); setPage(1); }}
+                  emptyMessage="No employees"
+                  height={480}
+                  minHeight={480}
+                />
               </>
             )}
           </Box>

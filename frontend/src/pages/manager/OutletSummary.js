@@ -1,16 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, TextField, CircularProgress, Alert, Chip, Avatar,
   IconButton, Tooltip, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, ToggleButton, ToggleButtonGroup, List, ListItem,
   ListItemText, FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import api from 'utils/api';
-import { PageHeader, SectionLabel } from 'components/ui';
+import { PageHeader, SectionLabel, DataTable, applyClientFilters } from 'components/ui';
 import { pickAvatarColor } from 'theme/tokens';
 
 const firstOfMonth = () => {
@@ -99,6 +98,11 @@ export default function OutletSummary() {
   const [error, setError] = useState('');
   const [viewDialog, setViewDialog] = useState({ open: false, employee: null });
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchOutlets = useCallback(async () => {
     if (!startDate || !endDate) return;
     if (endDate < startDate) { setError('End date must be on or after start date.'); return; }
@@ -129,7 +133,7 @@ export default function OutletSummary() {
     api.get(`/report/outlet-summary/outlets/${outletId}/employees/`, {
       params: { start_date: startDate, end_date: endDate },
     })
-      .then((res) => { if (!cancelled) setEmployees(res.data || []); })
+      .then((res) => { if (!cancelled) { setEmployees(res.data || []); setPage(1); } })
       .catch(() => { if (!cancelled) setEmployees([]); })
       .finally(() => { if (!cancelled) setEmpLoading(false); });
     return () => { cancelled = true; };
@@ -141,10 +145,12 @@ export default function OutletSummary() {
   const openViewDialog = (employee) => setViewDialog({ open: true, employee });
   const closeViewDialog = () => setViewDialog({ open: false, employee: null });
 
-  const columns = [
+  const columns = useMemo(() => [
     {
-      field: 'fullname', headerName: 'Employee', flex: 1.2, minWidth: 200,
-      renderCell: ({ row }) => (
+      key: 'fullname', label: 'Employee', width: 260,
+      sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text',
+      filterValue: (row) => row.fullname,
+      render: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Avatar sx={{ width: 28, height: 28, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
             {getInitials(row.fullname)}
@@ -158,16 +164,12 @@ export default function OutletSummary() {
         </Box>
       ),
     },
-    { field: 'present_days', headerName: 'Present', flex: 0.4, minWidth: 90, align: 'center', headerAlign: 'center' },
-    { field: 'leave_days', headerName: 'Leave', flex: 0.4, minWidth: 90, align: 'center', headerAlign: 'center' },
+    { key: 'present_days', label: 'Present', width: 100, align: 'center', sortKey: 'present_days', render: (row) => row.present_days },
+    { key: 'leave_days', label: 'Leave', width: 100, align: 'center', sortKey: 'leave_days', render: (row) => row.leave_days },
+    { key: 'absent_days', label: 'Not Marked', width: 120, align: 'center', sortKey: 'absent_days', render: (row) => row.absent_days },
     {
-      field: 'absent_days', headerName: 'Not Marked', flex: 0.5, minWidth: 110,
-      align: 'center', headerAlign: 'center',
-    },
-    {
-      field: 'actions', headerName: 'Dates', flex: 0.5, minWidth: 110, sortable: false, filterable: false,
-      align: 'center', headerAlign: 'center',
-      renderCell: ({ row }) => (
+      key: 'actions', label: 'Dates', width: 110, align: 'center',
+      render: (row) => (
         <Button
           size="small"
           variant="outlined"
@@ -179,7 +181,23 @@ export default function OutletSummary() {
         </Button>
       ),
     },
-  ];
+  ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(employees, columns, columnFilters, sortBy),
+    [employees, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -250,22 +268,22 @@ export default function OutletSummary() {
             </Box>
           </Box>
 
-          <Box sx={{ height: 540 }}>
-            {empLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                <CircularProgress size={24} />
-              </Box>
-            ) : (
-              <DataGrid
-                rows={employees}
-                columns={columns}
-                getRowId={(r) => r.employee_id}
-                disableRowSelectionOnClick
-                pageSizeOptions={[10, 25, 50, 100]}
-                initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-              />
-            )}
-          </Box>
+          <DataTable
+            columns={columns}
+            rows={pagedRows}
+            getRowId={(r) => r.employee_id}
+            loading={empLoading}
+            page={page}
+            pageSize={pageSize}
+            totalCount={filteredRows.length}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+            filters={columnFilters}
+            onFilterChange={handleFilterChange}
+            sortBy={sortBy}
+            onSortChange={(s) => { setSortBy(s); setPage(1); }}
+            emptyMessage="No employees"
+          />
         </Box>
       )}
 

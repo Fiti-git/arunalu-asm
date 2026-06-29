@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Button, Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, MenuItem, Tooltip, Typography
+  TextField, MenuItem, Tooltip, Typography, IconButton,
 } from '@mui/material';
-import { DataGrid, GridActionsCellItem } from '@mui/x-data-grid';
 import EditIcon from '@mui/icons-material/Edit';
 import { useForm, Controller } from 'react-hook-form';
 import * as yup from 'yup';
 import { yupResolver } from '@hookform/resolvers/yup';
 import api from 'utils/api';
+import { DataTable, applyClientFilters } from 'components/ui';
 
 // Validation schema
 const schema = yup.object({
@@ -32,6 +32,11 @@ export default function EmployeeGrid() {
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [outlets, setOutlets] = useState([]);
   const [groups, setGroups] = useState([]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   const {
     control, handleSubmit, reset, formState: { errors }
@@ -147,52 +152,53 @@ export default function EmployeeGrid() {
     }
   };
 
-  const columns = [
-    { field: 'fullname', headerName: 'User Name', flex: 1 },
-    { field: 'first_name', headerName: 'First Name', flex: 1 },
-    { field: 'last_name', headerName: 'Last Name', flex: 1 },
-    { field: 'date_of_birth', headerName: 'DOB', flex: 1 },
-    { field: 'group', headerName: 'Role', flex: 1 },
+  const handleEditClick = (row) => {
+    const prefilled = {
+      ...row,
+      outlets: outlets.filter((outlet) =>
+        row.outlets.split(', ').includes(outlet.name)
+      ).map((o) => o.id),
+      group: groups.find((g) => row.group.includes(g.name))?.id || '',
+    };
+    reset(prefilled);
+    setProfilePhoto(null);
+    setEditEmployee(row);
+    setOpenDialog(true);
+  };
+
+  const columns = useMemo(() => [
+    { key: 'fullname', label: 'User Name', width: 180, sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text', render: (r) => r.fullname },
+    { key: 'first_name', label: 'First Name', width: 150, sortKey: 'first_name', filterKey: 'f_first', filterType: 'text', render: (r) => r.first_name },
+    { key: 'last_name', label: 'Last Name', width: 150, sortKey: 'last_name', filterKey: 'f_last', filterType: 'text', render: (r) => r.last_name },
+    { key: 'date_of_birth', label: 'DOB', width: 130, sortKey: 'date_of_birth', render: (r) => r.date_of_birth },
+    { key: 'group', label: 'Role', width: 150, sortKey: 'group', filterKey: 'f_group', filterType: 'text', render: (r) => r.group },
     {
-      field: 'actions',
-      type: 'actions',
-      headerName: 'Edit',
-      width: 80,
-      getActions: (params) => [
-        <GridActionsCellItem
-          icon={<Tooltip title="Edit"><EditIcon /></Tooltip>}
-          label="Edit"
-          onClick={() => {
-            const prefilled = {
-              ...params.row,
-              outlets: outlets.filter(outlet =>
-                params.row.outlets.split(', ').includes(outlet.name)
-              ).map(o => o.id),
-              group: groups.find(g => params.row.group.includes(g.name))?.id || '',
-            };
-            reset(prefilled);
-            setProfilePhoto(null);
-            setEditEmployee(params.row);
-            setOpenDialog(true);
-          }}
-        />,
-      ],
+      key: 'actions', label: 'Edit', width: 80, align: 'center',
+      render: (row) => (
+        <Tooltip title="Edit">
+          <IconButton size="small" onClick={() => handleEditClick(row)}>
+            <EditIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ),
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [outlets, groups]);
 
-
-    /*{
-      field: 'profile_photo',
-      headerName: 'Photo',
-      width: 100,
-      renderCell: (params) =>
-        typeof params.value === 'string' ? (
-          <img src={params.value} alt="Profile" width={40} height={40} style={{ borderRadius: '50%' }} />
-        ) : (
-          'No Photo'
-        ),
-    },*/
-
-  ];
+  const filteredRows = useMemo(
+    () => applyClientFilters(employees, columns, columnFilters, sortBy),
+    [employees, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ height: 600, width: '90%', mx: 'auto', mt: 5, display: 'flex', flexDirection: 'column' }}>
@@ -200,12 +206,21 @@ export default function EmployeeGrid() {
 
 
 
-      <DataGrid
-        rows={employees}
+      <DataTable
         columns={columns}
-        pageSize={5}
-        rowsPerPageOptions={[5]}
+        rows={pagedRows}
         getRowId={(row) => row.employee_id}
+        page={page}
+        pageSize={pageSize}
+        pageSizeOptions={[5, 10, 25, 50]}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No employees"
       />
 
       <Dialog open={openDialog} onClose={handleClose} maxWidth="sm" fullWidth>

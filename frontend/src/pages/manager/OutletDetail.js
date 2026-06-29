@@ -4,7 +4,6 @@ import {
   LinearProgress, Chip, Avatar, Divider, FormControl, InputLabel,
   Select, MenuItem, IconButton, Tooltip, Button, Menu,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import {
   PieChart, Pie, Cell, Legend, Tooltip as RTooltip, ResponsiveContainer,
 } from 'recharts';
@@ -12,7 +11,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import api from 'utils/api';
-import { PageHeader, SectionLabel } from 'components/ui';
+import { PageHeader, SectionLabel, DataTable, applyClientFilters, exportRowsToCsv } from 'components/ui';
 import { pickAvatarColor } from 'theme/tokens';
 
 const firstOfMonth = () => {
@@ -53,13 +52,6 @@ function AbsentDatesCell({ dates }) {
   );
 }
 
-const csvEscape = (val) => {
-  if (val == null) return '';
-  const s = String(val);
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-};
-
 export default function OutletDetail() {
   const [startDate, setStartDate] = useState(firstOfMonth());
   const [endDate, setEndDate] = useState(today());
@@ -69,6 +61,11 @@ export default function OutletDetail() {
   const [loading, setLoading] = useState(false);
   const [drillLoading, setDrillLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   const fetchOutlets = useCallback(async () => {
     if (!startDate || !endDate) return;
@@ -97,7 +94,7 @@ export default function OutletDetail() {
     api.get(`/report/outlet-summary/outlets/${selectedOutletId}/employees/`, {
       params: { start_date: startDate, end_date: endDate },
     })
-      .then((res) => { if (!cancelled) setEmployees(res.data || []); })
+      .then((res) => { if (!cancelled) { setEmployees(res.data || []); setPage(1); } })
       .catch(() => { if (!cancelled) setEmployees([]); })
       .finally(() => { if (!cancelled) setDrillLoading(false); });
     return () => { cancelled = true; };
@@ -117,37 +114,12 @@ export default function OutletDetail() {
     ].filter((d) => d.value > 0);
   }, [selectedOutlet]);
 
-  const handleDownloadCsv = () => {
-    const headers = ['Employee', 'EMP Code', 'Username', 'Present', 'Leave', 'Absent', 'Rate %', 'Absent Dates'];
-    const lines = [headers.map(csvEscape).join(',')];
-    employees.forEach((e) => {
-      lines.push([
-        e.fullname,
-        e.empcode || `#${e.employee_id}`,
-        e.username || '',
-        e.present_days,
-        e.leave_days,
-        e.absent_days,
-        e.present_rate,
-        (e.absent_dates || []).join('; '),
-      ].map(csvEscape).join(','));
-    });
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const name = (selectedOutlet?.name || 'outlet').replace(/[^a-z0-9]+/gi, '_');
-    a.download = `outlet_${name}_${startDate}_to_${endDate}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const empColumns = [
+  const empColumns = useMemo(() => [
     {
-      field: 'fullname', headerName: 'Employee', flex: 1.2, minWidth: 200,
-      renderCell: ({ row }) => (
+      key: 'fullname', label: 'Employee', width: 240,
+      sortKey: 'fullname', filterKey: 'f_fullname', filterType: 'text',
+      filterValue: (row) => row.fullname,
+      render: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Avatar sx={{ width: 28, height: 28, fontSize: 11, fontWeight: 700, bgcolor: pickAvatarColor(row.fullname || '') }}>
             {getInitials(row.fullname)}
@@ -161,31 +133,61 @@ export default function OutletDetail() {
         </Box>
       ),
     },
-    { field: 'username', headerName: 'Username', flex: 0.7, minWidth: 120 },
-    { field: 'present_days', headerName: 'Present', flex: 0.4, minWidth: 80, align: 'center', headerAlign: 'center' },
-    { field: 'leave_days', headerName: 'Leave', flex: 0.4, minWidth: 80, align: 'center', headerAlign: 'center' },
-    { field: 'absent_days', headerName: 'Absent', flex: 0.4, minWidth: 80, align: 'center', headerAlign: 'center' },
+    { key: 'username', label: 'Username', width: 140, sortKey: 'username', filterKey: 'f_username', filterType: 'text', render: (row) => row.username },
+    { key: 'present_days', label: 'Present', width: 90, align: 'center', sortKey: 'present_days', render: (row) => row.present_days },
+    { key: 'leave_days', label: 'Leave', width: 90, align: 'center', sortKey: 'leave_days', render: (row) => row.leave_days },
+    { key: 'absent_days', label: 'Absent', width: 90, align: 'center', sortKey: 'absent_days', render: (row) => row.absent_days },
     {
-      field: 'absent_dates', headerName: 'Absent Dates', flex: 0.7, minWidth: 130, sortable: false,
-      renderCell: ({ row }) => <AbsentDatesCell dates={row.absent_dates} />,
+      key: 'absent_dates', label: 'Absent Dates', width: 140,
+      render: (row) => <AbsentDatesCell dates={row.absent_dates} />,
     },
     {
-      field: 'present_rate', headerName: 'Rate', flex: 0.8, minWidth: 130,
-      renderCell: ({ value }) => (
+      key: 'present_rate', label: 'Rate', width: 140, sortKey: 'present_rate',
+      render: (row) => (
         <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <LinearProgress variant="determinate" value={Math.min(Number(value || 0), 100)}
+          <LinearProgress variant="determinate" value={Math.min(Number(row.present_rate || 0), 100)}
             sx={{
               flex: 1, height: 6, borderRadius: 3, bgcolor: 'grey.100',
               '& .MuiLinearProgress-bar': {
-                bgcolor: Number(value) >= 80 ? 'success.main' : Number(value) >= 60 ? 'warning.main' : 'error.main',
+                bgcolor: Number(row.present_rate) >= 80 ? 'success.main' : Number(row.present_rate) >= 60 ? 'warning.main' : 'error.main',
                 borderRadius: 3,
               },
             }} />
-          <Typography variant="caption" fontWeight={700} sx={{ width: 40, textAlign: 'right' }}>{value}%</Typography>
+          <Typography variant="caption" fontWeight={700} sx={{ width: 40, textAlign: 'right' }}>{row.present_rate}%</Typography>
         </Box>
       ),
     },
-  ];
+  ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(employees, empColumns, columnFilters, sortBy),
+    [employees, empColumns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
+
+  const handleDownloadCsv = () => {
+    const exportCols = [
+      { key: 'fullname', label: 'Employee' },
+      { key: 'empcode', label: 'EMP Code' },
+      { key: 'username', label: 'Username' },
+      { key: 'present_days', label: 'Present' },
+      { key: 'leave_days', label: 'Leave' },
+      { key: 'absent_days', label: 'Absent' },
+      { key: 'present_rate', label: 'Rate %' },
+      { key: 'absent_dates', label: 'Absent Dates', csvValue: (e) => (e.absent_dates || []).join('; ') },
+    ];
+    const name = (selectedOutlet?.name || 'outlet').replace(/[^a-z0-9]+/gi, '_');
+    exportRowsToCsv(`outlet_${name}_${startDate}_to_${endDate}.csv`, exportCols, filteredRows);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -217,7 +219,7 @@ export default function OutletDetail() {
               </span>
             </Tooltip>
             <Button variant="outlined" startIcon={<DownloadIcon />}
-              disabled={!employees.length} onClick={handleDownloadCsv}>
+              disabled={!filteredRows.length} onClick={handleDownloadCsv}>
               Download CSV
             </Button>
           </Box>
@@ -283,22 +285,24 @@ export default function OutletDetail() {
               <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                 Employees ({employees.length})
               </Typography>
-              <Box sx={{ height: 480 }}>
-                {drillLoading ? (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                    <CircularProgress size={24} />
-                  </Box>
-                ) : (
-                  <DataGrid
-                    rows={employees}
-                    columns={empColumns}
-                    getRowId={(r) => r.employee_id}
-                    disableRowSelectionOnClick
-                    pageSizeOptions={[10, 25, 50, 100]}
-                    initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-                  />
-                )}
-              </Box>
+              <DataTable
+                columns={empColumns}
+                rows={pagedRows}
+                getRowId={(r) => r.employee_id}
+                loading={drillLoading}
+                page={page}
+                pageSize={pageSize}
+                totalCount={filteredRows.length}
+                onPageChange={setPage}
+                onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+                filters={columnFilters}
+                onFilterChange={handleFilterChange}
+                sortBy={sortBy}
+                onSortChange={(s) => { setSortBy(s); setPage(1); }}
+                emptyMessage="No employees"
+                height={480}
+                minHeight={480}
+              />
             </Box>
           </Box>
         </Box>

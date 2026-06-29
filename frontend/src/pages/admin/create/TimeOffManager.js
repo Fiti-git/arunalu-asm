@@ -7,7 +7,6 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { DataGrid, GridActionsCellItem } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import CloseIcon from '@mui/icons-material/Close';
@@ -19,7 +18,7 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useLocation } from 'react-router-dom';
 import api from 'utils/api';
-import { PageHeader, SectionLabel } from 'components/ui';
+import { PageHeader, SectionLabel, DataTable, applyClientFilters } from 'components/ui';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Schemas
@@ -70,6 +69,11 @@ function HolidaysTab() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   const { control, handleSubmit, reset, formState: { errors } } = useForm({
     resolver: yupResolver(holidaySchema),
@@ -136,31 +140,48 @@ function HolidaysTab() {
   };
 
   const columns = useMemo(() => [
-    { field: 'hcode', headerName: 'Hcode', width: 100 },
-    { field: 'holiday_name', headerName: 'Holiday Name', flex: 1, minWidth: 180 },
+    { key: 'hcode', label: 'Hcode', width: 110, sortKey: 'hcode', filterKey: 'f_hcode', filterType: 'text', render: (r) => r.hcode },
+    { key: 'holiday_name', label: 'Holiday Name', width: 220, sortKey: 'holiday_name', filterKey: 'f_name', filterType: 'text', render: (r) => r.holiday_name },
     {
-      field: 'hdate', headerName: 'Date', width: 130,
-      renderCell: ({ value }) => {
-        if (!value) return '';
-        const d = new Date(value);
+      key: 'hdate', label: 'Date', width: 130, sortKey: 'hdate',
+      render: (row) => {
+        if (!row.hdate) return '';
+        const d = new Date(row.hdate);
         return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
       },
     },
-    { field: 'active', headerName: 'Active', width: 90, type: 'boolean' },
-    { field: 'holiday_ot_pay_percentage', headerName: 'Holiday OT', width: 110, type: 'number' },
-    { field: 'holiday_regular_pay_percentage', headerName: 'Pay %', width: 110 },
     {
-      field: 'actions', type: 'actions', headerName: 'Actions', width: 90,
-      getActions: (params) => [
-        <GridActionsCellItem
-          icon={<EditIcon fontSize="small" />}
-          label="Edit"
-          onClick={() => openEdit(params.row)}
-          key="edit"
-        />,
-      ],
+      key: 'active', label: 'Active', width: 90,
+      filterKey: 'f_active', filterType: 'bool',
+      filterValue: (row) => Boolean(row.active),
+      render: (row) => row.active ? 'Yes' : 'No',
+    },
+    { key: 'holiday_ot_pay_percentage', label: 'Holiday OT', width: 110, sortKey: 'holiday_ot_pay_percentage', render: (r) => r.holiday_ot_pay_percentage },
+    { key: 'holiday_regular_pay_percentage', label: 'Pay %', width: 110, sortKey: 'holiday_regular_pay_percentage', render: (r) => r.holiday_regular_pay_percentage },
+    {
+      key: 'actions', label: 'Actions', width: 90, align: 'center',
+      render: (row) => (
+        <IconButton size="small" onClick={() => openEdit(row)} title="Edit">
+          <EditIcon fontSize="small" />
+        </IconButton>
+      ),
     },
   ], [openEdit]);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -173,16 +194,25 @@ function HolidaysTab() {
         </Button>
       </Box>
 
-      <Box sx={{ height: 520 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          pageSizeOptions={[5, 10, 25]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-          loading={loading}
-          disableRowSelectionOnClick
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        pageSizeOptions={[5, 10, 25]}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No holidays"
+        height={520}
+        minHeight={520}
+      />
 
       <Dialog open={dialogOpen} onClose={closeDialog} maxWidth="md" fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}>
@@ -327,6 +357,11 @@ function LeaveTypesTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const { control, handleSubmit, reset, formState: { errors } } = useForm({
     resolver: yupResolver(leaveTypeSchema),
     defaultValues: leaveTypeDefaults,
@@ -390,27 +425,41 @@ function LeaveTypesTab() {
   };
 
   const columns = useMemo(() => [
-    { field: 'att_type', headerName: 'AttType', width: 100 },
-    { field: 'att_type_name', headerName: 'Name', flex: 1, minWidth: 160 },
+    { key: 'att_type', label: 'AttType', width: 110, sortKey: 'att_type', filterKey: 'f_atttype', filterType: 'text', render: (r) => r.att_type },
+    { key: 'att_type_name', label: 'Name', width: 200, sortKey: 'att_type_name', filterKey: 'f_name', filterType: 'text', render: (r) => r.att_type_name },
     {
-      field: 'active', headerName: 'Active', width: 90, type: 'boolean',
-      valueFormatter: (value) => (value ? 'Y' : 'N'),
+      key: 'active', label: 'Active', width: 90,
+      filterKey: 'f_active', filterType: 'bool',
+      filterValue: (row) => Boolean(row.active),
+      render: (row) => row.active ? 'Y' : 'N',
     },
-    { field: 'pay_percentage', headerName: 'Pay %', width: 100, type: 'number' },
-    { field: 'att_type_no_of_days_in_year', headerName: 'Days/Year', width: 110 },
-    { field: 'att_type_per_day_hours', headerName: 'Hrs/Day', width: 100, type: 'number' },
+    { key: 'pay_percentage', label: 'Pay %', width: 100, sortKey: 'pay_percentage', render: (r) => r.pay_percentage },
+    { key: 'att_type_no_of_days_in_year', label: 'Days/Year', width: 110, sortKey: 'att_type_no_of_days_in_year', render: (r) => r.att_type_no_of_days_in_year },
+    { key: 'att_type_per_day_hours', label: 'Hrs/Day', width: 100, sortKey: 'att_type_per_day_hours', render: (r) => r.att_type_per_day_hours },
     {
-      field: 'actions', type: 'actions', headerName: 'Actions', width: 90,
-      getActions: (params) => [
-        <GridActionsCellItem
-          icon={<EditIcon fontSize="small" />}
-          label="Edit"
-          onClick={() => openEdit(params.row)}
-          key="edit"
-        />,
-      ],
+      key: 'actions', label: 'Actions', width: 90, align: 'center',
+      render: (row) => (
+        <IconButton size="small" onClick={() => openEdit(row)} title="Edit">
+          <EditIcon fontSize="small" />
+        </IconButton>
+      ),
     },
   ], [openEdit]);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -423,16 +472,25 @@ function LeaveTypesTab() {
         </Button>
       </Box>
 
-      <Box sx={{ height: 520 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          pageSizeOptions={[5, 10, 25]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-          loading={loading}
-          disableRowSelectionOnClick
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        pageSizeOptions={[5, 10, 25]}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No leave types"
+        height={520}
+        minHeight={520}
+      />
 
       <Dialog open={dialogOpen} onClose={closeDialog} maxWidth="md" fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}>

@@ -1,7 +1,7 @@
-import React, { useMemo } from "react";
-import { DataGrid } from "@mui/x-data-grid";
+import React, { useMemo, useState } from "react";
 import { Box, Button } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
+import { DataTable, applyClientFilters, exportRowsToCsv } from "components/ui";
 
 // Helper function to format ISO datetime string to HH:MM time (for check-in/out)
 const formatTime = (dateTimeStr) => {
@@ -29,7 +29,6 @@ const formatDateTime = (dateTimeStr) => {
         const date = new Date(dateTimeStr);
         if (isNaN(date.getTime())) return "";
 
-        // Format to MM/DD/YYYY
         return new Intl.DateTimeFormat('en-US', {
             month: '2-digit',
             day: '2-digit',
@@ -41,14 +40,13 @@ const formatDateTime = (dateTimeStr) => {
     }
 };
 
-// Helper function to process verification notes and include ALL audit details
 const processVerificationNotes = (notes) => {
     if (!Array.isArray(notes) || notes.length === 0) {
         return "";
     }
 
     let summaryParts = [];
-    
+
     notes.forEach(noteObj => {
         if (typeof noteObj !== 'object' || noteObj === null) {
             return;
@@ -57,41 +55,34 @@ const processVerificationNotes = (notes) => {
         for (const noteType in noteObj) {
             if (noteObj.hasOwnProperty(noteType)) {
                 const noteDetails = noteObj[noteType];
-                
+
                 if (!noteDetails || !noteDetails.updated_by) continue;
 
                 const formattedTime = formatDateTime(noteDetails.updated_at);
                 let part = "";
 
-                // 1. Manual Bulk Add
                 if (noteType === 'manual_bulk_add') {
                     part = `MANUAL ADD (User: ${noteDetails.updated_by} @ ${formattedTime})`;
-                    
-                // 2. Check-in Update
                 } else if (noteType === 'checkin_update') {
                     const originalTime = formatTime(noteDetails.Original_check_in_time);
                     const newTime = formatTime(noteDetails.check_in_time);
                     part = `CHECK-IN UPDATE (User: ${noteDetails.updated_by} @ ${formattedTime} | Original: ${originalTime}, New: ${newTime})`;
-                    
-                // 3. Check-out Update
                 } else if (noteType === 'checkout_update') {
                     const originalTime = formatTime(noteDetails.Original_check_out_time);
                     const newTime = formatTime(noteDetails.check_out_time);
                     part = `CHECK-OUT UPDATE (User: ${noteDetails.updated_by} @ ${formattedTime} | Original: ${originalTime}, New: ${newTime})`;
-                    
-                // 4. General/Other Note
                 } else {
                     const cleanNoteType = noteType.replace(/_/g, ' ');
                     part = `${cleanNoteType.toUpperCase()} (User: ${noteDetails.updated_by} @ ${formattedTime})`;
                 }
-                
+
                 if (part) {
                     summaryParts.push(part);
                 }
             }
         }
     });
-    
+
     return summaryParts.filter(p => p).join(" | ");
 };
 
@@ -107,9 +98,7 @@ export default function EmployeeAttendanceTable({ data }) {
       const username = empData.employee_details?.username || "";
       const fullname = empData.employee_details?.fullname || "";
       const firstName = empData.employee_details?.user_first_name || "";
-      // EMP Code column = auth user's username
       const empCode = username || empData.employee_details?.fullname || "";
-      // User Name column = username + existing data (fullname + first_name)
       const userFirstName = [username, fullname, firstName].filter(Boolean).join(" · ");
 
       const dailyRows = (empData.daily_report || []).map((day, index) => {
@@ -118,12 +107,9 @@ export default function EmployeeAttendanceTable({ data }) {
         const verificationNotes = processVerificationNotes(day.verification_notes);
 
         const rowId = `day-${empIndex}-${employeeId}-${index}-${day.work_date}`;
-
-        // Use the updated formatDateTime for workDate
         const workDateFormatted = formatDateTime(day.work_date);
 
         let rowType = "blank";
-        // Check for leave marker first
         const isLeaveDay = !!day.leave_refno || !!day.leave_date;
         const isAttendanceDay = !!day.check_in_time;
 
@@ -138,8 +124,8 @@ export default function EmployeeAttendanceTable({ data }) {
           employeeId,
           userFirstName,
           empCode,
-          workDate: workDateFormatted, // Display MM/DD/YYYY
-          checkInTime: checkIn, 
+          workDate: workDateFormatted,
+          checkInTime: checkIn,
           checkOutTime: checkOut,
           workedHours: day.worked_hours || "",
           attendanceStatus: day.attendance_status || "",
@@ -159,115 +145,101 @@ export default function EmployeeAttendanceTable({ data }) {
     return allRows;
   }, [data]);
 
-  const columns = [
-    { field: "employeeId", headerName: "ID", width: 80 }, 
-    { field: "userFirstName", headerName: "User Name", width: 140 }, 
-    { field: "empCode", headerName: "EMP Code", width: 90 }, 
-    { field: "workDate", headerName: "Date", width: 110 },
-    { field: "checkInTime", headerName: "In", width: 80 },
-    { field: "checkOutTime", headerName: "Out", width: 80 },
-    { field: "workedHours", headerName: "Hrs", width: 80 },
-    { field: "attendanceStatus", headerName: "Status", width: 120 },
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
+  const columns = useMemo(() => [
+    { key: 'employeeId', label: 'ID', width: 80, sortKey: 'employeeId', filterKey: 'f_id', filterType: 'text', render: (r) => r.employeeId },
+    { key: 'userFirstName', label: 'User Name', width: 160, sortKey: 'userFirstName', filterKey: 'f_user', filterType: 'text', render: (r) => r.userFirstName },
+    { key: 'empCode', label: 'EMP Code', width: 110, sortKey: 'empCode', filterKey: 'f_empcode', filterType: 'text', render: (r) => r.empCode },
+    { key: 'workDate', label: 'Date', width: 110, sortKey: 'workDate', render: (r) => r.workDate },
+    { key: 'checkInTime', label: 'In', width: 90, render: (r) => r.checkInTime },
+    { key: 'checkOutTime', label: 'Out', width: 90, render: (r) => r.checkOutTime },
+    { key: 'workedHours', label: 'Hrs', width: 80, align: 'center', render: (r) => r.workedHours },
+    { key: 'attendanceStatus', label: 'Status', width: 120, sortKey: 'attendanceStatus', filterKey: 'f_status', filterType: 'text', render: (r) => r.attendanceStatus },
     {
-      field: "verificationNotes",
-      headerName: "Verification Notes (Audit Details)",
-      width: 450,
-      renderCell: (params) => (
-        <div style={{ whiteSpace: "normal", wordWrap: "break-word", lineHeight: "1.5" }}>
-          {params.value || "-"}
+      key: 'verificationNotes', label: 'Verification Notes (Audit Details)', width: 450,
+      render: (r) => (
+        <div style={{ whiteSpace: 'normal', wordWrap: 'break-word', lineHeight: '1.5' }}>
+          {r.verificationNotes || '-'}
         </div>
       ),
     },
-    { field: "leaveRemarks", headerName: "Leave Remarks", width: 150 },
-    { field: "leaveDate", headerName: "Leave Date", width: 110 },
-    { field: "leaveTypeId", headerName: "L. Type ID", width: 100 },
-    { field: "attendanceType", headerName: "L. Code", width: 100 },
-    { field: "attendanceTypeName", headerName: "L. Name", width: 150 },
-  ];
+    { key: 'leaveRemarks', label: 'Leave Remarks', width: 150, render: (r) => r.leaveRemarks },
+    { key: 'leaveDate', label: 'Leave Date', width: 110, render: (r) => r.leaveDate },
+    { key: 'leaveTypeId', label: 'L. Type ID', width: 100, render: (r) => r.leaveTypeId },
+    { key: 'attendanceType', label: 'L. Code', width: 100, render: (r) => r.attendanceType },
+    { key: 'attendanceTypeName', label: 'L. Name', width: 150, render: (r) => r.attendanceTypeName },
+  ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   const handleDownloadCsv = () => {
-    const headers = columns.map((c) => c.headerName);
-    const fields = columns.map((c) => c.field);
-    const esc = (v) => {
-      if (v == null) return "";
-      const s = String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const lines = [headers.map(esc).join(",")];
-    rows.forEach((r) => {
-      lines.push(fields.map((f) => esc(r[f])).join(","));
-    });
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `attendance_detail_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const exportCols = columns.map((c) => ({ key: c.key, label: c.label }));
+    exportRowsToCsv(`attendance_detail_${new Date().toISOString().slice(0, 10)}.csv`, exportCols, filteredRows);
   };
 
   return (
-    <div style={{ width: "100%", marginTop: 16 }}>
-      <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+    <div style={{ width: '100%', marginTop: 16 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
         <Button
           variant="contained"
           color="primary"
           size="small"
           startIcon={<DownloadIcon />}
-          disabled={rows.length === 0}
+          disabled={filteredRows.length === 0}
           onClick={handleDownloadCsv}
         >
           Download CSV
         </Button>
       </Box>
-      <div style={{ height: 600, width: "100%" }}>
-      <DataGrid
-        showToolbar
-        rows={rows}
+      <DataTable
         columns={columns}
-        initialState={{
-          pagination: {
-            paginationModel: { pageSize: 10 },
-          },
-        }}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        page={page}
+        pageSize={pageSize}
         pageSizeOptions={[10, 25, 50, 100]}
-        getRowId={(row) => row.id}
-        disableRowSelectionOnClick
-        getRowHeight={() => 'auto'}
-        getRowClassName={(params) => {
-          if (params.row.rowType === "leave") return "leave-row"; // Leave -> Yellow
-          if (params.row.rowType === "attendance") return "attendance-row"; // Present -> Green
-          return "blank-row"; // Blank Day -> Red
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        onRowClassName={(row) => {
+          if (row.rowType === 'leave') return 'eat-leave-row';
+          if (row.rowType === 'attendance') return 'eat-attendance-row';
+          return 'eat-blank-row';
         }}
-        sx={(theme) => ({
-          "& .MuiDataGrid-row": {
-            maxHeight: 'none !important',
-          },
-          "& .MuiDataGrid-cell": {
-            alignItems: 'start',
-            paddingTop: '8px',
-            paddingBottom: '8px',
-          },
-          // Attendance (Present) -> Green
-          "& .attendance-row": {
-            backgroundColor: theme.palette.success.light,
-            "&:hover": { backgroundColor: theme.palette.success.main },
-          },
-          // Leave -> Yellow
-          "& .leave-row": {
-            backgroundColor: theme.palette.warning.light,
-            "&:hover": { backgroundColor: theme.palette.warning.main },
-          },
-          // Blank Day -> Red
-          "& .blank-row": {
-            backgroundColor: theme.palette.error.light,
-            "&:hover": { backgroundColor: theme.palette.error.main },
-          },
-        })}
+        emptyMessage="No records"
+        height={600}
+        minHeight={600}
       />
-      </div>
+      <style>{`
+        .eat-attendance-row td { background-color: #DCFCE7 !important; }
+        .eat-attendance-row:hover td { background-color: #BBF7D0 !important; }
+        .eat-leave-row td { background-color: #FEF3C7 !important; }
+        .eat-leave-row:hover td { background-color: #FDE68A !important; }
+        .eat-blank-row td { background-color: #FEE2E2 !important; }
+        .eat-blank-row:hover td { background-color: #FECACA !important; }
+      `}</style>
     </div>
   );
 }

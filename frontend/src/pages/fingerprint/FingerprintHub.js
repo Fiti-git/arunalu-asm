@@ -1,15 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box, Typography, Button, CircularProgress, Alert, Chip,
+  Box, Button, CircularProgress, Alert, Chip,
   IconButton, Tooltip, Snackbar,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useNavigate } from 'react-router-dom';
 import api from 'utils/api';
-import { PageHeader } from 'components/ui';
+import { PageHeader, DataTable, applyClientFilters } from 'components/ui';
 import { getUserRole } from 'utils/auth';
 
 const statusColor = (s) => {
@@ -31,11 +30,17 @@ export default function FingerprintHub() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState({ open: false, severity: 'success', message: '' });
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchUploads = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const res = await api.get('/fingerprint/uploads/');
       setRows(res.data || []);
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load uploads.');
     } finally { setLoading(false); }
@@ -62,21 +67,27 @@ export default function FingerprintHub() {
     } finally { setUploading(false); }
   };
 
-  const columns = [
-    { field: 'filename', headerName: 'File', flex: 1.6, minWidth: 220 },
+  const columns = useMemo(() => [
+    { key: 'filename', label: 'File', width: 240, sortKey: 'filename', filterKey: 'f_file', filterType: 'text', render: (r) => r.filename },
     {
-      field: 'period', headerName: 'Period', flex: 1.1, minWidth: 160,
-      valueGetter: (_, row) => row.period_start && row.period_end
+      key: 'period', label: 'Period', width: 180,
+      render: (row) => row.period_start && row.period_end
         ? `${row.period_start} → ${row.period_end}` : '—',
     },
-    { field: 'total_rows', headerName: 'Rows', flex: 0.4, minWidth: 80, align: 'center', headerAlign: 'center' },
+    { key: 'total_rows', label: 'Rows', width: 90, align: 'center', sortKey: 'total_rows', render: (r) => r.total_rows },
     {
-      field: 'status', headerName: 'Status', flex: 0.6, minWidth: 110,
-      renderCell: ({ value }) => <Chip label={value} size="small" color={statusColor(value)} sx={{ fontWeight: 600 }} />,
+      key: 'status', label: 'Status', width: 120, sortKey: 'status',
+      filterKey: 'f_status', filterType: 'select',
+      filterOptions: [
+        { value: 'Staged', label: 'Staged' },
+        { value: 'Committed', label: 'Committed' },
+        { value: 'Reverted', label: 'Reverted' },
+      ],
+      render: (row) => <Chip label={row.status} size="small" color={statusColor(row.status)} sx={{ fontWeight: 600 }} />,
     },
     {
-      field: 'breakdown', headerName: 'Matched · Amb · Unm · Conflict', flex: 1.2, minWidth: 230,
-      renderCell: ({ row }) => (
+      key: 'breakdown', label: 'Matched · Amb · Unm · Conflict', width: 250,
+      render: (row) => (
         <Box sx={{ display: 'flex', gap: 0.6 }}>
           <Chip size="small" label={row.matched_rows} color="success" sx={{ fontWeight: 700, minWidth: 42 }} />
           <Chip size="small" label={row.ambiguous_rows} color="warning" sx={{ fontWeight: 700, minWidth: 42 }} />
@@ -85,19 +96,34 @@ export default function FingerprintHub() {
         </Box>
       ),
     },
-    { field: 'uploaded_by_name', headerName: 'By', flex: 0.7, minWidth: 110 },
+    { key: 'uploaded_by_name', label: 'By', width: 120, sortKey: 'uploaded_by_name', filterKey: 'f_by', filterType: 'text', render: (r) => r.uploaded_by_name },
     {
-      field: 'uploaded_at', headerName: 'Uploaded', flex: 0.9, minWidth: 150,
-      renderCell: ({ value }) => value ? new Date(value).toLocaleString() : '',
+      key: 'uploaded_at', label: 'Uploaded', width: 170, sortKey: 'uploaded_at',
+      render: (row) => row.uploaded_at ? new Date(row.uploaded_at).toLocaleString() : '',
     },
     {
-      field: 'actions', headerName: '', flex: 0.5, minWidth: 110, sortable: false, filterable: false,
-      renderCell: ({ row }) => (
+      key: 'actions', label: '', width: 110,
+      render: (row) => (
         <Button size="small" variant="outlined" startIcon={<OpenInNewIcon />}
           onClick={() => navigate(`${base}/${row.id}`)}>Open</Button>
       ),
     },
-  ];
+  ], [navigate, base]);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ width: '95%', mx: 'auto', mt: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -134,16 +160,25 @@ export default function FingerprintHub() {
 
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-      <Box sx={{ height: 640, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={columns} getRowId={(r) => r.id}
-          loading={loading}
-          disableRowSelectionOnClick
-          onRowDoubleClick={(p) => navigate(`${base}/${p.row.id}`)}
-          pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        pageSizeOptions={[10, 25, 50]}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No uploads yet"
+        height={640}
+        minHeight={640}
+      />
 
       <Snackbar
         open={toast.open}

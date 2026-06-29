@@ -4,7 +4,6 @@ import {
   IconButton, Tooltip, Checkbox, Autocomplete, TextField, Snackbar,
   FormControlLabel, Divider, Dialog, DialogContent, DialogActions,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
@@ -14,7 +13,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from 'utils/api';
-import { PageHeader, StatCard } from 'components/ui';
+import { PageHeader, StatCard, DataTable, applyClientFilters } from 'components/ui';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
@@ -50,6 +49,11 @@ export default function FingerprintUploadDetail() {
   const [commitDialog, setCommitDialog] = useState(false);
   const [overrideConflicts, setOverrideConflicts] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+
   const fetchAll = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -63,6 +67,7 @@ export default function FingerprintUploadDetail() {
       ]);
       setUpload(up.data);
       setRows(rs.data || []);
+      setPage(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load.');
     } finally { setLoading(false); }
@@ -149,8 +154,10 @@ export default function FingerprintUploadDetail() {
 
   const columns = useMemo(() => [
     {
-      field: 'raw_name', headerName: 'Raw Name', flex: 1.3, minWidth: 200,
-      renderCell: ({ row }) => (
+      key: 'raw_name', label: 'Raw Name', width: 220,
+      sortKey: 'raw_name', filterKey: 'f_raw', filterType: 'text',
+      filterValue: (row) => `${row.raw_name || ''} ${row.parsed_empcode || ''} ${row.parsed_name || ''}`,
+      render: (row) => (
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="body2" fontWeight={600} noWrap>{row.raw_name}</Typography>
           <Typography variant="caption" color="text.secondary" noWrap>
@@ -160,8 +167,8 @@ export default function FingerprintUploadDetail() {
       ),
     },
     {
-      field: 'matched_employee', headerName: 'Matched Employee', flex: 1.6, minWidth: 260,
-      renderCell: ({ row }) => {
+      key: 'matched_employee', label: 'Matched Employee', width: 280,
+      render: (row) => {
         const selected = empOptions.find((e) => e.employee_id === row.matched_employee) || null;
         return (
           <Autocomplete
@@ -177,28 +184,30 @@ export default function FingerprintUploadDetail() {
       },
     },
     {
-      field: 'match_status', headerName: 'Match', flex: 0.6, minWidth: 110,
-      renderCell: ({ value }) => <Chip label={value} size="small" color={statusColor(value)} sx={{ fontWeight: 600 }} />,
-    },
-    { field: 'date', headerName: 'Date', flex: 0.6, minWidth: 105,
-      renderCell: ({ value }) => value ? new Date(value).toLocaleDateString() : '—' },
-    {
-      field: 'check_in', headerName: 'Check-in', flex: 0.5, minWidth: 95,
-      renderCell: ({ value }) => value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—',
+      key: 'match_status', label: 'Match', width: 120, sortKey: 'match_status',
+      render: (row) => <Chip label={row.match_status} size="small" color={statusColor(row.match_status)} sx={{ fontWeight: 600 }} />,
     },
     {
-      field: 'check_out', headerName: 'Check-out', flex: 0.5, minWidth: 95,
-      renderCell: ({ value }) => value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—',
+      key: 'date', label: 'Date', width: 110, sortKey: 'date',
+      render: (row) => row.date ? new Date(row.date).toLocaleDateString() : '—',
     },
     {
-      field: 'has_asm_conflict', headerName: 'Conflict', flex: 0.5, minWidth: 95, align: 'center', headerAlign: 'center',
-      renderCell: ({ value }) => value ? (
+      key: 'check_in', label: 'Check-in', width: 100,
+      render: (row) => row.check_in ? new Date(row.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—',
+    },
+    {
+      key: 'check_out', label: 'Check-out', width: 100,
+      render: (row) => row.check_out ? new Date(row.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—',
+    },
+    {
+      key: 'has_asm_conflict', label: 'Conflict', width: 90, align: 'center',
+      render: (row) => row.has_asm_conflict ? (
         <Tooltip title="ASM already has an attendance row for this employee & date"><WarningAmberIcon fontSize="small" color="warning" /></Tooltip>
       ) : null,
     },
     {
-      field: 'skip_commit', headerName: 'Skip', flex: 0.4, minWidth: 75, align: 'center', headerAlign: 'center',
-      renderCell: ({ row }) => (
+      key: 'skip_commit', label: 'Skip', width: 80, align: 'center',
+      render: (row) => (
         <Checkbox
           size="small" checked={!!row.skip_commit} disabled={locked}
           onChange={(e) => patchRow(row.id, { skip_commit: e.target.checked })}
@@ -206,6 +215,21 @@ export default function FingerprintUploadDetail() {
       ),
     },
   ], [empOptions, locked]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(rows, columns, columnFilters, sortBy),
+    [rows, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   if (!upload && loading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
@@ -268,7 +292,7 @@ export default function FingerprintUploadDetail() {
         {['all', 'Matched', 'Ambiguous', 'Unmatched', 'conflict'].map((t) => (
           <Button key={t} size="small"
             variant={tab === t ? 'contained' : 'outlined'}
-            onClick={() => setTab(t)}
+            onClick={() => { setTab(t); setPage(1); }}
             sx={{ borderRadius: 5, px: 2 }}>
             {t === 'all' ? 'All' : t === 'conflict' ? 'Conflicts' : t}
           </Button>
@@ -280,16 +304,25 @@ export default function FingerprintUploadDetail() {
         />
       </Box>
 
-      <Box sx={{ height: 620, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2.5 }}>
-        <DataGrid
-          rows={rows} columns={columns} getRowId={(r) => r.id}
-          loading={loading}
-          disableRowSelectionOnClick
-          rowHeight={58}
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 50 } } }}
-        />
-      </Box>
+      <DataTable
+        columns={columns}
+        rows={pagedRows}
+        getRowId={(r) => r.id}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        pageSizeOptions={[25, 50, 100]}
+        totalCount={filteredRows.length}
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+        filters={columnFilters}
+        onFilterChange={handleFilterChange}
+        sortBy={sortBy}
+        onSortChange={(s) => { setSortBy(s); setPage(1); }}
+        emptyMessage="No rows"
+        height={620}
+        minHeight={620}
+      />
 
       {/* Commit dialog */}
       <Dialog open={commitDialog} onClose={() => !working && setCommitDialog(false)} maxWidth="xs" fullWidth>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -8,12 +8,13 @@ import {
   DialogActions,
   TextField,
   Typography,
-  Tooltip
+  Tooltip,
+  IconButton,
 } from '@mui/material';
-import { DataGrid, GridActionsCellItem } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
-import api from 'utils/api'
+import api from 'utils/api';
+import { DataTable, applyClientFilters } from 'components/ui';
 
 const MAX_LENGTH = 255;
 
@@ -24,6 +25,11 @@ export default function AgencyGrid() {
   const [form, setForm] = useState({ name: '', address: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(7);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
 
   useEffect(() => {
     api.get('/api/getagencies/').then(res => setAgencies(res.data));
@@ -95,29 +101,36 @@ export default function AgencyGrid() {
   };
 
 
-  const columns = [
-    { field: 'name', headerName: 'Agency Name', flex: 1, minWidth: 180 },
-    { field: 'address', headerName: 'Address', flex: 1, minWidth: 250 },
+  const columns = useMemo(() => [
+    { key: 'name', label: 'Agency Name', width: 240, sortKey: 'name', filterKey: 'f_name', filterType: 'text', render: (r) => r.name },
+    { key: 'address', label: 'Address', width: 320, sortKey: 'address', filterKey: 'f_addr', filterType: 'text', render: (r) => r.address },
     {
-      field: 'actions',
-      type: 'actions',
-      headerName: 'Actions',
-      width: 80,
-      getActions: (params) => [
-        <GridActionsCellItem
-          icon={
-            <Tooltip title="Edit">
-              <EditIcon />
-            </Tooltip>
-          }
-          label="Edit"
-          onClick={() => openEditDialog(params.row)}
-          showInMenu={false}
-          key="edit"
-        />,
-      ],
+      key: 'actions', label: 'Actions', width: 90, align: 'center',
+      render: (row) => (
+        <Tooltip title="Edit">
+          <IconButton size="small" onClick={() => openEditDialog(row)}>
+            <EditIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ),
     },
-  ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
+
+  const filteredRows = useMemo(
+    () => applyClientFilters(agencies, columns, columnFilters, sortBy),
+    [agencies, columns, columnFilters, sortBy]
+  );
+  const pagedRows = useMemo(
+    () => filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    [filteredRows, page, pageSize]
+  );
+  const handleFilterChange = (filterKey, value) => {
+    const next = { ...columnFilters, [filterKey]: value };
+    if (value === '' || value == null) delete next[filterKey];
+    setColumnFilters(next);
+    setPage(1);
+  };
 
   return (
     <Box sx={{ height: 500, width: '90%', mx: 'auto', mt: 5, position: 'relative' }}>
@@ -134,14 +147,24 @@ export default function AgencyGrid() {
         Add Agency
       </Button>
 
-      <DataGrid
-        rows={agencies}
-        columns={columns}
-        pageSize={7}
-        rowsPerPageOptions={[5, 7, 10]}
-        disableSelectionOnClick
-        sx={{ mt: 4 }}
-      />
+      <Box sx={{ mt: 4 }}>
+        <DataTable
+          columns={columns}
+          rows={pagedRows}
+          getRowId={(r) => r.id}
+          page={page}
+          pageSize={pageSize}
+          pageSizeOptions={[5, 7, 10, 25]}
+          totalCount={filteredRows.length}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          filters={columnFilters}
+          onFilterChange={handleFilterChange}
+          sortBy={sortBy}
+          onSortChange={(s) => { setSortBy(s); setPage(1); }}
+          emptyMessage="No agencies"
+        />
+      </Box>
 
       <Dialog open={openDialog} onClose={closeDialog} maxWidth="sm" fullWidth>
         <DialogTitle>{editAgency ? 'Edit Agency' : 'Add New Agency'}</DialogTitle>

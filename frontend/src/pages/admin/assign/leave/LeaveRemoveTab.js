@@ -4,12 +4,12 @@ import {
   TextField, IconButton, Alert, CircularProgress, Avatar, Tooltip,
   FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import api from 'utils/api';
+import { DataTable } from 'components/ui';
 import { pickAvatarColor } from 'theme/tokens';
 import {
   statusChipColor, getInitials,
@@ -29,7 +29,8 @@ export default function LeaveRemoveTab() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 25 });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const [appliedFilters, setAppliedFilters] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -51,8 +52,8 @@ export default function LeaveRemoveTab() {
       const res = await api.get('/api/simple-leave-requests/', {
         params: {
           ...appliedFilters,
-          page: paginationModel.page + 1,
-          page_size: paginationModel.pageSize,
+          page,
+          page_size: pageSize,
         },
       });
       const data = res.data;
@@ -67,7 +68,7 @@ export default function LeaveRemoveTab() {
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, paginationModel]);
+  }, [appliedFilters, page, pageSize]);
 
   useEffect(() => { fetchLeaves(); }, [fetchLeaves]);
 
@@ -84,7 +85,7 @@ export default function LeaveRemoveTab() {
       end_date: endDate || undefined,
       status: statusFilter !== 'all' ? statusFilter : undefined,
     });
-    setPaginationModel((prev) => ({ ...prev, page: 0 }));
+    setPage(1);
     setHasSearched(true);
   };
 
@@ -118,8 +119,8 @@ export default function LeaveRemoveTab() {
 
   const columns = [
     {
-      field: 'employee', headerName: 'Employee', flex: 1.4, minWidth: 200, sortable: false,
-      renderCell: ({ row }) => (
+      key: 'employee', label: 'Employee', width: 220,
+      render: (row) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, py: 0.5, minWidth: 0 }}>
           <Avatar sx={{
             width: 32, height: 32,
@@ -140,44 +141,41 @@ export default function LeaveRemoveTab() {
       ),
     },
     {
-      field: 'leave_type_name', headerName: 'Leave Type', flex: 0.9, minWidth: 130,
-      renderCell: ({ row }) => (
-        <Typography variant="body2" noWrap>{row.leave_type_name || '—'}</Typography>
-      ),
+      key: 'leave_type_name', label: 'Leave Type', width: 150,
+      render: (row) => <Typography variant="body2" noWrap>{row.leave_type_name || '—'}</Typography>,
     },
     {
-      field: 'leave_date', headerName: 'Leave Date', flex: 0.7, minWidth: 120,
-      valueFormatter: (value) => {
-        if (!value) return '';
-        const d = new Date(value);
-        return isNaN(d.getTime()) ? value : d.toLocaleDateString();
+      key: 'leave_date', label: 'Leave Date', width: 130,
+      render: (row) => {
+        if (!row.leave_date) return '';
+        const d = new Date(row.leave_date);
+        return isNaN(d.getTime()) ? row.leave_date : d.toLocaleDateString();
       },
     },
     {
-      field: 'remarks', headerName: 'Remarks', flex: 1.2, minWidth: 180,
-      renderCell: ({ value }) => (
-        <Tooltip title={value || ''} placement="top-start">
-          <Typography variant="body2" noWrap color={value ? 'text.primary' : 'text.disabled'}>
-            {value || '—'}
+      key: 'remarks', label: 'Remarks', width: 200,
+      render: (row) => (
+        <Tooltip title={row.remarks || ''} placement="top-start">
+          <Typography variant="body2" noWrap color={row.remarks ? 'text.primary' : 'text.disabled'}>
+            {row.remarks || '—'}
           </Typography>
         </Tooltip>
       ),
     },
     {
-      field: 'status', headerName: 'Status', flex: 0.7, minWidth: 110,
-      renderCell: ({ value }) => (
+      key: 'status', label: 'Status', width: 120,
+      render: (row) => (
         <Chip
-          label={value ? value.charAt(0).toUpperCase() + value.slice(1) : '—'}
-          color={statusChipColor(value)}
+          label={row.status ? row.status.charAt(0).toUpperCase() + row.status.slice(1) : '—'}
+          color={statusChipColor(row.status)}
           size="small"
           sx={{ fontWeight: 600 }}
         />
       ),
     },
     {
-      field: 'actions', headerName: 'Delete', flex: 0.5, minWidth: 90,
-      sortable: false, filterable: false, align: 'center', headerAlign: 'center',
-      renderCell: ({ row }) => (
+      key: 'actions', label: 'Delete', width: 90, align: 'center',
+      render: (row) => (
         <Tooltip title="Delete leave record">
           <IconButton size="small" color="error" onClick={() => openDelete(row)}>
             <DeleteOutlineIcon fontSize="small" />
@@ -249,17 +247,21 @@ export default function LeaveRemoveTab() {
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
       {hasSearched ? (
-        <Box sx={{ height: 580 }}>
-          <DataGrid
-            rows={rows} columns={columns} getRowId={(r) => r.leave_refno}
-            loading={loading} rowCount={totalRows}
-            paginationMode="server"
-            paginationModel={paginationModel}
-            onPaginationModelChange={setPaginationModel}
-            pageSizeOptions={[25, 50, 100]}
-            disableRowSelectionOnClick
-          />
-        </Box>
+        <DataTable
+          columns={columns}
+          rows={rows}
+          getRowId={(r) => r.leave_refno}
+          loading={loading}
+          page={page}
+          pageSize={pageSize}
+          pageSizeOptions={[25, 50, 100]}
+          totalCount={totalRows}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          emptyMessage="No leave records"
+          height={580}
+          minHeight={580}
+        />
       ) : (
         <Box sx={{
           py: 8, px: 3, textAlign: 'center',
