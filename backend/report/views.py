@@ -1467,8 +1467,10 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
         leave_dates AS (
           SELECT l.employee_id, l.leave_date AS d
           FROM public.main_empleave l
+          LEFT JOIN public.leave_type lt ON lt.id = l.leave_type_id
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            AND (lt.att_type IS NULL OR UPPER(lt.att_type) NOT IN ('H1', 'H2'))
             {_active_period_exists('l', 'leave_date')}
           GROUP BY l.employee_id, l.leave_date
         ),
