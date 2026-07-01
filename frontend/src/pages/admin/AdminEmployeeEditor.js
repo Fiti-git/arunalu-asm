@@ -4,7 +4,7 @@ import {
   Alert, Divider, Switch, FormControlLabel, InputAdornment,
   IconButton, Avatar, Tabs, Tab, Stepper, Step, StepLabel,
   DialogContent, DialogActions, Tooltip, Dialog,
-  CircularProgress, Stack, Chip,
+  CircularProgress, Stack, Chip, Checkbox, FormGroup,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
@@ -61,6 +61,33 @@ const defaultValues = {
 
 const getInitials = (name) =>
   (name || '?').split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
+
+function OutletCheckboxGroup({ value, onChange, outlets }) {
+  const selected = Array.isArray(value) ? value.map(Number) : [];
+  const toggle = (id) => {
+    const n = Number(id);
+    const next = selected.includes(n) ? selected.filter(x => x !== n) : [...selected, n];
+    onChange(next);
+  };
+  return (
+    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5, maxHeight: 200, overflowY: 'auto', bgcolor: 'grey.50' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+        Employee can attend multiple outlets — tick all that apply.
+      </Typography>
+      <FormGroup>
+        {outlets.length === 0 && <Typography variant="caption" color="text.disabled">No outlets available</Typography>}
+        {outlets.map(o => (
+          <FormControlLabel
+            key={o.id}
+            control={<Checkbox size="small" checked={selected.includes(Number(o.id))} onChange={() => toggle(o.id)} />}
+            label={<Typography variant="body2">{o.name}</Typography>}
+            sx={{ ml: 0 }}
+          />
+        ))}
+      </FormGroup>
+    </Box>
+  );
+}
 
 function PunchPhotoSlot({ label, src, tone }) {
   return (
@@ -355,8 +382,13 @@ export default function AdminEmployeeEditor() {
 
   const handleCreateSubmit = async () => {
     setCreateError('');
-    setCreateSubmitting(true);
     const data = createForm.getValues();
+    if (!data.employ_number || `${data.employ_number}`.trim() === '') {
+      createForm.setError('employ_number', { message: 'Employment number is required' });
+      setActiveStep(2);
+      return;
+    }
+    setCreateSubmitting(true);
     try {
       const formData = new FormData();
       for (const key in data) {
@@ -374,7 +406,9 @@ export default function AdminEmployeeEditor() {
           else createForm.setError(f, { message: m });
         });
         const step1Fields = ['fullname','email','password','first_name','last_name','date_of_birth','idnumber'];
+        const step3Fields = ['employ_number','basic_salary','epf_number','epf_grade','epf_cal_date','cal_epf','epf_com_per','epf_emp_per','etf_com_per'];
         if (Object.keys(serverErrors).some(f => step1Fields.includes(f))) setActiveStep(0);
+        else if (Object.keys(serverErrors).some(f => step3Fields.includes(f))) setActiveStep(2);
         else setActiveStep(1);
       } else {
         setCreateError('An unexpected error occurred. Please try again.');
@@ -639,9 +673,10 @@ export default function AdminEmployeeEditor() {
                   </TextField>
                 )} />
                 <Controller name="outlets" control={createForm.control} render={({ field }) => (
-                  <TextField {...field} select label="Outlets" size="small" fullWidth SelectProps={{ multiple: true }} helperText="Employee can attend multiple outlets">
-                    {outlets.map(o => <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>)}
-                  </TextField>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>Outlets</Typography>
+                    <OutletCheckboxGroup value={field.value} onChange={field.onChange} outlets={outlets} />
+                  </Box>
                 )} />
                 <Controller name="primary_outlet" control={createForm.control} render={({ field }) => (
                   <TextField {...field} select label="Primary Outlet" size="small" fullWidth helperText="Main outlet for attendance monitoring">
@@ -675,7 +710,9 @@ export default function AdminEmployeeEditor() {
                     <TextField {...field} label="EPF Number" size="small" fullWidth />
                   )} />
                   <Controller name="employ_number" control={createForm.control} render={({ field }) => (
-                    <TextField {...field} label="Employment Number" type="number" size="small" fullWidth />
+                    <TextField {...field} label="Employment Number *" type="number" size="small" fullWidth
+                      error={!!createErrors.employ_number}
+                      helperText={createErrors.employ_number?.message || 'Required'} />
                   )} />
                 </Box>
                 <Controller name="basic_salary" control={createForm.control} render={({ field }) => (
@@ -814,9 +851,10 @@ export default function AdminEmployeeEditor() {
                   </TextField>
                 )} />
                 <Controller name="outlets" control={editForm.control} render={({ field }) => (
-                  <TextField {...field} select label="Outlets" size="small" fullWidth SelectProps={{ multiple: true }} helperText="Select all outlets this employee can attend">
-                    {outlets.map(o => <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>)}
-                  </TextField>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>Outlets</Typography>
+                    <OutletCheckboxGroup value={field.value} onChange={field.onChange} outlets={outlets} />
+                  </Box>
                 )} />
                 <Controller name="primary_outlet" control={editForm.control} render={({ field }) => (
                   <TextField {...field} select label="Primary Outlet" size="small" fullWidth helperText="Main outlet for attendance monitoring">

@@ -1170,6 +1170,14 @@ def v2_employee_create(request):
         errors['date_of_birth'] = 'Date of birth is required.'
     if not group_id:
         errors['group'] = 'Role is required.'
+    employ_number_raw = data.get('employ_number')
+    if employ_number_raw in [None, '', 'null']:
+        errors['employ_number'] = 'Employment number is required.'
+    else:
+        try:
+            int(employ_number_raw)
+        except (ValueError, TypeError):
+            errors['employ_number'] = 'Employment number must be a whole number.'
 
     if errors:
         return Response({'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -1233,10 +1241,11 @@ def v2_employee_create(request):
 
     # Create employee
     try:
+        composed_fullname = ' '.join(part for part in [fullname, first_name, last_name] if part).strip()
         employee = Employee.objects.create(
             user=user,
             empcode=data.get('empcode') or None,
-            fullname=fullname,
+            fullname=composed_fullname or fullname,
             idnumber=data.get('idnumber') or None,
             phone_number=data.get('phone_number') or None,
             date_of_birth=date_of_birth,
