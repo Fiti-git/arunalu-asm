@@ -127,8 +127,14 @@ class Attendance(models.Model):
 
             if self.worked_hours < 4:
                 self.status = 'Half Day'
-            elif self.worked_hours > 8:
-                self.ot_hours = self.worked_hours - 8
+            else:
+                # Half Day literally means less than half a day worked. If a stale
+                # manual "Half Day" survives here with 4+ hours, promote it to Present
+                # so bulk-add / edit-dialog mis-selections can't stick.
+                if self.status == 'Half Day':
+                    self.status = 'Present'
+                if self.worked_hours > 8:
+                    self.ot_hours = self.worked_hours - 8
         super().save(*args, **kwargs)
 
 
