@@ -1457,7 +1457,7 @@ class OutletSummaryOutletEmployeesAPIView(APIView):
           SELECT a.employee_id, a.date AS d
           FROM public.main_attendance a
           WHERE a.date BETWEEN %s AND %s
-            AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+            AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
             {_active_period_exists('a', 'date')}
           GROUP BY a.employee_id, a.date
         ),
