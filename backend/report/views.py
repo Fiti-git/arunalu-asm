@@ -589,7 +589,10 @@ class EmployeeReportAPIView(APIView):
                     MAX(a.check_out_time) AS check_out_time,
                     ROUND(EXTRACT(EPOCH FROM (MAX(a.check_out_time) - MIN(a.check_in_time))) / 3600, 2) AS worked_hours,
                     MAX(a.status) AS attendance_status,
-                    JSON_AGG(a.verification_notes) FILTER (WHERE a.verification_notes IS NOT NULL) AS verification_notes
+                    JSON_AGG(a.verification_notes) FILTER (WHERE a.verification_notes IS NOT NULL) AS verification_notes,
+                    MAX(a.attendance_id) AS attendance_id,
+                    (SELECT COUNT(*) FROM public.main_attendancemodificationlog ml
+                     WHERE ml.attendance_id = MAX(a.attendance_id)) AS modification_count
                 FROM public.main_attendance a
                 WHERE a.date BETWEEN %s AND %s
                   AND a.employee_id = %s
@@ -633,6 +636,8 @@ class EmployeeReportAPIView(APIView):
                 a.worked_hours,
                 a.attendance_status,
                 a.verification_notes,
+                a.attendance_id,
+                a.modification_count,
                 lv.leave_refno,
                 lv.leave_date,
                 lv.leave_remarks,
@@ -695,6 +700,8 @@ class EmployeeReportAPIView(APIView):
                     "worked_hours": r.get("worked_hours"),
                     "attendance_status": r.get("attendance_status"),
                     "verification_notes": vnotes,
+                    "attendance_id": r.get("attendance_id"),
+                    "modification_count": r.get("modification_count") or 0,
                     "leave_refno": r.get("leave_refno"),
                     "leave_remarks": r.get("leave_remarks"),
                     "leave_type_id": r.get("leave_type_id"),

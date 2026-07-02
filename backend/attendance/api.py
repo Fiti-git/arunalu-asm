@@ -1845,6 +1845,11 @@ def _v3_local_iso(dt):
 
 
 def _v3_serialize(att):
+    # modification_count uses annotated value if present (see v3_attendance_list),
+    # falls back to a live count for single-object calls.
+    mod_count = getattr(att, 'modification_count', None)
+    if mod_count is None:
+        mod_count = AttendanceModificationLog.objects.filter(attendance=att).count()
     return {
         "attendance_id": att.attendance_id,
         "employee_id": att.employee_id,
@@ -1860,6 +1865,7 @@ def _v3_serialize(att):
         "punchout_verification": att.punchout_verification,
         "created_at": _v3_local_iso(att.created_at),
         "is_locked": _v3_is_record_locked(att),
+        "modification_count": mod_count,
     }
 
 
@@ -1924,8 +1930,12 @@ def v3_attendance_list(request):
     if not _v3_can_access_outlet(request.user, outlet_id):
         return Response({"error": "You are not assigned to this outlet."}, status=403)
 
-    qs = Attendance.objects.select_related('employee').filter(
-        employee__primary_outlet_id=outlet_id
+    from django.db.models import Count
+    qs = (
+        Attendance.objects
+        .select_related('employee')
+        .annotate(modification_count=Count('modification_logs'))
+        .filter(employee__primary_outlet_id=outlet_id)
     )
 
     if employee_id:

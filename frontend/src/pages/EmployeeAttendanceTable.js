@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from "react";
-import { Box, Button } from "@mui/material";
+import { Box, Button, Chip, Tooltip } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
+import HistoryIcon from "@mui/icons-material/History";
 import { DataTable, applyClientFilters, exportRowsToCsv } from "components/ui";
+import ModificationHistoryDialog from "./admin/attendance/ModificationHistoryDialog";
 
 // Helper function to format ISO datetime string to HH:MM time (for check-in/out)
 const formatTime = (dateTimeStr) => {
@@ -136,6 +138,8 @@ export default function EmployeeAttendanceTable({ data }) {
           attendanceType: day.att_type || "",
           attendanceTypeName: day.att_type_name || "",
           rowType: rowType,
+          attendanceId: day.attendance_id || null,
+          modificationCount: day.modification_count || 0,
         };
       });
 
@@ -149,6 +153,7 @@ export default function EmployeeAttendanceTable({ data }) {
   const [pageSize, setPageSize] = useState(10);
   const [columnFilters, setColumnFilters] = useState({});
   const [sortBy, setSortBy] = useState({ key: '', dir: 'asc' });
+  const [historyDialog, setHistoryDialog] = useState({ open: false, attendanceId: null });
 
   const columns = useMemo(() => [
     { key: 'employeeId', label: 'ID', width: 80, sortKey: 'employeeId', filterKey: 'f_id', filterType: 'text', render: (r) => r.employeeId },
@@ -159,6 +164,29 @@ export default function EmployeeAttendanceTable({ data }) {
     { key: 'checkOutTime', label: 'Out', width: 90, render: (r) => r.checkOutTime },
     { key: 'workedHours', label: 'Hrs', width: 80, align: 'center', render: (r) => r.workedHours },
     { key: 'attendanceStatus', label: 'Status', width: 120, sortKey: 'attendanceStatus', filterKey: 'f_status', filterType: 'text', render: (r) => r.attendanceStatus },
+    {
+      key: 'edited', label: 'Edited', width: 100, align: 'center',
+      sortKey: 'modificationCount',
+      filterKey: 'f_edited', filterType: 'bool',
+      boolLabels: { true: 'Edited', false: 'Original' },
+      filterValue: (r) => r.modificationCount > 0,
+      render: (r) => {
+        if (!r.attendanceId || !r.modificationCount) return '—';
+        return (
+          <Tooltip title={`${r.modificationCount} modification${r.modificationCount === 1 ? '' : 's'} — click to view history`}>
+            <Chip
+              size="small"
+              icon={<HistoryIcon sx={{ fontSize: 14 }} />}
+              label={r.modificationCount}
+              color="warning"
+              variant="outlined"
+              onClick={() => setHistoryDialog({ open: true, attendanceId: r.attendanceId })}
+              sx={{ cursor: 'pointer', fontWeight: 600 }}
+            />
+          </Tooltip>
+        );
+      },
+    },
     {
       key: 'verificationNotes', label: 'Verification Notes (Audit Details)', width: 450,
       render: (r) => (
@@ -240,6 +268,12 @@ export default function EmployeeAttendanceTable({ data }) {
         .eat-blank-row td { background-color: #FEE2E2 !important; }
         .eat-blank-row:hover td { background-color: #FECACA !important; }
       `}</style>
+
+      <ModificationHistoryDialog
+        open={historyDialog.open}
+        attendanceId={historyDialog.attendanceId}
+        onClose={() => setHistoryDialog({ open: false, attendanceId: null })}
+      />
     </div>
   );
 }
