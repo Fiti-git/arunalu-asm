@@ -19,7 +19,7 @@ import { ATTENDANCE_WRITE_STATUSES } from './shared';
 export default function AttendanceAddTab() {
   const { outlets } = useUserOutlets();
   const [selectedOutlet, setSelectedOutlet] = useState('');
-  const { employees, loading: employeesLoading } = usePrimaryOutletEmployees(selectedOutlet);
+  const { employees, loading: employeesLoading } = usePrimaryOutletEmployees(selectedOutlet, undefined, undefined);
 
   const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [statusValue, setStatusValue] = useState('Present');

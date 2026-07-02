@@ -40,8 +40,14 @@ export function useUserOutlets() {
   return { outlets, error };
 }
 
-/** Fetch employees whose PRIMARY outlet equals outletId. */
-export function usePrimaryOutletEmployees(outletId) {
+/** Fetch employees whose PRIMARY outlet equals outletId.
+ *  When startDate + endDate are supplied, the backend restricts the list to
+ *  employees who were active for at least 1 day in the range, and adds
+ *  active_days / range_days / fully_active metadata. Pass both dates or
+ *  neither — passing only one is treated as "not ready" (empty list) so the
+ *  caller can disable the Employee dropdown until dates are set.
+ */
+export function usePrimaryOutletEmployees(outletId, startDate, endDate) {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -50,13 +56,20 @@ export function usePrimaryOutletEmployees(outletId) {
       setEmployees([]);
       return;
     }
+    if ((startDate && !endDate) || (endDate && !startDate)) {
+      setEmployees([]);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const res = await api.get('/api/primary-outlet-employees/', {
-          params: { outlet_id: outletId },
-        });
+        const params = { outlet_id: outletId };
+        if (startDate && endDate) {
+          params.start_date = startDate;
+          params.end_date = endDate;
+        }
+        const res = await api.get('/api/primary-outlet-employees/', { params });
         if (!cancelled) setEmployees(res.data || []);
       } catch (err) {
         if (!cancelled) setEmployees([]);
@@ -65,7 +78,7 @@ export function usePrimaryOutletEmployees(outletId) {
       }
     })();
     return () => { cancelled = true; };
-  }, [outletId]);
+  }, [outletId, startDate, endDate]);
 
   return { employees, loading };
 }

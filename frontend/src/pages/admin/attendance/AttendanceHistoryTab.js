@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box, Typography, Button, Chip, TextField, Alert, CircularProgress, Avatar,
-  FormControl, InputLabel, Select, MenuItem,
+  FormControl, InputLabel, Select, MenuItem, FormHelperText,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -14,16 +14,15 @@ import { DataTable } from 'components/ui';
 export default function AttendanceHistoryTab() {
   const { outlets } = useUserOutlets();
   const [selectedOutlet, setSelectedOutlet] = useState('');
-  const { employees, loading: employeesLoading } = usePrimaryOutletEmployees(selectedOutlet);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const { employees, loading: employeesLoading } = usePrimaryOutletEmployees(selectedOutlet, startDate, endDate);
   const [selectedEmployee, setSelectedEmployee] = useState('all');
 
   const [rows, setRows] = useState([]);
   const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -90,9 +89,9 @@ export default function AttendanceHistoryTab() {
   };
 
   const resetFilters = () => {
-    setSelectedEmployee('all');
     setStartDate('');
     setEndDate('');
+    setSelectedEmployee('all');
     setStatusFilter('all');
   };
 
@@ -176,7 +175,15 @@ export default function AttendanceHistoryTab() {
           </Select>
         </FormControl>
 
-        <FormControl size="small" sx={{ minWidth: 240 }} disabled={!selectedOutlet || employeesLoading}>
+        <TextField label="From" type="date" size="small" value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 170 }} />
+        <TextField label="To" type="date" size="small" value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 170 }} />
+
+        <FormControl size="small" sx={{ minWidth: 240 }}
+          disabled={!selectedOutlet || employeesLoading || !startDate || !endDate}>
           <InputLabel>Employee</InputLabel>
           <Select label="Employee" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}>
             <MenuItem value="all">
@@ -184,18 +191,23 @@ export default function AttendanceHistoryTab() {
             </MenuItem>
             {employees.map((emp) => (
               <MenuItem key={emp.employee_id} value={emp.employee_id}>
-                {emp.fullname}{emp.empcode ? ` · ${emp.empcode}` : ''}
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                  <span>{emp.fullname}{emp.empcode ? ` · ${emp.empcode}` : ''}</span>
+                  {emp.fully_active === false && (
+                    <Chip size="small" color="warning" variant="outlined"
+                      label={`${emp.active_days}/${emp.range_days}d`}
+                      sx={{ ml: 1, fontSize: '0.65rem', height: 18 }} />
+                  )}
+                </Box>
               </MenuItem>
             ))}
           </Select>
+          <FormHelperText>
+            {(!startDate || !endDate)
+              ? 'Select date range first'
+              : `${employees.length} employee${employees.length === 1 ? '' : 's'} active in range`}
+          </FormHelperText>
         </FormControl>
-
-        <TextField label="From" type="date" size="small" value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 170 }} />
-        <TextField label="To" type="date" size="small" value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-          slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 170 }} />
       </Box>
 
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>

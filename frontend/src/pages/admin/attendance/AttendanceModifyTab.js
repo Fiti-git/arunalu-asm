@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, Button, Chip, TextField, Alert, CircularProgress, Avatar, Tooltip,
-  FormControl, InputLabel, Select, MenuItem,
+  FormControl, InputLabel, Select, MenuItem, FormHelperText,
   Dialog, DialogContent, DialogActions, IconButton, Divider, Snackbar,
 } from '@mui/material';
 import { DataTable } from 'components/ui';
@@ -21,10 +21,10 @@ import ModificationHistoryDialog from './ModificationHistoryDialog';
 export default function AttendanceModifyTab() {
   const { outlets } = useUserOutlets();
   const [selectedOutlet, setSelectedOutlet] = useState('');
-  const { employees, loading: employeesLoading } = usePrimaryOutletEmployees(selectedOutlet);
-  const [selectedEmployee, setSelectedEmployee] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const { employees, loading: employeesLoading } = usePrimaryOutletEmployees(selectedOutlet, startDate, endDate);
+  const [selectedEmployee, setSelectedEmployee] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
 
   const [rows, setRows] = useState([]);
@@ -109,9 +109,9 @@ export default function AttendanceModifyTab() {
   };
 
   const resetFilters = () => {
-    setSelectedEmployee('all');
     setStartDate('');
     setEndDate('');
+    setSelectedEmployee('all');
     setStatusFilter('all');
   };
 
@@ -265,24 +265,37 @@ export default function AttendanceModifyTab() {
           </Select>
         </FormControl>
 
-        <FormControl size="small" sx={{ minWidth: 240 }} disabled={!selectedOutlet || employeesLoading}>
-          <InputLabel>Employee</InputLabel>
-          <Select label="Employee" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}>
-            <MenuItem value="all">All Employees{employees.length ? ` (${employees.length})` : ''}</MenuItem>
-            {employees.map((emp) => (
-              <MenuItem key={emp.employee_id} value={emp.employee_id}>
-                {emp.fullname}{emp.empcode ? ` · ${emp.empcode}` : ''}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
         <TextField label="From" type="date" size="small" value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
           slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 170 }} />
         <TextField label="To" type="date" size="small" value={endDate}
           onChange={(e) => setEndDate(e.target.value)}
           slotProps={{ inputLabel: { shrink: true } }} sx={{ width: 170 }} />
+
+        <FormControl size="small" sx={{ minWidth: 240 }}
+          disabled={!selectedOutlet || employeesLoading || !startDate || !endDate}>
+          <InputLabel>Employee</InputLabel>
+          <Select label="Employee" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}>
+            <MenuItem value="all">All Employees{employees.length ? ` (${employees.length})` : ''}</MenuItem>
+            {employees.map((emp) => (
+              <MenuItem key={emp.employee_id} value={emp.employee_id}>
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                  <span>{emp.fullname}{emp.empcode ? ` · ${emp.empcode}` : ''}</span>
+                  {emp.fully_active === false && (
+                    <Chip size="small" color="warning" variant="outlined"
+                      label={`${emp.active_days}/${emp.range_days}d`}
+                      sx={{ ml: 1, fontSize: '0.65rem', height: 18 }} />
+                  )}
+                </Box>
+              </MenuItem>
+            ))}
+          </Select>
+          <FormHelperText>
+            {(!startDate || !endDate)
+              ? 'Select date range first'
+              : `${employees.length} employee${employees.length === 1 ? '' : 's'} active in range`}
+          </FormHelperText>
+        </FormControl>
       </Box>
 
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>

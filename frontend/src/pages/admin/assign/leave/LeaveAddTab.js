@@ -20,7 +20,7 @@ import {
 export default function LeaveAddTab() {
   const { outlets } = useUserOutlets();
   const [selectedOutlet, setSelectedOutlet] = useState('');
-  const { employees, loading: employeesLoading } = usePrimaryOutletEmployees(selectedOutlet);
+  const { employees, loading: employeesLoading } = usePrimaryOutletEmployees(selectedOutlet, undefined, undefined);
   const { leaveTypes } = useLeaveTypes();
 
   const [selectedEmployees, setSelectedEmployees] = useState([]);

@@ -277,7 +277,54 @@ def get_primary_outlet_employees(request):
 
     detail = str(request.GET.get('detail', '')).lower() in ('1', 'true', 'yes')
 
+    # Optional date-range gating: when provided, return only employees who were
+    # active for at least 1 day in the range, with active_days / range_days
+    # metadata so the UI can flag "partially active" cases and prevent
+    # accidental edits of records outside the employee's active window.
+    start_date = (request.GET.get('start_date') or '').strip() or None
+    end_date = (request.GET.get('end_date') or '').strip() or None
+
     if not detail:
+        if start_date and end_date:
+            from report.views import ACTIVE_PERIODS_CTE
+            from django.db import connection
+            sql = f"""
+            WITH {ACTIVE_PERIODS_CTE},
+            date_range AS (
+              SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
+            ),
+            active_days AS (
+              SELECT eo.employee_id,
+                     COUNT(*) AS n
+              FROM public.main_employee eo
+              CROSS JOIN date_range dr
+              WHERE eo.primary_outlet_id = %s
+                AND EXISTS (
+                  SELECT 1 FROM active_periods ap
+                  WHERE ap.employee_id = eo.employee_id
+                    AND dr.d >= ap.start_d
+                    AND (ap.end_d IS NULL OR dr.d <= ap.end_d)
+                )
+              GROUP BY eo.employee_id
+            ),
+            range_size AS (SELECT COUNT(*) AS n FROM date_range)
+            SELECT e.employee_id, e.fullname, e.empcode,
+                   COALESCE(ad.n, 0) AS active_days,
+                   (SELECT n FROM range_size) AS range_days
+            FROM public.main_employee e
+            LEFT JOIN active_days ad ON ad.employee_id = e.employee_id
+            WHERE e.primary_outlet_id = %s
+              AND COALESCE(ad.n, 0) > 0
+            ORDER BY e.fullname;
+            """
+            with connection.cursor() as c:
+                c.execute(sql, [start_date, end_date, outlet_id, outlet_id])
+                cols = [d[0] for d in c.description]
+                rows = [dict(zip(cols, row)) for row in c.fetchall()]
+            for r in rows:
+                r['fully_active'] = int(r['active_days']) >= int(r['range_days'])
+            return Response(rows)
+
         employees = (
             Employee.objects
             .filter(primary_outlet_id=outlet_id, is_active=True)
