@@ -1199,8 +1199,16 @@ def bulk_add_leave_v2(request):
                 })
             continue
 
+        from main.active_periods import is_active_on
         for d in leave_dates:
             key = (emp.employee_id, d)
+            if not is_active_on(emp, d):
+                skipped.append({
+                    "employee_id": emp.employee_id,
+                    "leave_date": str(d),
+                    "reason": "Employee was not active on this date.",
+                })
+                continue
             if key in existing_leaves:
                 skipped.append({
                     "employee_id": emp.employee_id,
@@ -1584,9 +1592,15 @@ def v2_attendance_edit_request(request):
         return Response({'error': 'reason is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        attendance = Attendance.objects.get(attendance_id=attendance_id)
+        attendance = Attendance.objects.select_related('employee').get(attendance_id=attendance_id)
     except Attendance.DoesNotExist:
         return Response({'error': 'Attendance record not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    from main.active_periods import is_active_on
+    if not is_active_on(attendance.employee, attendance.date):
+        return Response({
+            'error': f'Employee {attendance.employee.fullname} was not active on {attendance.date}. Cannot submit an edit request for this record.'
+        }, status=status.HTTP_400_BAD_REQUEST)
 
     if not _is_locked(attendance.date):
         return Response(
@@ -2079,10 +2093,17 @@ def v3_attendance_bulk_add(request):
                 skipped.append({"employee_id": emp_id, "date": str(d), "reason": "Employee not found."})
             continue
 
+        from main.active_periods import is_active_on
         for d in dates:
             key = (emp.employee_id, d)
             if key in existing_att:
                 skipped.append({"employee_id": emp.employee_id, "date": str(d), "reason": "Attendance already exists."})
+                continue
+            if not is_active_on(emp, d):
+                skipped.append({
+                    "employee_id": emp.employee_id, "date": str(d),
+                    "reason": "Employee was not active on this date.",
+                })
                 continue
             locked_response = enforce_lock(request, emp, d)
             if locked_response is not None:
@@ -2140,6 +2161,15 @@ def v3_attendance_update(request, id):
 
     if not _v3_can_access_outlet(request.user, att.employee.primary_outlet_id):
         return Response({"error": "You are not authorized to modify this record."}, status=403)
+
+    # Defense-in-depth: block edits of attendance dated when the employee was
+    # not active. The UI dropdown already filters this, but the API is the
+    # authoritative gate.
+    from main.active_periods import is_active_on
+    if not is_active_on(att.employee, att.date):
+        return Response({
+            "error": f"Employee {att.employee.fullname} was not active on {att.date}. Cannot modify this record."
+        }, status=400)
 
     data = request.data
 
@@ -2333,6 +2363,12 @@ def v3_attendance_delete(request, id):
 
     if not _v3_can_access_outlet(request.user, att.employee.primary_outlet_id):
         return Response({"error": "You are not authorized to delete this record."}, status=403)
+
+    from main.active_periods import is_active_on
+    if not is_active_on(att.employee, att.date):
+        return Response({
+            "error": f"Employee {att.employee.fullname} was not active on {att.date}. Cannot delete this record."
+        }, status=400)
 
     locked_response = enforce_lock(request, att.employee, att.date)
     if locked_response:

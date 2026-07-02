@@ -72,7 +72,7 @@ class DashboardOverviewAPIView(APIView):
               SELECT COUNT(DISTINCT a.employee_id) AS present_emp
               FROM public.main_attendance a
               WHERE a.date = CURRENT_DATE
-                AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = a.employee_id
                               AND a.date >= ap.start_d
@@ -83,6 +83,7 @@ class DashboardOverviewAPIView(APIView):
               FROM public.main_empleave l
               WHERE l.leave_date = CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = l.employee_id
                               AND l.leave_date >= ap.start_d
@@ -142,7 +143,7 @@ class LeavePresenceTrendAPIView(APIView):
               SELECT a.date::date AS date, COUNT(DISTINCT a.employee_id) AS present_count
               FROM public.main_attendance a
               WHERE a.date BETWEEN CURRENT_DATE - INTERVAL '%s days'::interval + INTERVAL '1 day' AND CURRENT_DATE
-                AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = a.employee_id
                               AND a.date >= ap.start_d
@@ -154,6 +155,7 @@ class LeavePresenceTrendAPIView(APIView):
               FROM public.main_empleave l
               WHERE l.leave_date BETWEEN CURRENT_DATE - INTERVAL '%s days'::interval + INTERVAL '1 day' AND CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = l.employee_id
                               AND l.leave_date >= ap.start_d
@@ -203,7 +205,7 @@ class OutletSummaryAPIView(APIView):
               SELECT DISTINCT a.employee_id
               FROM public.main_attendance a
               WHERE a.date = CURRENT_DATE
-                AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = a.employee_id
                               AND a.date >= ap.start_d
@@ -214,6 +216,7 @@ class OutletSummaryAPIView(APIView):
               FROM public.main_empleave l
               WHERE l.leave_date = CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = l.employee_id
                               AND l.leave_date >= ap.start_d
@@ -271,7 +274,7 @@ class EmployeeAttendanceSummaryAPIView(APIView):
               FROM public.main_attendance a
               WHERE a.date >= date_trunc('month', CURRENT_DATE)
                 AND a.date <= CURRENT_DATE
-                AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = a.employee_id
                               AND a.date >= ap.start_d
@@ -284,6 +287,7 @@ class EmployeeAttendanceSummaryAPIView(APIView):
               WHERE l.leave_date >= date_trunc('month', CURRENT_DATE)
                 AND l.leave_date <= CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = l.employee_id
                               AND l.leave_date >= ap.start_d
@@ -351,7 +355,7 @@ class DashboardOverviewByOutletAPIView(APIView):
               FROM public.main_attendance a
               INNER JOIN filtered_employees fe ON fe.employee_id = a.employee_id
               WHERE a.date = CURRENT_DATE
-                AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = a.employee_id
                               AND a.date >= ap.start_d
@@ -363,6 +367,7 @@ class DashboardOverviewByOutletAPIView(APIView):
               INNER JOIN filtered_employees fe ON fe.employee_id = l.employee_id
               WHERE l.leave_date = CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = l.employee_id
                               AND l.leave_date >= ap.start_d
@@ -431,7 +436,7 @@ class LeavePresenceTrendByOutletAPIView(APIView):
               FROM public.main_attendance a
               INNER JOIN active_emp e ON e.employee_id = a.employee_id
               WHERE a.date BETWEEN CURRENT_DATE - INTERVAL '%s days'::interval + INTERVAL '1 day' AND CURRENT_DATE
-                AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = a.employee_id
                               AND a.date >= ap.start_d
@@ -444,6 +449,7 @@ class LeavePresenceTrendByOutletAPIView(APIView):
               INNER JOIN active_emp e ON e.employee_id = l.employee_id
               WHERE l.leave_date BETWEEN CURRENT_DATE - INTERVAL '%s days'::interval + INTERVAL '1 day' AND CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = l.employee_id
                               AND l.leave_date >= ap.start_d
@@ -507,7 +513,7 @@ class EmployeeAttendanceSummaryByOutletAPIView(APIView):
               INNER JOIN emp_outlet eo ON eo.employee_id = a.employee_id
               WHERE a.date >= date_trunc('month', CURRENT_DATE)
                 AND a.date <= CURRENT_DATE
-                AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+                AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = a.employee_id
                               AND a.date >= ap.start_d
@@ -521,6 +527,7 @@ class EmployeeAttendanceSummaryByOutletAPIView(APIView):
               WHERE l.leave_date >= date_trunc('month', CURRENT_DATE)
                 AND l.leave_date <= CURRENT_DATE
                 AND LOWER(l.status) = 'approved'
+                AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
                 AND EXISTS (SELECT 1 FROM active_periods ap
                             WHERE ap.employee_id = l.employee_id
                               AND l.leave_date >= ap.start_d
@@ -614,6 +621,7 @@ class EmployeeReportAPIView(APIView):
                 FROM public.main_empleave l
                 LEFT JOIN public.leave_type lt ON l.leave_type_id = lt.id
                 WHERE LOWER(l.status) = 'approved'
+                  AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
                   AND l.leave_date BETWEEN %s AND %s
                   AND l.employee_id = %s
                   AND EXISTS (SELECT 1 FROM active_periods ap
@@ -1254,7 +1262,7 @@ class OutletSummaryOverviewAPIView(APIView):
           FROM public.main_attendance a
           INNER JOIN scoped_emp e ON e.employee_id = a.employee_id
           WHERE a.date BETWEEN %s AND %s
-            AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+            AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
             {_active_period_exists('a', 'date')}
         ),
         leave_days AS (
@@ -1263,6 +1271,7 @@ class OutletSummaryOverviewAPIView(APIView):
           INNER JOIN scoped_emp e ON e.employee_id = l.employee_id
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
             {_active_period_exists('l', 'leave_date')}
         ),
         totals AS (
@@ -1342,7 +1351,7 @@ class OutletSummaryTrendAPIView(APIView):
           FROM public.main_attendance a
           INNER JOIN active_emp ae ON ae.employee_id = a.employee_id
           WHERE a.date BETWEEN %s AND %s
-            AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+            AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
             {_active_period_exists('a', 'date')}
           GROUP BY a.date::date
         ),
@@ -1352,6 +1361,7 @@ class OutletSummaryTrendAPIView(APIView):
           INNER JOIN active_emp ae ON ae.employee_id = l.employee_id
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
             {_active_period_exists('l', 'leave_date')}
           GROUP BY l.leave_date::date
         ),
@@ -1413,7 +1423,7 @@ class OutletSummaryOutletsAPIView(APIView):
           FROM public.main_attendance a
           INNER JOIN emp_outlet eo ON eo.employee_id = a.employee_id
           WHERE a.date BETWEEN %s AND %s
-            AND (LOWER(a.status) IN ('present','late') OR a.status = '1')
+            AND (LOWER(a.status) IN ('present','late','half day') OR a.status = '1')
             {_active_period_exists('a', 'date')}
           GROUP BY eo.outlet_id
         ),
@@ -1423,6 +1433,7 @@ class OutletSummaryOutletsAPIView(APIView):
           INNER JOIN emp_outlet eo ON eo.employee_id = l.employee_id
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
             {_active_period_exists('l', 'leave_date')}
           GROUP BY eo.outlet_id
         ),
@@ -1835,6 +1846,7 @@ class AbsenteeismAPIView(APIView):
           FROM public.main_empleave l
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
             {_active_period_exists('l', 'leave_date')}
           GROUP BY l.employee_id
         )
@@ -1939,6 +1951,7 @@ class BlankDatesAPIView(APIView):
           FROM public.main_empleave l
           WHERE l.leave_date BETWEEN %s AND %s
             AND LOWER(l.status) = 'approved'
+            AND COALESCE((SELECT UPPER(lt.att_type) FROM public.leave_type lt WHERE lt.id = l.leave_type_id), '') NOT IN ('H1', 'H2')
           GROUP BY l.employee_id, l.leave_date
         ),
         pending_lv_max AS (
