@@ -771,18 +771,72 @@ class EmployeeDetailsByUserAPIView(APIView):
 class EmployeesByManagerAPIView(APIView):
     """
     Returns all employees under a manager, grouped by outlet.
+
+    Optional query params:
+      start_date, end_date  — when BOTH are provided, employees are
+        filtered to those active for at least 1 day in the range
+        (via the active_periods CTE), and each employee gets:
+          active_days, range_days, fully_active
+        so the frontend can flag partial coverage and gate accidental
+        edits of records for deactivated employees.
     """
     def get(self, request, user_id):
         try:
             query = """
-            WITH mgr AS (
-                SELECT e.employee_id, e.user_id, u.first_name AS user_first_name, e.fullname
+            SELECT e.employee_id, e.user_id, u.first_name AS user_first_name, e.fullname
+            FROM public.main_employee e
+            LEFT JOIN public.auth_user u ON u.id = e.user_id
+            WHERE e.user_id = %s
+            """
+            rows = run_sql(query, [user_id])
+            if not rows:
+                return Response({"detail": "Manager not found"}, status=404)
+
+            manager = rows[0]
+
+            start_date = (request.query_params.get('start_date') or '').strip() or None
+            end_date = (request.query_params.get('end_date') or '').strip() or None
+            use_range = bool(start_date and end_date)
+
+            if use_range:
+                q2 = f"""
+                WITH {ACTIVE_PERIODS_CTE},
+                date_range AS (
+                  SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS d
+                ),
+                range_size AS (SELECT COUNT(*) AS n FROM date_range),
+                active_days AS (
+                  SELECT e.employee_id, COUNT(*) AS n
+                  FROM public.main_employee e
+                  CROSS JOIN date_range dr
+                  WHERE EXISTS (
+                    SELECT 1 FROM active_periods ap
+                    WHERE ap.employee_id = e.employee_id
+                      AND dr.d >= ap.start_d
+                      AND (ap.end_d IS NULL OR dr.d <= ap.end_d)
+                  )
+                  GROUP BY e.employee_id
+                )
+                SELECT
+                    eo.outlet_id,
+                    o.name AS outlet_name,
+                    e.employee_id,
+                    u.first_name AS user_first_name,
+                    e.fullname,
+                    COALESCE(ad.n, 0) AS active_days,
+                    (SELECT n FROM range_size) AS range_days
                 FROM public.main_employee e
+                LEFT JOIN public.main_employee_outlets eo ON eo.employee_id = e.employee_id
+                LEFT JOIN public.main_outlet o ON o.id = eo.outlet_id
                 LEFT JOIN public.auth_user u ON u.id = e.user_id
-                WHERE e.user_id = %s
-            ),
-            emp_outlet AS (
-                SELECT 
+                LEFT JOIN active_days ad ON ad.employee_id = e.employee_id
+                WHERE COALESCE(ad.n, 0) > 0
+                ORDER BY eo.outlet_id, e.fullname;
+                """
+                rows2 = run_sql(q2, [start_date, end_date])
+            else:
+                q2 = """
+                SELECT
                     eo.outlet_id,
                     o.name AS outlet_name,
                     e.employee_id,
@@ -792,31 +846,9 @@ class EmployeesByManagerAPIView(APIView):
                 LEFT JOIN public.main_employee_outlets eo ON eo.employee_id = e.employee_id
                 LEFT JOIN public.main_outlet o ON o.id = eo.outlet_id
                 LEFT JOIN public.auth_user u ON u.id = e.user_id
-            )
-            SELECT * FROM mgr;
-            """
-
-            rows = run_sql(query, [user_id])
-            if not rows:
-                return Response({"detail": "Manager not found"}, status=404)
-
-            manager = rows[0]
-
-            # Now fetch employees under each outlet
-            q2 = """
-            SELECT 
-                eo.outlet_id,
-                o.name AS outlet_name,
-                e.employee_id,
-                u.first_name AS user_first_name,
-                e.fullname
-            FROM public.main_employee e
-            LEFT JOIN public.main_employee_outlets eo ON eo.employee_id = e.employee_id
-            LEFT JOIN public.main_outlet o ON o.id = eo.outlet_id
-            LEFT JOIN public.auth_user u ON u.id = e.user_id
-            ORDER BY eo.outlet_id, e.fullname;
-            """
-            rows2 = run_sql(q2)
+                ORDER BY eo.outlet_id, e.fullname;
+                """
+                rows2 = run_sql(q2)
 
             employees_by_outlet = {}
             for r in rows2:
@@ -826,11 +858,18 @@ class EmployeesByManagerAPIView(APIView):
                         "outlet_name": r["outlet_name"],
                         "employees": []
                     }
-                employees_by_outlet[oid]["employees"].append({
+                emp = {
                     "employee_id": r["employee_id"],
                     "fullname": r["fullname"],
                     "user_first_name": r["user_first_name"],
-                })
+                }
+                if use_range:
+                    ad = int(r.get("active_days") or 0)
+                    rd = int(r.get("range_days") or 0)
+                    emp["active_days"] = ad
+                    emp["range_days"] = rd
+                    emp["fully_active"] = ad >= rd
+                employees_by_outlet[oid]["employees"].append(emp)
 
             return Response({
                 "manager": manager,

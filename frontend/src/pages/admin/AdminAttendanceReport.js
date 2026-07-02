@@ -10,6 +10,8 @@ import {
   Select,
   MenuItem,
   TextField,
+  FormHelperText,
+  Chip,
 } from "@mui/material";
 import axios from "axios";
 import EmployeeAttendanceTable from "../../pages/EmployeeAttendanceTable";
@@ -32,6 +34,8 @@ export default function MANReports() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const [managerUserId, setManagerUserId] = useState(null);
+
   const fetchUserInfo = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -47,7 +51,7 @@ export default function MANReports() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      fetchUserReport(response.data.id, token);
+      setManagerUserId(response.data.id);
     } catch (err) {
       console.error("Error fetching user info:", err);
       setError(err.response?.data?.detail || err.message);
@@ -59,23 +63,43 @@ export default function MANReports() {
     fetchUserInfo();
   }, [fetchUserInfo]);
 
-  const fetchUserReport = async (userId, token) => {
-    setLoading(true);
-    try {
-      const response = await axios.get(
-        `${API_BASE}/report/employees/user/${userId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
+  // Refetch the employee list whenever the manager id or date range changes,
+  // so dropdown only shows employees who were active in the chosen range.
+  useEffect(() => {
+    if (!managerUserId) return;
+    if (!startDate || !endDate) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get(
+          `${API_BASE}/report/employees/user/${managerUserId}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { start_date: startDate, end_date: endDate },
+          }
+        );
+        if (!cancelled) {
+          setUserReport(response.data);
+          // Reset selections when the underlying list may have changed
+          setSelectedEmployee("all");
+          setEmployeeReport(null);
         }
-      );
-      setUserReport(response.data);
-    } catch (err) {
-      console.error("Error fetching user report:", err);
-      setError(err.response?.data?.detail || err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Error fetching user report:", err);
+          setError(err.response?.data?.detail || err.message);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [managerUserId, startDate, endDate]);
 
   const handleOutletChange = (event) => {
     const outletId = event.target.value;
@@ -94,6 +118,21 @@ export default function MANReports() {
       setEmployeeList([]);
     }
   };
+
+  // Keep employeeList in sync with the currently-selected outlet whenever
+  // userReport reloads (e.g. after a date-range change).
+  useEffect(() => {
+    if (!userReport) { setEmployeeList([]); return; }
+    if (selectedOutlet === "all") {
+      setEmployeeList(
+        Object.values(userReport.employees_by_outlet).flatMap((o) => o.employees)
+      );
+    } else if (userReport?.employees_by_outlet[selectedOutlet]) {
+      setEmployeeList(userReport.employees_by_outlet[selectedOutlet].employees);
+    } else {
+      setEmployeeList([]);
+    }
+  }, [userReport, selectedOutlet]);
 
   const handleFetchEmployee = async () => {
     setLoading(true);
@@ -204,28 +243,8 @@ export default function MANReports() {
             </Select>
           </FormControl>
 
-          {/* Employee Selector */}
-          <FormControl sx={{ minWidth: 250 }} size="small" disabled={!selectedOutlet}>
-            <InputLabel>Employee</InputLabel>
-            <Select
-              value={selectedEmployee}
-              onChange={(e) => {
-                setSelectedEmployee(e.target.value);
-                setEmployeeReport(null);
-                setError(null);
-              }}
-              label="Employee"
-            >
-              <MenuItem value="all">All Employees</MenuItem>
-              {employeeList.map((emp) => (
-                <MenuItem key={emp.employee_id} value={emp.employee_id}>
-                  {emp.user_first_name} ({emp.fullname})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          {/* Date Range Inputs */}
+          {/* Date Range Inputs — must be set BEFORE Employee, so the
+              dropdown only shows employees active in the chosen range. */}
           <TextField
             label="Start Date"
             type="date"
@@ -244,6 +263,49 @@ export default function MANReports() {
             size="small"
             sx={{ minWidth: 160 }}
           />
+
+          {/* Employee Selector — gated on date range */}
+          <FormControl
+            sx={{ minWidth: 280 }}
+            size="small"
+            disabled={!selectedOutlet || !startDate || !endDate}
+          >
+            <InputLabel>Employee</InputLabel>
+            <Select
+              value={selectedEmployee}
+              onChange={(e) => {
+                setSelectedEmployee(e.target.value);
+                setEmployeeReport(null);
+                setError(null);
+              }}
+              label="Employee"
+            >
+              <MenuItem value="all">
+                All Employees{employeeList.length ? ` (${employeeList.length})` : ''}
+              </MenuItem>
+              {employeeList.map((emp) => (
+                <MenuItem key={emp.employee_id} value={emp.employee_id}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                    <span>{emp.user_first_name} ({emp.fullname})</span>
+                    {emp.fully_active === false && (
+                      <Chip
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        label={`${emp.active_days}/${emp.range_days}d`}
+                        sx={{ ml: 'auto', fontSize: '0.65rem', height: 18 }}
+                      />
+                    )}
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+            <FormHelperText>
+              {(!startDate || !endDate)
+                ? 'Select date range first'
+                : `${employeeList.length} employee${employeeList.length === 1 ? '' : 's'} active in range`}
+            </FormHelperText>
+          </FormControl>
 
           {/* Fetch Button */}
           <Button
