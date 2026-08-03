@@ -31,8 +31,14 @@ def get_employee_active_periods(employee):
     logs = list(
         EmployeeStatusLog.objects
         .filter(employee=employee)
-        .order_by('action_at')
     )
+
+    def _log_date(log):
+        return log.effective_date or (
+            log.action_at.date() if hasattr(log.action_at, 'date') else log.action_at
+        )
+
+    logs.sort(key=lambda l: (_log_date(l), l.action_at))
 
     if not logs:
         if employee.is_active:
@@ -43,7 +49,7 @@ def get_employee_active_periods(employee):
     intervals = []
     current_start = EPOCH  # employee assumed active from the beginning
     for log in logs:
-        log_date = log.action_at.date() if hasattr(log.action_at, 'date') else log.action_at
+        log_date = _log_date(log)
         if log.action == 'DEACTIVATED' and current_start is not None:
             intervals.append((current_start, log_date))
             current_start = None
