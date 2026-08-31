@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django.conf import settings
-from django.conf.urls.static import static
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.http import JsonResponse
+from django.views.static import serve as static_serve
 
 from main import views
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -201,4 +201,13 @@ urlpatterns = [
     path('api/whatsapp/webhook/', include('chatbot.whatsapp_urls')),
 ]
 
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Serve /media/ from the backend regardless of DEBUG.
+# The stock static() helper is a no-op when DEBUG=False, which broke
+# reference-photo fetches (and mobile punch-in) in production.
+urlpatterns += [
+    re_path(
+        r'^media/(?P<path>.*)$',
+        static_serve,
+        {'document_root': settings.MEDIA_ROOT},
+    ),
+]
