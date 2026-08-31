@@ -141,6 +141,15 @@ def punch_in(request):
             return Response({"error": "Photo is required for punch-in"}, status=status.HTTP_400_BAD_REQUEST)
 
         today = timezone.localdate()
+
+        # Block if today is inside an admin-defined lock period.
+        from attendance.api import _date_admin_locked_for_employee
+        if _date_admin_locked_for_employee(employee, today):
+            return Response(
+                {"error": "Attendance is locked for today. Contact an administrator."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         open_today = Attendance.objects.filter(
             employee=employee,
             date=today,
@@ -184,6 +193,40 @@ def punch_in(request):
         response_message = "Punch-in recorded successfully!"
 
         if not employee.reference_photo:
+            # Reject reference photos that don't contain exactly one face —
+            # a bad reference permanently breaks the employee's biometric flow.
+            from attendance.face_recognition import count_faces
+            if all([
+                getattr(settings, 'AWS_ACCESS_KEY_ID', None),
+                getattr(settings, 'AWS_SECRET_ACCESS_KEY', None),
+                getattr(settings, 'AWS_REKOGNITION_REGION', None),
+            ]):
+                try:
+                    photo_file.seek(0)
+                    ref_bytes = photo_file.read()
+                except (AttributeError, OSError):
+                    ref_bytes = None
+                finally:
+                    try:
+                        photo_file.seek(0)
+                    except (AttributeError, OSError):
+                        pass
+                if ref_bytes:
+                    n_faces = count_faces(
+                        ref_bytes,
+                        aws_access_key=settings.AWS_ACCESS_KEY_ID,
+                        aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
+                        aws_region=settings.AWS_REKOGNITION_REGION,
+                    )
+                    if n_faces != 1:
+                        return Response(
+                            {"error": (
+                                "Reference photo must contain exactly one clear face. "
+                                f"Detected {n_faces}. Retake the photo."
+                            )},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
             employee.reference_photo = photo_file
             employee.punchin_selfie = photo_file
             employee.save()

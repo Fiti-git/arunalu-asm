@@ -107,6 +107,16 @@ def punch_in(request):
             return Response({"error": photo_err}, status=status.HTTP_400_BAD_REQUEST)
 
         today = timezone.localdate()
+
+        # If an admin has locked today for this employee's outlet, punch-in
+        # creation must also be blocked — previously only edits were gated,
+        # so employees could still create records inside a locked window.
+        if _date_admin_locked_for_employee(employee, today):
+            return Response(
+                {"error": "Attendance is locked for today. Contact an administrator."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         # Only block if there's an OPEN record for today. Records left open on
         # previous days are forgotten punch-outs — auto-close them so the user
         # is not locked out of today's punch-in.
@@ -153,10 +163,41 @@ def punch_in(request):
         response_message = "Punch-in recorded successfully!"
 
         if not employee.reference_photo:
+            # Sanity-check the first reference photo — reject blurry group
+            # shots, screenshots of the login page, blank frames, etc. A bad
+            # reference silently breaks every future face verification.
+            if _rekognition_available():
+                from .face_recognition import count_faces
+                try:
+                    photo_file.seek(0)
+                    ref_bytes = photo_file.read()
+                except (AttributeError, OSError):
+                    ref_bytes = None
+                finally:
+                    try:
+                        photo_file.seek(0)
+                    except (AttributeError, OSError):
+                        pass
+                if ref_bytes:
+                    n_faces = count_faces(
+                        ref_bytes,
+                        aws_access_key=settings.AWS_ACCESS_KEY_ID,
+                        aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
+                        aws_region=settings.AWS_REKOGNITION_REGION,
+                    )
+                    if n_faces != 1:
+                        return Response(
+                            {"error": (
+                                "Reference photo must contain exactly one clear face. "
+                                f"Detected {n_faces}. Retake the photo."
+                            )},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
             employee.reference_photo = photo_file
             employee.punchin_selfie = photo_file
             employee.save()
-            
+
             verified_status = 'Pending'
             response_message = "Punch-in recorded. Your photo has been submitted for verification."
 
@@ -1192,42 +1233,61 @@ def bulk_add_leave(request):
     except LeaveType.DoesNotExist:
         return Response({"error": "LeaveType not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    today = timezone.localdate()
+    if leave_date < today - timedelta(days=365) or leave_date > today + timedelta(days=365 * 2):
+        return Response(
+            {"error": "leave_date is out of the accepted range (1y past .. 2y future)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     # --- Processing ---
     successful_adds = []
     failed_adds = []
-    
+
     # Fetch all employees to process
     employees_to_process = Employee.objects.filter(employee_id__in=employee_ids)
-    
-    # Get a set of (employee_id, leave_date) for existing leaves to check for duplicates efficiently
-    existing_leaves = EmpLeave.objects.filter(
-        employee_id__in=employee_ids,
-        leave_date=leave_date,
-        status__in=['pending', 'approved']
-    ).values_list('employee_id', flat=True)
-    existing_leave_set = set(existing_leaves)
 
+    # O(1) lookup of employees who already have an active leave on this date.
+    existing_leave_set = set(
+        EmpLeave.objects
+        .filter(
+            employee_id__in=employee_ids,
+            leave_date=leave_date,
+            status__in=['pending', 'approved'],
+        )
+        .values_list('employee_id', flat=True)
+    )
+
+    now = timezone.now()
+    to_create = []
     for employee in employees_to_process:
         if employee.employee_id in existing_leave_set:
             failed_adds.append({
                 "employee_id": employee.employee_id,
-                "error": "An active leave already exists for this date."
+                "error": "An active leave already exists for this date.",
             })
             continue
+        to_create.append(EmpLeave(
+            employee=employee,
+            leave_date=leave_date,
+            leave_type=leave_type,
+            remarks=remarks,
+            status='approved',
+            action_user=request.user,
+            action_date=now,
+        ))
+        successful_adds.append(employee.employee_id)
 
+    if to_create:
         try:
-            EmpLeave.objects.create(
-                employee=employee,
-                leave_date=leave_date,
-                leave_type=leave_type,
-                remarks=remarks,
-                status='approved',  # Approve directly since it's a manual add
-                action_user=request.user,
-                action_date=timezone.now()
-            )
-            successful_adds.append(employee.employee_id)
+            EmpLeave.objects.bulk_create(to_create)
         except Exception as e:
-            failed_adds.append({"employee_id": employee.employee_id, "error": str(e)})
+            # Rollback the accounting: everything we optimistically added moves
+            # into failed_adds with the DB error.
+            failed_adds.extend([
+                {"employee_id": emp_id, "error": str(e)} for emp_id in successful_adds
+            ])
+            successful_adds = []
 
     return Response({
         "message": f"Bulk leave operation completed. {len(successful_adds)} leaves added.",
@@ -1265,16 +1325,27 @@ def bulk_add_leave_v2(request):
     except LeaveType.DoesNotExist:
         return Response({"error": "LeaveType not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    # Parse and de-dup dates
+    # Parse, de-dup, and sanity-check dates. Reject anything > 1 year in the
+    # past or > 2 years in the future — nobody schedules leave for 1900 or
+    # 3000, so a wild value is a bad input, not a legitimate request.
+    today = timezone.localdate()
+    min_date = today - timedelta(days=365)
+    max_date = today + timedelta(days=365 * 2)
     leave_dates = []
     for d in leave_dates_raw:
         try:
-            leave_dates.append(parser.parse(str(d)).date())
+            parsed = parser.parse(str(d)).date()
         except (ValueError, TypeError):
             return Response(
                 {"error": f"Invalid date: {d}. Use YYYY-MM-DD."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if parsed < min_date or parsed > max_date:
+            return Response(
+                {"error": f"Date {parsed.isoformat()} is out of the accepted range ({min_date}..{max_date})."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        leave_dates.append(parsed)
     leave_dates = sorted(set(leave_dates))
 
     employees = list(Employee.objects.filter(employee_id__in=employee_ids))
@@ -1401,12 +1472,14 @@ def delete_leave(request, id):
 # Old /api/attendance/... endpoints remain untouched above
 # =============================================================================
 
-LOCK_DAYS = 45  # Records older than this many days are locked for direct editing
+def _lock_days():
+    """Attendance lock threshold, sourced from settings (default 45)."""
+    return int(getattr(settings, 'ATTENDANCE_LOCK_DAYS', 45))
 
 
 def _is_locked(record_date):
-    """Return True if the attendance date is >= LOCK_DAYS days ago."""
-    cutoff = date.today() - timedelta(days=LOCK_DAYS)
+    """Return True if the attendance date is >= lock threshold days ago."""
+    cutoff = date.today() - timedelta(days=_lock_days())
     return record_date <= cutoff
 
 
@@ -1580,7 +1653,7 @@ def v2_attendance_update(request):
 
     if _is_locked(attendance.date):
         return Response(
-            {'error': 'This record is locked (older than 45 days). Submit an edit request instead.'},
+            {'error': f'This record is locked (older than {_lock_days()} days). Submit an edit request instead.'},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -1916,7 +1989,10 @@ def v2_attendance_edit_requests_review(request):
 from aas.pagination import StandardPagination  # noqa: E402
 
 
-ATTENDANCE_LOCK_DAYS = 45
+# Kept as a name-level alias for v3 helpers; the real source of truth is
+# settings.ATTENDANCE_LOCK_DAYS (overridable via env). _lock_days() above
+# reads settings every call so tests can monkeypatch it without a reload.
+ATTENDANCE_LOCK_DAYS = getattr(settings, 'ATTENDANCE_LOCK_DAYS', 45)
 
 
 def _v3_is_admin(user):
@@ -2422,7 +2498,7 @@ def v3_attendance_update(request, id):
     if _v3_is_record_locked(att) and not is_admin:
         if not reason:
             return Response(
-                {"error": "This record is older than 45 days. A reason is required to submit for admin approval."},
+                {"error": f"This record is older than {_lock_days()} days. A reason is required to submit for admin approval."},
                 status=400,
             )
         log = AttendanceModificationLog.objects.create(
@@ -2434,7 +2510,7 @@ def v3_attendance_update(request, id):
         )
         return Response({
             "pending_approval": True,
-            "message": "Record is locked (older than 45 days). Your change has been submitted for admin approval.",
+            "message": f"Record is locked (older than {_lock_days()} days). Your change has been submitted for admin approval.",
             "log": _v3_serialize_mod_log(log),
         }, status=202)
 

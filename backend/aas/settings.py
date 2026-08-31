@@ -28,6 +28,10 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
 DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
+# Attendance records older than this many days can only be edited via the
+# edit-request workflow. Override with ATTENDANCE_LOCK_DAYS in the environment.
+ATTENDANCE_LOCK_DAYS = int(os.getenv('ATTENDANCE_LOCK_DAYS', '45'))
+
 # Safe default of just 'localhost' instead of '*' — production .env must list
 # the real host(s) in DJANGO_ALLOWED_HOSTS as a comma-separated value.
 ALLOWED_HOSTS = [

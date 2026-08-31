@@ -1042,11 +1042,18 @@ class ChangepswrdView(APIView):
         target_user = employee.user
 
         password = request.data.get('password')
-        
+
         if password and len(request.data) == 1:
+            # Server-side strength check so a caller bypassing the UI can't
+            # set a 2-character password. Mirrors the SPA form validators.
+            if not isinstance(password, str) or len(password) < 8:
+                return Response(
+                    {"error": "Password must be at least 8 characters."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             target_user.set_password(password)
             target_user.save()
-            
+
             return Response(
                 {"message": f"Password for {target_user.username} updated successfully."},
                 status=status.HTTP_200_OK
