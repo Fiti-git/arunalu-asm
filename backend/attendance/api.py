@@ -71,13 +71,31 @@ def punch_in(request):
         if photo_err:
             return Response({"error": photo_err}, status=status.HTTP_400_BAD_REQUEST)
 
-        open_attendance = Attendance.objects.filter(
+        today = timezone.localdate()
+        # Only block if there's an OPEN record for today. Records left open on
+        # previous days are forgotten punch-outs — auto-close them so the user
+        # is not locked out of today's punch-in.
+        open_today = Attendance.objects.filter(
             employee=employee,
-            check_out_time__isnull=True
-        ).last()
+            date=today,
+            check_out_time__isnull=True,
+        ).order_by('-check_in_time').first()
 
-        if open_attendance:
-            return Response({"error": "You must punch out from your previous session before punching in again"}, status=400)
+        if open_today:
+            return Response(
+                {"error": "You must punch out from your previous session before punching in again"},
+                status=400,
+            )
+
+        stale = Attendance.objects.filter(
+            employee=employee,
+            date__lt=today,
+            check_out_time__isnull=True,
+        )
+        for s in stale:
+            s.punchout_verification = 'Pending'
+            s.status = s.status or 'Half Day'
+            s.save(update_fields=['punchout_verification', 'status'])
         
         try:
             check_in_lat = float(data.get('check_in_lat'))
@@ -211,14 +229,21 @@ def punch_out(request):
         if photo_err:
             return Response({"error": photo_err}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 3. Check active attendance
+        # 3. Check active attendance — restricted to today so a forgotten
+        # punch-out from a previous day never gets closed with today's
+        # timestamp (that produced 47h / 120h "worked hours" records).
+        today = timezone.localdate()
         attendance = Attendance.objects.filter(
             employee=employee,
-            check_out_time__isnull=True
-        ).last()
+            date=today,
+            check_out_time__isnull=True,
+        ).order_by('-check_in_time').first()
 
         if not attendance:
-            return Response({"error": "No active punch-in session found"}, status=400)
+            return Response(
+                {"error": "No active punch-in session found for today"},
+                status=400,
+            )
 
         # 4. Prevent accidental reference photo override
         if not employee.reference_photo:

@@ -25,16 +25,16 @@ def today_attendance(request):
     except Exception:
         return Response({"error": "Employee profile not found"}, status=403)
 
-    today = timezone.now().date()
+    today = timezone.localdate()
 
-    # Check for ANY open (not yet punched out) record — could be from today
-    # or from a previous day where the user forgot to punch out. Until this
-    # session is closed, no new punch-in is allowed, so the app must show
-    # PUNCH OUT instead of PUNCH IN.
+    # Only consider today's open record. A record left open from a previous
+    # day is a forgotten punch-out; closing it now would stamp today's time
+    # onto yesterday's session (producing 47h / 120h "worked hours").
     open_record = Attendance.objects.filter(
         employee=employee,
+        date=today,
         check_out_time__isnull=True,
-    ).last()
+    ).order_by('-check_in_time').first()
 
     if open_record:
         check_in_local = timezone.localtime(open_record.check_in_time)
@@ -42,7 +42,7 @@ def today_attendance(request):
             "punched_in": True,
             "check_in_time": check_in_local.strftime("%H:%M"),
             "check_in_date": check_in_local.strftime("%Y-%m-%d"),
-            "is_carryover": open_record.date != today,
+            "is_carryover": False,
             "check_out_time": None,
             "attendance_id": open_record.attendance_id,
         })
@@ -140,16 +140,31 @@ def punch_in(request):
         if 'photo_check_in' not in request.FILES:
             return Response({"error": "Photo is required for punch-in"}, status=status.HTTP_400_BAD_REQUEST)
 
-        open_attendance = Attendance.objects.filter(
+        today = timezone.localdate()
+        open_today = Attendance.objects.filter(
             employee=employee,
+            date=today,
             check_out_time__isnull=True,
-        ).last()
+        ).order_by('-check_in_time').first()
 
-        if open_attendance:
+        if open_today:
             return Response(
                 {"error": "You must punch out from your previous session before punching in again"},
                 status=400,
             )
+
+        # Auto-close forgotten punch-outs from previous days so the user is
+        # not permanently locked out. Missing check_out_time is preserved so
+        # a manager can review; status flips to Half Day for reporting.
+        stale = Attendance.objects.filter(
+            employee=employee,
+            date__lt=today,
+            check_out_time__isnull=True,
+        )
+        for s in stale:
+            s.punchout_verification = 'Pending'
+            s.status = s.status or 'Half Day'
+            s.save(update_fields=['punchout_verification', 'status'])
 
         try:
             check_in_lat = float(data.get('check_in_lat'))
@@ -266,13 +281,19 @@ def punch_out(request):
 
         photo_file = request.FILES.get('photo_check_out')
 
+        # Only close today's open record — never one from a prior day.
+        today = timezone.localdate()
         attendance = Attendance.objects.filter(
             employee=employee,
+            date=today,
             check_out_time__isnull=True,
-        ).last()
+        ).order_by('-check_in_time').first()
 
         if not attendance:
-            return Response({"error": "No active punch-in session found"}, status=400)
+            return Response(
+                {"error": "No active punch-in session found for today"},
+                status=400,
+            )
 
         if not employee.reference_photo:
             return Response({"error": "Reference photo missing. Contact admin."}, status=400)
