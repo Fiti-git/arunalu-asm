@@ -22,6 +22,7 @@ import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import EditCalendarIcon from "@mui/icons-material/EditCalendar";
 import BackupIcon from "@mui/icons-material/Backup";
 import ToggleOnIcon from "@mui/icons-material/ToggleOn";
@@ -303,6 +304,13 @@ function Sidebar({ sidebarOpen, onClose }) {
       path: "/admin/audit-trail",
       roles: ["Admin"],
       icon: <FactCheckIcon />,
+      group: "System",
+    },
+    {
+      text: "Cross-Midnight Audit",
+      path: "/admin/crossmidnight-audit",
+      roles: ["Admin"],
+      icon: <WarningAmberIcon />,
       group: "System",
     },
   ];

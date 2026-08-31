@@ -38,6 +38,7 @@ const AdminOutletsDetail = lazy(() => import('./pages/admin/AdminOutletsDetail')
 const AdminLeaveApproval = lazy(() => import('./pages/admin/assign/AdminLeaveApproval'));
 const DeviceOutletAssignment = lazy(() => import('./pages/admin/assign/DeviceOutletAssignment'));
 const AttendanceEditRequests = lazy(() => import('./pages/admin/AttendanceEditRequests'));
+const CrossMidnightAudit = lazy(() => import('./pages/admin/CrossMidnightAudit'));
 const UserStatusManager = lazy(() => import('./pages/admin/UserStatusManager'));
 const AuditTrail = lazy(() => import('./pages/admin/AuditTrail'));
 
@@ -268,6 +269,11 @@ function App() {
           <Route path="/admin/attendance-edit-requests" element={
             <ProtectedRoute role={role} requiredRole="Admin">
               <Layout><AttendanceEditRequests /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/crossmidnight-audit" element={
+            <ProtectedRoute role={role} requiredRole="Admin">
+              <Layout><CrossMidnightAudit /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/employees/status" element={

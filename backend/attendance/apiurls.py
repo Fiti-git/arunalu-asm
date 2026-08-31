@@ -46,4 +46,7 @@ urlpatterns = [
     path('v3/<int:id>/modifications/', api.v3_attendance_mod_history, name='v3-attendance-mod-history'),
     path('v3/<int:id>/', api.v3_attendance_update, name='v3-attendance-update'),
     path('v3/<int:id>/delete/', api.v3_attendance_delete, name='v3-attendance-delete'),
+
+    # --- Admin data-quality audit ---
+    path('admin/crossmidnight/', api.admin_crossmidnight_attendance, name='admin-crossmidnight-attendance'),
 ]

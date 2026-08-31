@@ -2761,3 +2761,62 @@ def v3_lock_period_detail(request, lock_id):
         return Response({"error": "end_date must be on or after start_date."}, status=400)
     lp.save()
     return Response(_v3_serialize_lock_period(lp))
+
+
+# ---------------------------------------------------------------------------
+# Admin cleanup helper: list attendance rows whose punch-out lands on a
+# different calendar day than the row's `date`. These are the leftover
+# forgotten-punch-out records that used to be closed on a later day and
+# produced 20h+ "worked hours" totals. The endpoint is read-only — HR
+# reviews the list and fixes each one through the Attendance Modification
+# UI (or `manage.py audit_crossmidnight_attendance --fix` for a bulk pass).
+# ---------------------------------------------------------------------------
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_crossmidnight_attendance(request):
+    if not _is_admin(request.user):
+        return Response({"detail": "Admin access required."}, status=403)
+
+    try:
+        min_hours = float(request.GET.get('min_hours', 20))
+    except (TypeError, ValueError):
+        min_hours = 20.0
+    try:
+        limit = int(request.GET.get('limit', 500))
+    except (TypeError, ValueError):
+        limit = 500
+    limit = max(1, min(limit, 2000))
+
+    qs = (
+        Attendance.objects
+        .filter(check_out_time__isnull=False, worked_hours__gte=min_hours)
+        .select_related('employee')
+        .prefetch_related('employee__outlets')
+        .order_by('-worked_hours')[:limit]
+    )
+
+    rows = []
+    for a in qs:
+        checkout_local = timezone.localtime(a.check_out_time) if a.check_out_time else None
+        if not checkout_local or checkout_local.date() == a.date:
+            continue
+        rows.append({
+            'attendance_id': a.attendance_id,
+            'employee_id': a.employee.employee_id,
+            'fullname': a.employee.fullname,
+            'empcode': a.employee.empcode,
+            'outlets': list(a.employee.outlets.values_list('name', flat=True)),
+            'date': a.date,
+            'check_in_time': a.check_in_time,
+            'check_out_time': a.check_out_time,
+            'worked_hours': a.worked_hours,
+            'status': a.status,
+            'days_span': (checkout_local.date() - a.date).days,
+        })
+
+    return Response({
+        'count': len(rows),
+        'min_hours': min_hours,
+        'limit': limit,
+        'results': rows,
+    })
