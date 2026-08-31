@@ -91,7 +91,7 @@ export default function AdminOutletSummary() {
         <StatCard icon={<StoreMallDirectoryOutlinedIcon />} label="Outlets" value={overview?.outlets ?? '—'} color="primary" />
         <StatCard icon={<PeopleAltOutlinedIcon />} label="Active Staff" value={overview?.active_emp ?? '—'} color="secondary" />
         <StatCard icon={<EventAvailableOutlinedIcon />} label="Present (days)" value={overview?.present_days ?? '—'}
-          trend={overview ? `${overview.present_rate}% rate` : ''} color="success" />
+          trend={Number.isFinite(Number(overview?.present_rate)) ? `${overview.present_rate}% rate` : ''} color="success" />
         <StatCard icon={<BeachAccessOutlinedIcon />} label="Leave (days)" value={overview?.leave_days ?? '—'} color="warning" />
         <StatCard icon={<EventBusyOutlinedIcon />} label="Absent (days)" value={overview?.absent_days ?? '—'} color="error" />
         <StatCard icon={<PendingActionsOutlinedIcon />} label="Pending Leaves" value={overview?.pending_leave_req ?? '—'} color="info" />

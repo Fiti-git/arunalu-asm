@@ -110,7 +110,18 @@ export default function BulkLeaveAddPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!isFormValid) return;
+    // Re-check submitLoading here so that a double-tap before React commits
+    // the disabled state can't fire a second POST and create duplicate leaves.
+    if (!isFormValid || submitLoading) return;
+
+    // Reject any leave date in the past — the backend does the same check but
+    // catching it here surfaces the error immediately without a round-trip.
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const pastDate = selectedDates.find((d) => d < todayISO);
+    if (pastDate) {
+      setMessage({ type: "error", text: `Leave date ${pastDate} is in the past.` });
+      return;
+    }
 
     setSubmitLoading(true);
     const payload = {
@@ -130,10 +141,11 @@ export default function BulkLeaveAddPage() {
     } catch (err) {
       setMessage({
         type: "error",
-        text: err.response?.data?.detail || "Error creating bulk leaves.",
+        text: err.response?.data?.detail || err.response?.data?.error || "Error creating bulk leaves.",
       });
+    } finally {
+      setSubmitLoading(false);
     }
-    setSubmitLoading(false);
   };
 
   if (loading) {

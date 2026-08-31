@@ -7,9 +7,16 @@ export const isAuthenticated = () => {
 export const getUserRole = () => {
   const accessToken = localStorage.getItem('access_token');
   if (!accessToken) return null;
-
-  const decoded = JSON.parse(atob(accessToken.split('.')[1]));
-  return decoded.role;
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length !== 3) return null;
+    const decoded = JSON.parse(atob(parts[1]));
+    return decoded?.role ?? null;
+  } catch {
+    // Malformed / tampered token — treat as unauthenticated instead of
+    // crashing the whole app on <ProtectedRoute>.
+    return null;
+  }
 };
 
 export const logout = () => {

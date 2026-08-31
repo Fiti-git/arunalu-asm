@@ -118,7 +118,7 @@ export default function AttendanceEditRequests() {
   useEffect(() => {
     fetchRequests(page, pageSize, columnFilters, sortBy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, sortBy, fetchRequests]);
+  }, [page, pageSize, sortBy, columnFilters, fetchRequests]);
 
   const handleFilterChange = (filterKey, value) => {
     const next = { ...columnFilters, [filterKey]: value };

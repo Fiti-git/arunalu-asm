@@ -466,10 +466,14 @@ export default function AdminEmployeeEditor() {
       fetchEmployees(currentPage, search);
     } catch (err) {
       const serverErrors = err.response?.data?.errors;
-      if (serverErrors) Object.entries(serverErrors).forEach(([f, m]) => {
-        if (f === 'non_field') setEditError(m); else editForm.setError(f, { message: m });
-      });
-      else setEditError('An unexpected error occurred.');
+      if (serverErrors) {
+        Object.entries(serverErrors).forEach(([f, m]) => {
+          if (f === 'non_field') setEditError(m);
+          else editForm.setError(f, { message: m });
+        });
+      } else {
+        setEditError(err.response?.data?.detail || 'An unexpected error occurred.');
+      }
     } finally {
       setEditSaving(false);
     }

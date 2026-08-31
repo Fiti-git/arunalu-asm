@@ -27,7 +27,7 @@ const schema = yup.object({
   agency: yup.string().required('Agency is required'),
   date_of_birth: yup.date().required('Date of birth is required'),
   profile_photo: yup.mixed().nullable(),
-  password: yup.string().required('Password is required').min(6, 'Min 6 chars'),
+  password: yup.string().required('Password is required').min(8, 'Min 8 characters'),
   group: yup.string().required('Group is required'),
   role: yup.string().required('Role is required'),
 }).required();
