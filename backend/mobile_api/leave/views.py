@@ -22,31 +22,29 @@ def my_leave_requests(request):
 @permission_classes([IsAuthenticated])
 def pending_leave(request):
     employee = request.user.employee
+
+    leave_types = list(LeaveType.objects.filter(active=True))
+    all_leaves = list(
+        EmpLeave.objects
+        .filter(employee=employee, status__in=['pending', 'approved'])
+        .values('leave_type_id', 'leave_date')
+    )
+
     result = []
-
-    leave_types = LeaveType.objects.filter(active=True)
-
-    for leave_type in leave_types:
-        start_date = leave_type.year_start_date
-        end_date = leave_type.year_end_date
-
-        used_count = EmpLeave.objects.filter(
-            employee=employee,
-            leave_type=leave_type,
-            status__in=['pending', 'approved'],
-            leave_date__range=(start_date, end_date),
-        ).count()
-
-        allowed = leave_type.att_type_no_of_days_in_year
-        remaining = max(allowed - used_count, 0)
-
+    for lt in leave_types:
+        used_count = sum(
+            1 for lv in all_leaves
+            if lv['leave_type_id'] == lt.id
+            and lt.year_start_date <= lv['leave_date'] <= lt.year_end_date
+        )
+        allowed = lt.att_type_no_of_days_in_year or 0
         result.append({
-            'id': leave_type.id,
-            'leave_type': leave_type.att_type_name,
-            'leave_code': leave_type.att_type,
+            'id': lt.id,
+            'leave_type': lt.att_type_name,
+            'leave_code': lt.att_type,
             'allowed': allowed,
             'used': used_count,
-            'remaining': remaining,
+            'remaining': max(allowed - used_count, 0),
         })
 
     return Response(result)
