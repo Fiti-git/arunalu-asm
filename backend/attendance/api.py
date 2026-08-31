@@ -43,6 +43,41 @@ def _validate_photo(f):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Role helpers — used for all sensitive endpoints. Prefer these over inline
+# .groups.filter(...) checks so audits don't have to grep for every variant.
+# ---------------------------------------------------------------------------
+def _is_admin(user):
+    return bool(
+        user and user.is_authenticated
+        and (user.is_superuser or user.groups.filter(name__iexact='Admin').exists())
+    )
+
+
+def _is_manager(user):
+    return bool(
+        user and user.is_authenticated
+        and user.groups.filter(name__iexact='Manager').exists()
+    )
+
+
+def _is_admin_or_manager(user):
+    return _is_admin(user) or _is_manager(user)
+
+
+def _manager_can_touch_employee(user, employee):
+    """True if `user` is Admin, or a Manager who shares an outlet with `employee`."""
+    if _is_admin(user):
+        return True
+    if not _is_manager(user):
+        return False
+    user_emp = getattr(user, 'employee', None)
+    if not user_emp:
+        return False
+    user_outlet_ids = user_emp.outlets.values_list('id', flat=True)
+    return employee.outlets.filter(id__in=user_outlet_ids).exists()
+
+
 def _rekognition_available():
     return bool(
         getattr(settings, "AWS_ACCESS_KEY_ID", None)
@@ -415,10 +450,17 @@ def update_attendance(request):
                         status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        attendance = Attendance.objects.select_related('employee').get(attendance_id=attendance_id)
+        attendance = Attendance.objects.select_related('employee').prefetch_related('employee__outlets').get(attendance_id=attendance_id)
     except Attendance.DoesNotExist:
         return Response({"error": "Attendance record not found."},
                         status=status.HTTP_404_NOT_FOUND)
+
+    # Only Admin, or a Manager who shares an outlet with this employee, may edit.
+    if not _manager_can_touch_employee(request.user, attendance.employee):
+        return Response(
+            {"error": "You do not have permission to edit this employee's attendance."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     locked_response = enforce_lock(request, attendance.employee, attendance.date)
     if locked_response:
@@ -607,19 +649,33 @@ class LeaveRequestAPIView(APIView):
         return Response({'message': 'Leave requests submitted.', 'created_ids': created}, status=status.HTTP_201_CREATED)
     
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def my_leave_requests(request):
     if request.method == 'GET':
         leave_requests = EmpLeave.objects.filter(employee=request.user.employee)
         serializer = EmpLeaveSerializer(leave_requests, many=True)
         return Response(serializer.data)
-    
+
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def all_leave_requests(request):
-    leave_requests = EmpLeave.objects.all()
-    serializer = EmpLeaveSerializer(leave_requests, many=True)
+    # Only Admins may see everything. Managers see leaves in their outlets;
+    # everyone else sees only their own. Prior behaviour returned every leave
+    # in the system to any authenticated user (privacy leak).
+    user = request.user
+    if _is_admin(user):
+        qs = EmpLeave.objects.all()
+    elif _is_manager(user) and getattr(user, 'employee', None):
+        outlet_ids = user.employee.outlets.values_list('id', flat=True)
+        qs = EmpLeave.objects.filter(employee__outlets__id__in=outlet_ids).distinct()
+    else:
+        emp = getattr(user, 'employee', None)
+        qs = EmpLeave.objects.filter(employee=emp) if emp else EmpLeave.objects.none()
+    serializer = EmpLeaveSerializer(qs, many=True)
     return Response(serializer.data)
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def leave_requests_by_outlet(request):
     user = request.user
 
@@ -690,6 +746,7 @@ def pending_leave_requests(request):
     return Response(result)
 
 @api_view(['PUT'])
+@permission_classes([IsAuthenticated])
 def update_leave_status(request, id):
     try:
         leave_request = EmpLeave.objects.select_related('employee__user').prefetch_related('employee__outlets').get(leave_refno=id)
@@ -716,6 +773,15 @@ def update_leave_status(request, id):
 
     if new_status not in ['approved', 'rejected']:
         return Response({"message": "Invalid status. Must be 'approved' or 'rejected'."}, status=400)
+
+    # Prevent silent transitions out of a terminal state — Admin can still
+    # override, but Managers must not flip a rejected/cancelled leave back to
+    # approved without an audit trail.
+    if leave_request.status in ('rejected', 'cancelled') and not is_admin:
+        return Response(
+            {"message": f"Leave is already {leave_request.status}. Only an Admin can change a terminal status."},
+            status=409,
+        )
 
     leave_request.status = new_status
     leave_request.action_date = timezone.now().date()
@@ -748,7 +814,7 @@ def list_holidays(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def add_holiday(request):
-    if not (request.user.groups.filter(name="Manager").exists()):
+    if not _is_admin(request.user):
         return Response({"detail": "Not authorized."}, status=403)
 
     serializer = HolidaySerializer(data=request.data)
@@ -787,7 +853,12 @@ def delete_holiday(request, hcode):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def generate_report(request):
+    # Admin / Manager only. Regular staff must not pull cross-employee reports.
+    if not _is_admin_or_manager(request.user):
+        return Response({"detail": "Not authorized."}, status=403)
+
     # Required date range
     start_date_str = request.GET.get('start_date')
     end_date_str = request.GET.get('end_date') or start_date_str
@@ -805,10 +876,26 @@ def generate_report(request):
     except ValueError:
         return Response({"detail": "Invalid date format. Use YYYY-MM-DD."}, status=400)
 
-    # Filter employees
+    # Guard against O(days × employees) blowouts. Anything over ~90 days must
+    # go through the paginated report endpoints in report/views.py instead.
+    if (end_date - start_date).days > 90:
+        return Response(
+            {"detail": "Date range too large. Use the paginated report endpoints for >90 days."},
+            status=400,
+        )
+
+    # Filter employees. Managers are restricted to their own outlets.
     employees = Employee.objects.all()
+    if _is_manager(request.user) and not _is_admin(request.user):
+        user_emp = getattr(request.user, 'employee', None)
+        if user_emp:
+            outlet_ids = user_emp.outlets.values_list('id', flat=True)
+            employees = employees.filter(outlets__id__in=outlet_ids).distinct()
+        else:
+            employees = employees.none()
+
     if user_id:
-        employees = employees.filter(id=user_id)
+        employees = employees.filter(employee_id=user_id)
     if outlet:
         employees = employees.filter(outlets=outlet)
 
@@ -823,30 +910,30 @@ def generate_report(request):
                 continue
             attendance = Attendance.objects.filter(employee=employee, date=current_date).first()
             leave = None if attendance else EmpLeave.objects.filter(
-                employee=employee, leave_date=current_date, leave_status="Approved"
+                employee=employee, leave_date=current_date, status='approved'
             ).first()
             holiday = Holiday.objects.filter(hdate=current_date).first()
 
             row = {
-                "emp_id": employee.emp_id,
-                "designation": employee.role.designation if hasattr(employee, 'role') else '',
-                "id_no": employee.id_no,
-                "name": employee.name,
+                "emp_id": employee.employee_id,
+                "designation": '',
+                "id_no": employee.idnumber,
+                "name": employee.fullname,
                 "date": current_date,
-                "time_in": attendance.time_in if attendance else '',
-                "time_out": attendance.time_out if attendance else '',
+                "time_in": str(attendance.check_in_time) if attendance and attendance.check_in_time else '',
+                "time_out": str(attendance.check_out_time) if attendance and attendance.check_out_time else '',
                 "type": (
                     'WD' if attendance else
-                    (leave.leave_type if leave else '')
+                    (leave.leave_type.att_type_name if (leave and leave.leave_type) else '')
                 ),
                 "type_name": (
                     "" if attendance else
-                    (leave.leave_type if leave else '')
+                    (leave.leave_type.att_type_name if (leave and leave.leave_type) else '')
                 ),
                 "hcode": holiday.hcode if holiday else '',
-                "htype": holiday.holiday_type if holiday else '',
+                "htype": '',
                 "hname": holiday.holiday_name if holiday else '',
-                "agency": employee.agency
+                "agency": employee.agency.name if getattr(employee, 'agency', None) else '',
             }
 
             report.append(row)
@@ -1617,9 +1704,15 @@ def v2_attendance_edit_request(request):
         return Response({'error': 'reason is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        attendance = Attendance.objects.select_related('employee').get(attendance_id=attendance_id)
+        attendance = Attendance.objects.select_related('employee').prefetch_related('employee__outlets').get(attendance_id=attendance_id)
     except Attendance.DoesNotExist:
         return Response({'error': 'Attendance record not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not _manager_can_touch_employee(request.user, attendance.employee):
+        return Response(
+            {'error': "You do not have permission to submit edit requests for this employee."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     from main.active_periods import is_active_on
     if not is_active_on(attendance.employee, attendance.date):
@@ -1744,7 +1837,9 @@ def v2_attendance_edit_requests_review(request):
     Admin only. Approve or reject an attendance edit request.
     On approval: proposed check-in/out are applied immediately and worked_hours recalculated.
     """
-    if not request.user.is_staff:
+    # Explicit Admin group check — `is_staff` alone can be granted to
+    # low-privilege staff users.
+    if not _is_admin(request.user):
         return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
 
     data = request.data

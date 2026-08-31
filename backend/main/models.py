@@ -123,7 +123,17 @@ class Attendance(models.Model):
     def save(self, *args, **kwargs):
         if self.check_out_time and self.check_in_time:
             delta = self.check_out_time - self.check_in_time
-            self.worked_hours = round(delta.total_seconds() / 3600, 2)
+            seconds = delta.total_seconds()
+            # Reject negative durations — indicates data corruption (checkout
+            # before checkin, mixed timezones, or a stale record being closed
+            # with a later punch-out timestamp). Better to raise than silently
+            # store negative worked_hours that pollute payroll totals.
+            if seconds < 0:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(
+                    "check_out_time must be greater than or equal to check_in_time."
+                )
+            self.worked_hours = round(seconds / 3600, 2)
 
             if self.worked_hours < 4:
                 self.status = 'Half Day'

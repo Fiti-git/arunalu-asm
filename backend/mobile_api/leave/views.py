@@ -73,23 +73,72 @@ class ApplyLeaveView(APIView):
         except LeaveType.DoesNotExist:
             return Response({'error': 'Invalid leave_type.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        created = []
+        today = date.today()
+        # Parse and validate all dates up front — reject the whole batch if
+        # any single date is malformed, in the past, or too far in the future.
+        parsed_dates = []
         for date_str in leave_dates:
             try:
-                leave_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                obj = EmpLeave.objects.create(
-                    employee=employee,
-                    leave_date=leave_date,
-                    leave_type=leave_type,
-                    remarks=remarks,
-                    status='pending',
-                )
-                created.append(obj.leave_refno)
+                d = datetime.strptime(date_str, "%Y-%m-%d").date()
             except ValueError:
                 return Response(
                     {'error': f'Invalid date format: {date_str}'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            if d < today:
+                return Response(
+                    {'error': f'Leave date {date_str} is in the past.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if (d - today).days > 365:
+                return Response(
+                    {'error': f'Leave date {date_str} is more than a year away.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            parsed_dates.append(d)
+
+        # Reject any date already covered by an existing pending/approved
+        # leave for this employee.
+        existing = set(
+            EmpLeave.objects
+            .filter(
+                employee=employee,
+                leave_date__in=parsed_dates,
+                status__in=['pending', 'approved'],
+            )
+            .values_list('leave_date', flat=True)
+        )
+        if existing:
+            dupes = sorted({d.isoformat() for d in existing})
+            return Response(
+                {'error': f'Leave already exists for: {", ".join(dupes)}'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # Balance check: existing usage + this batch must not exceed allowance.
+        allowed = leave_type.att_type_no_of_days_in_year or 0
+        used = EmpLeave.objects.filter(
+            employee=employee,
+            leave_type=leave_type,
+            status__in=['pending', 'approved'],
+            leave_date__range=(leave_type.year_start_date, leave_type.year_end_date),
+        ).count()
+        if allowed and used + len(parsed_dates) > allowed:
+            return Response(
+                {'error': f'Leave balance exceeded ({used} used, {allowed} allowed).'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        created = []
+        for leave_date in parsed_dates:
+            obj = EmpLeave.objects.create(
+                employee=employee,
+                leave_date=leave_date,
+                leave_type=leave_type,
+                remarks=remarks,
+                status='pending',
+            )
+            created.append(obj.leave_refno)
 
         return Response(
             {'message': 'Leave requests submitted.', 'created_ids': created},
