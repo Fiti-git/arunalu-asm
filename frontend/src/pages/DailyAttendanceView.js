@@ -6,7 +6,10 @@ import { DataTable, applyClientFilters } from 'components/ui';
 export default function DailyAttendance() {
   const [attendanceData, setAttendanceData] = useState([]);
   const [outlets, setOutlets] = useState([]);
-  const [selectedOutletId, setSelectedOutletId] = useState(0);
+  // Start as null (not 0) so the "no outlet selected yet" guard below actually
+  // triggers before the first fetch. Sending outlet_id=0 hit the backend as a
+  // real query and returned an empty list, which looked like a data bug.
+  const [selectedOutletId, setSelectedOutletId] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const [page, setPage] = useState(1);
@@ -23,7 +26,7 @@ export default function DailyAttendance() {
         if (outletsData.length > 0) {
           setSelectedOutletId(outletsData[0].id);
         } else {
-          setSelectedOutletId(0);
+          setSelectedOutletId(null);
         }
       } catch (error) {
         console.error('Error fetching outlets data:', error);
@@ -56,7 +59,7 @@ export default function DailyAttendance() {
       }
     };
 
-    if (selectedOutletId !== undefined) {
+    if (selectedOutletId) {
       fetchAttendance();
     }
   }, [selectedOutletId]);

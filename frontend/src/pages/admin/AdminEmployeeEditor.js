@@ -499,11 +499,14 @@ export default function AdminEmployeeEditor() {
     }
   };
 
+  // Normalize both sides to Number — outlet ids come back as string from some
+  // endpoints and number from others, so a raw .includes() would silently
+  // drop matches and the "Primary Outlet" dropdown would look empty.
   const primaryOutletOptionsCreate = outlets.filter(o =>
-    Array.isArray(watchedCreateOutlets) && watchedCreateOutlets.map(Number).includes(o.id)
+    Array.isArray(watchedCreateOutlets) && watchedCreateOutlets.map(Number).includes(Number(o.id))
   );
   const primaryOutletOptionsEdit = outlets.filter(o =>
-    Array.isArray(watchedEditOutlets) && watchedEditOutlets.map(Number).includes(o.id)
+    Array.isArray(watchedEditOutlets) && watchedEditOutlets.map(Number).includes(Number(o.id))
   );
   const createErrors = createForm.formState.errors;
   const editErrors = editForm.formState.errors;

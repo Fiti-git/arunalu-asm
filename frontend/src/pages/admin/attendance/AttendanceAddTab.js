@@ -70,7 +70,12 @@ export default function AttendanceAddTab() {
       setSelectedEmployees([]);
       setSelectedDates([]);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add attendance.');
+      setError(
+        err.response?.data?.error
+        || err.response?.data?.detail
+        || err.message
+        || 'Failed to add attendance.',
+      );
     } finally {
       setSubmitting(false);
     }
